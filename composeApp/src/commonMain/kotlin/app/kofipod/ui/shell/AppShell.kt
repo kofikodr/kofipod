@@ -26,19 +26,24 @@ import app.kofipod.ui.player.MiniPlayer
 import app.kofipod.ui.theme.LocalKofipodColors
 
 @Composable
-fun AppShell() {
+fun AppShell(startOnboarding: Boolean) {
     val nav = rememberNavController()
+    val backStack by nav.currentBackStackEntryAsState()
+    val currentRoute = backStack?.destination?.route
+    val showBottomBar = currentRoute != Route.Onboarding::class.qualifiedName
     Scaffold(
         containerColor = LocalKofipodColors.current.bg,
         bottomBar = {
-            Column {
-                MiniPlayer(onOpen = { nav.navigate(Route.Player) })
-                BottomNav(nav)
+            if (showBottomBar) {
+                Column {
+                    MiniPlayer(onOpen = { nav.navigate(Route.Player) })
+                    BottomNav(nav)
+                }
             }
         },
     ) { padding ->
         Box(Modifier.padding(padding)) {
-            KofipodNavHost(nav)
+            KofipodNavHost(nav, startOnboarding = startOnboarding)
         }
     }
 }

@@ -131,5 +131,6 @@ buildkonfig {
         buildConfigField(STRING, "PODCAST_INDEX_KEY", readSecret("PODCAST_INDEX_KEY"))
         buildConfigField(STRING, "PODCAST_INDEX_SECRET", readSecret("PODCAST_INDEX_SECRET"))
         buildConfigField(STRING, "USER_AGENT", "Kofipod/0.1 (github.com/ebernie/kofipod)")
+        buildConfigField(STRING, "GOOGLE_SERVER_CLIENT_ID", readSecret("GOOGLE_SERVER_CLIENT_ID"))
     }
 }

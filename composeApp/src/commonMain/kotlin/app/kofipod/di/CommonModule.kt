@@ -18,6 +18,8 @@ import kotlinx.coroutines.SupervisorJob
 import app.kofipod.ui.screens.detail.PodcastDetailViewModel
 import app.kofipod.ui.screens.downloads.DownloadsViewModel
 import app.kofipod.ui.screens.library.LibraryViewModel
+import app.kofipod.ui.screens.onboarding.OnboardingViewModel
+import app.kofipod.ui.screens.scheduler.SchedulerInfoViewModel
 import app.kofipod.ui.screens.search.SearchViewModel
 import app.kofipod.ui.screens.settings.SettingsViewModel
 import org.koin.core.module.dsl.viewModel
@@ -49,6 +51,8 @@ val commonDataModule = module {
     viewModel { LibraryViewModel(get()) }
     viewModel { SettingsViewModel(get(), get()) }
     viewModel { DownloadsViewModel(get()) }
+    viewModel { OnboardingViewModel(get(), get()) }
+    viewModel { SchedulerInfoViewModel(get()) }
     viewModel { (podcastId: String) ->
         PodcastDetailViewModel(podcastId, get(), get(), get(), get(), get(), get())
     }

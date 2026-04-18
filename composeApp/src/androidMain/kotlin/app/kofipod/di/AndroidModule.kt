@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.di
 
+import app.kofipod.auth.AuthService
 import app.kofipod.background.Notifier
 import app.kofipod.background.Scheduler
 import app.kofipod.data.db.DatabaseFactory
@@ -15,4 +16,5 @@ val androidPlatformModule = module {
     single { DownloadEngine(androidContext()) }
     single { Scheduler(androidContext()) }
     single { Notifier(androidContext()) }
+    single { AuthService(androidContext()) }
 }

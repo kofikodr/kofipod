@@ -4,6 +4,7 @@ package app.kofipod
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.ui.shell.AppShell
 import app.kofipod.ui.theme.KofipodTheme
@@ -16,8 +17,9 @@ fun App() {
     KoinContext {
         val settings = koinInject<SettingsRepository>()
         val mode by settings.themeMode().collectAsState(KofipodThemeMode.System)
+        val startOnboarding = remember { !settings.onboardedNow() }
         KofipodTheme(mode) {
-            AppShell()
+            AppShell(startOnboarding = startOnboarding)
         }
     }
 }

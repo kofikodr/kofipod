@@ -43,6 +43,14 @@ class SettingsRepository(private val db: KofipodDatabase) {
     fun setSkipForward(sec: Int) = put(KEY_SKIP_FWD, sec.toString())
     fun setSkipBack(sec: Int) = put(KEY_SKIP_BACK, sec.toString())
 
+    fun onboarded(): Flow<Boolean> = metaFlow(KEY_ONBOARDED).map { it?.toBoolean() ?: false }
+
+    fun onboardedNow(): Boolean =
+        db.syncMetaQueries.get(KEY_ONBOARDED).executeAsOneOrNull()?.toBoolean() ?: false
+
+    fun getMetaNow(key: String): String? =
+        db.syncMetaQueries.get(key).executeAsOneOrNull()
+
     companion object {
         const val DEFAULT_CAP_BYTES: Long = 2L * 1024 * 1024 * 1024 // 2 GB
         const val KEY_STORAGE_CAP = "storage_cap_bytes"
@@ -50,5 +58,7 @@ class SettingsRepository(private val db: KofipodDatabase) {
         const val KEY_DAILY_CHECK = "daily_check_enabled"
         const val KEY_SKIP_FWD = "skip_forward_sec"
         const val KEY_SKIP_BACK = "skip_back_sec"
+        const val KEY_ONBOARDED = "onboarded"
+        const val KEY_SCHEDULER_RUNS = "scheduler_runs"
     }
 }

@@ -53,6 +53,10 @@ class EpisodeCheckWorker(
         }
 
         downloads.evictUntilUnderCap(cap)
+        SchedulerRunLog.append(
+            settings,
+            SchedulerRun(at = now, inserted = totalNew, shows = showsWithNew),
+        )
         if (totalNew > 0) notifier.postNewEpisodes(totalNew, showsWithNew)
         Result.success()
     }.getOrElse { Result.retry() }
