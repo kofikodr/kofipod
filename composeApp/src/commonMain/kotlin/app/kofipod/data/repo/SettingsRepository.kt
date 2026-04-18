@@ -43,10 +43,17 @@ class SettingsRepository(private val db: KofipodDatabase) {
     fun setSkipForward(sec: Int) = put(KEY_SKIP_FWD, sec.toString())
     fun setSkipBack(sec: Int) = put(KEY_SKIP_BACK, sec.toString())
 
-    fun onboarded(): Flow<Boolean> = metaFlow(KEY_ONBOARDED).map { it?.toBoolean() ?: false }
+    fun backupEnabled(): Flow<Boolean> =
+        metaFlow(KEY_BACKUP_ENABLED).map { it?.toBoolean() ?: false }
 
-    fun onboardedNow(): Boolean =
-        db.syncMetaQueries.get(KEY_ONBOARDED).executeAsOneOrNull()?.toBoolean() ?: false
+    fun setBackupEnabled(enabled: Boolean) = put(KEY_BACKUP_ENABLED, enabled.toString())
+
+    fun googleEmail(): Flow<String?> = metaFlow(KEY_GOOGLE_EMAIL)
+
+    fun setGoogleEmail(email: String?) {
+        if (email == null) db.syncMetaQueries.put(KEY_GOOGLE_EMAIL, "")
+        else put(KEY_GOOGLE_EMAIL, email)
+    }
 
     fun getMetaNow(key: String): String? =
         db.syncMetaQueries.get(key).executeAsOneOrNull()
@@ -58,7 +65,8 @@ class SettingsRepository(private val db: KofipodDatabase) {
         const val KEY_DAILY_CHECK = "daily_check_enabled"
         const val KEY_SKIP_FWD = "skip_forward_sec"
         const val KEY_SKIP_BACK = "skip_back_sec"
-        const val KEY_ONBOARDED = "onboarded"
         const val KEY_SCHEDULER_RUNS = "scheduler_runs"
+        const val KEY_BACKUP_ENABLED = "backup_enabled"
+        const val KEY_GOOGLE_EMAIL = "google_email"
     }
 }

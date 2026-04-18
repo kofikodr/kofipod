@@ -104,10 +104,60 @@ fun SettingsScreen(
             options = listOf(15, 30, 45, 60),
         )
 
+        Section("Backup")
+        BackupRow(
+            enabled = state.backupEnabled,
+            signingIn = state.backupSigningIn,
+            email = state.googleEmail,
+            onToggle = viewModel::setBackupEnabled,
+        )
+        state.backupError?.let { err ->
+            Text(
+                err,
+                color = c.danger,
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .padding(top = 6.dp)
+                    .clickable { viewModel.clearBackupError() },
+            )
+        }
+
         Section("About")
         Text("Kofipod 0.1.0", color = c.text, fontWeight = FontWeight.Medium)
         Text("GPL-3.0-or-later", color = c.textMute, fontSize = 12.sp)
         Spacer(Modifier.height(40.dp))
+    }
+}
+
+@Composable
+private fun BackupRow(
+    enabled: Boolean,
+    signingIn: Boolean,
+    email: String?,
+    onToggle: (Boolean) -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                "Back up to Google Drive",
+                color = c.text,
+                fontWeight = FontWeight.Medium,
+            )
+            val subtitle = when {
+                signingIn -> "Signing in…"
+                enabled && email != null -> "Signed in as $email"
+                enabled -> "Enabled"
+                else -> "Off — your library stays on this device"
+            }
+            Text(subtitle, color = c.textMute, fontSize = 12.sp)
+        }
+        Switch(
+            checked = enabled,
+            enabled = !signingIn,
+            onCheckedChange = onToggle,
+            modifier = Modifier.testTag("backupSwitch"),
+        )
     }
 }
 
