@@ -36,6 +36,7 @@ class PodcastIndexApi(private val client: PodcastIndexClient) {
         }
 
     companion object {
+        const val PAGE_SIZE = 10
         const val DEFAULT_LIMIT = 30
         const val EPISODE_LIMIT = 50
 
