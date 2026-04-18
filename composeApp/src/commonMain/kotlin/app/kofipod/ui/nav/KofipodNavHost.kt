@@ -7,13 +7,13 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
 import app.kofipod.ui.screens.DownloadsScreen
-import app.kofipod.ui.screens.LibraryScreen
 import app.kofipod.ui.screens.OnboardingScreen
 import app.kofipod.ui.screens.PlayerScreen
-import app.kofipod.ui.screens.PodcastDetailScreen
 import app.kofipod.ui.screens.SchedulerInfoScreen
-import app.kofipod.ui.screens.SearchScreen
 import app.kofipod.ui.screens.SettingsScreen
+import app.kofipod.ui.screens.detail.PodcastDetailScreen
+import app.kofipod.ui.screens.library.LibraryScreen
+import app.kofipod.ui.screens.search.SearchScreen
 
 @Composable
 fun KofipodNavHost(navController: NavHostController) {

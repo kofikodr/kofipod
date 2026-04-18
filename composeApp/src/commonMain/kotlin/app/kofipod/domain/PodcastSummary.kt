@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.domain
 
+import app.kofipod.db.Podcast
 import com.mr3y.podcastindex.model.PodcastFeed
 
 data class PodcastSummary(
@@ -21,4 +22,14 @@ fun PodcastFeed.toSummary(): PodcastSummary = PodcastSummary(
     description = description,
     artworkUrl = artwork.ifBlank { image },
     feedUrl = url,
+)
+
+fun Podcast.toSummary(): PodcastSummary = PodcastSummary(
+    id = id,
+    feedId = id.toLongOrNull() ?: 0L,
+    title = title,
+    author = author,
+    description = description,
+    artworkUrl = artworkUrl,
+    feedUrl = feedUrl,
 )

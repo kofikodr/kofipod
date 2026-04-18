@@ -21,9 +21,7 @@ import app.kofipod.ui.theme.LocalKofipodColors
 @Composable
 private fun Placeholder(title: String, subtitle: String = "Coming soon.") {
     val c = LocalKofipodColors.current
-    Column(
-        Modifier.fillMaxSize().background(c.bg).padding(24.dp),
-    ) {
+    Column(Modifier.fillMaxSize().background(c.bg).padding(24.dp)) {
         Spacer(Modifier.height(40.dp))
         Text(title, color = c.text, fontWeight = FontWeight.ExtraBold, fontSize = 32.sp)
         Spacer(Modifier.height(8.dp))
@@ -34,9 +32,7 @@ private fun Placeholder(title: String, subtitle: String = "Coming soon.") {
 @Composable
 fun OnboardingScreen(onContinue: () -> Unit) {
     val c = LocalKofipodColors.current
-    Column(
-        Modifier.fillMaxSize().background(c.bg).padding(24.dp),
-    ) {
+    Column(Modifier.fillMaxSize().background(c.bg).padding(24.dp)) {
         Spacer(Modifier.height(80.dp))
         Text("Kofipod", color = c.purple, fontWeight = FontWeight.ExtraBold, fontSize = 42.sp)
         Spacer(Modifier.height(8.dp))
@@ -55,10 +51,7 @@ fun OnboardingScreen(onContinue: () -> Unit) {
     }
 }
 
-@Composable fun SearchScreen(onOpenPodcast: (String) -> Unit) = Placeholder("Search")
-@Composable fun LibraryScreen(onOpenPodcast: (String) -> Unit) = Placeholder("Library")
 @Composable fun DownloadsScreen() = Placeholder("Downloads")
 @Composable fun SettingsScreen(onOpenScheduler: () -> Unit) = Placeholder("Settings")
 @Composable fun SchedulerInfoScreen(onBack: () -> Unit) = Placeholder("Scheduler", "Battery-aware daily check.")
-@Composable fun PodcastDetailScreen(podcastId: String, onBack: () -> Unit) = Placeholder("Podcast", "id=$podcastId")
 @Composable fun PlayerScreen(onBack: () -> Unit) = Placeholder("Player")
