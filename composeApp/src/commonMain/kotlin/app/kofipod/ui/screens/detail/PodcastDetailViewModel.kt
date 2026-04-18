@@ -4,6 +4,7 @@ package app.kofipod.ui.screens.detail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.kofipod.data.api.PodcastIndexApi
+import app.kofipod.data.repo.DownloadRepository
 import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.data.repo.LibraryRepository
 import app.kofipod.data.repo.PlaybackRepository
@@ -13,6 +14,7 @@ import app.kofipod.db.Podcast
 import app.kofipod.db.PodcastList
 import app.kofipod.domain.PodcastSummary
 import app.kofipod.domain.toSummary
+import app.kofipod.downloads.DownloadJob
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.playback.PlayableEpisode
 import com.mr3y.podcastindex.model.EpisodeFeed
@@ -49,6 +51,7 @@ class PodcastDetailViewModel(
     private val api: PodcastIndexApi,
     private val player: KofipodPlayer,
     private val playback: PlaybackRepository,
+    private val downloads: DownloadRepository,
 ) : ViewModel() {
 
     private val remoteSummary = MutableStateFlow<PodcastSummary?>(null)
@@ -123,6 +126,18 @@ class PodcastDetailViewModel(
                 sourceUrl = ep.enclosureUrl,
                 startPositionMs = startMs,
             ),
+        )
+    }
+
+    fun download(episodeId: String) {
+        val ep = state.value.storedEpisodes.firstOrNull { it.id == episodeId } ?: return
+        if (ep.enclosureUrl.isBlank()) return
+        val ext = ep.enclosureMimeType.substringAfter('/', "mp3").ifBlank { "mp3" }
+        downloads.enqueue(
+            episodeId = ep.id,
+            url = ep.enclosureUrl,
+            fileName = "${ep.id}.$ext",
+            source = DownloadJob.Source.Manual,
         )
     }
 

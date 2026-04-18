@@ -115,7 +115,11 @@ fun PodcastDetailScreen(
             }
         }
         items(eps, key = { it.id }) { ep ->
-            EpisodeRow(ep, onPlay = { viewModel.play(ep.id) })
+            EpisodeRow(
+                ep,
+                onPlay = { viewModel.play(ep.id) },
+                onDownload = { viewModel.download(ep.id) },
+            )
         }
         item { Spacer(Modifier.height(24.dp)) }
     }
@@ -141,13 +145,12 @@ private data class EpisodeDisplay(
 )
 
 @Composable
-private fun EpisodeRow(ep: EpisodeDisplay, onPlay: () -> Unit) {
+private fun EpisodeRow(ep: EpisodeDisplay, onPlay: () -> Unit, onDownload: () -> Unit) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
     Row(
         Modifier
             .fillMaxWidth()
-            .let { if (ep.playable) it.clickable { onPlay() } else it }
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -157,7 +160,18 @@ private fun EpisodeRow(ep: EpisodeDisplay, onPlay: () -> Unit) {
             Text(label, color = c.textMute, fontSize = 12.sp)
         }
         if (ep.playable) {
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(8.dp))
+            Box(
+                Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(r.pill))
+                    .background(c.purpleTint)
+                    .clickable { onDownload() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("⤓", color = c.purple, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.width(8.dp))
             Box(
                 Modifier
                     .size(36.dp)

@@ -6,10 +6,10 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
-import app.kofipod.ui.screens.DownloadsScreen
 import app.kofipod.ui.screens.OnboardingScreen
 import app.kofipod.ui.screens.SchedulerInfoScreen
 import app.kofipod.ui.screens.detail.PodcastDetailScreen
+import app.kofipod.ui.screens.downloads.DownloadsScreen
 import app.kofipod.ui.screens.library.LibraryScreen
 import app.kofipod.ui.screens.player.PlayerScreen
 import app.kofipod.ui.screens.search.SearchScreen

@@ -51,5 +51,4 @@ fun OnboardingScreen(onContinue: () -> Unit) {
     }
 }
 
-@Composable fun DownloadsScreen() = Placeholder("Downloads")
 @Composable fun SchedulerInfoScreen(onBack: () -> Unit) = Placeholder("Scheduler", "Battery-aware daily check.")

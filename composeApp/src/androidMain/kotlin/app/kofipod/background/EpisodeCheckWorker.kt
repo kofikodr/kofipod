@@ -1,0 +1,59 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+package app.kofipod.background
+
+import android.content.Context
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import app.kofipod.data.repo.DownloadRepository
+import app.kofipod.data.repo.EpisodesRepository
+import app.kofipod.data.repo.LibraryRepository
+import app.kofipod.data.repo.SettingsRepository
+import app.kofipod.data.repo.autoDownloadEnabledBool
+import app.kofipod.downloads.DownloadJob
+import kotlinx.coroutines.flow.first
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
+
+class EpisodeCheckWorker(
+    context: Context,
+    params: WorkerParameters,
+) : CoroutineWorker(context, params), KoinComponent {
+
+    private val library: LibraryRepository by inject()
+    private val episodes: EpisodesRepository by inject()
+    private val settings: SettingsRepository by inject()
+    private val downloads: DownloadRepository by inject()
+    private val notifier: Notifier by inject()
+
+    override suspend fun doWork(): Result = runCatching {
+        val cap = settings.storageCapBytes().first()
+        var totalNew = 0
+        var showsWithNew = 0
+        val now = System.currentTimeMillis()
+
+        for (podcast in library.podcastsFlow().first()) {
+            val feedId = podcast.id.toLongOrNull() ?: continue
+            val result = episodes.refresh(podcast.id, feedId, now)
+            if (result.inserted > 0) {
+                totalNew += result.inserted
+                showsWithNew++
+                if (podcast.autoDownloadEnabledBool()) {
+                    episodes.episodesFlow(podcast.id).first()
+                        .take(result.inserted)
+                        .forEach { ep ->
+                            downloads.enqueue(
+                                episodeId = ep.id,
+                                url = ep.enclosureUrl,
+                                fileName = "${ep.id}.mp3",
+                                source = DownloadJob.Source.Auto,
+                            )
+                        }
+                }
+            }
+        }
+
+        downloads.evictUntilUnderCap(cap)
+        if (totalNew > 0) notifier.postNewEpisodes(totalNew, showsWithNew)
+        Result.success()
+    }.getOrElse { Result.retry() }
+}
