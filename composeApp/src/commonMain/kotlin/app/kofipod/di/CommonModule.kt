@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import app.kofipod.ui.screens.detail.PodcastDetailViewModel
 import app.kofipod.ui.screens.downloads.DownloadsViewModel
+import app.kofipod.ui.screens.library.LibraryDetailViewModel
 import app.kofipod.ui.screens.library.LibraryViewModel
 import app.kofipod.ui.screens.onboarding.OnboardingViewModel
 import app.kofipod.ui.screens.scheduler.SchedulerInfoViewModel
@@ -50,6 +51,7 @@ val commonDataModule = module {
 
     viewModel { SearchViewModel(get()) }
     viewModel { LibraryViewModel(get()) }
+    viewModel { (listId: String?) -> LibraryDetailViewModel(listId, get()) }
     viewModel { OnboardingViewModel(get(), get()) }
     viewModel { SplashViewModel(get()) }
     viewModel { SettingsViewModel(get(), get(), get()) }
