@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -58,6 +59,7 @@ fun PodcastDetailScreen(
     viewModel: PodcastDetailViewModel = koinViewModel { parametersOf(podcastId) },
 ) {
     val state by viewModel.state.collectAsState()
+    val playingEpisodeId by viewModel.playingEpisodeId.collectAsState()
     val c = LocalKofipodColors.current
 
     val summary = state.summary
@@ -83,6 +85,44 @@ fun PodcastDetailScreen(
         state.inLibrary -> "Saved"
         else -> "Save to list"
     }
+
+    val inLibrary = state.inLibrary
+    val storedEpisodes = state.storedEpisodes
+    val remoteEpisodes = state.remoteEpisodes
+    val downloadStates = state.downloadStates
+    val displayLimit = state.episodeDisplayLimit
+    val rows: List<EpisodeRowData> = remember(
+        inLibrary, storedEpisodes, remoteEpisodes, downloadStates, newestFirst,
+    ) {
+        val mapped = if (inLibrary) {
+            storedEpisodes.map {
+                EpisodeRowData(
+                    id = it.id,
+                    title = it.title,
+                    publishedAt = it.publishedAt,
+                    durationSec = it.durationSec.toInt(),
+                    fileSizeBytes = it.fileSizeBytes,
+                    playable = true,
+                    downloadState = downloadStates[it.id],
+                )
+            }
+        } else {
+            remoteEpisodes.map {
+                EpisodeRowData(
+                    id = it.id,
+                    title = it.title,
+                    publishedAt = 0L,
+                    durationSec = it.durationMinutes * 60,
+                    fileSizeBytes = 0,
+                    playable = it.enclosureUrl.isNotBlank(),
+                    downloadState = null,
+                )
+            }
+        }
+        if (newestFirst) mapped else mapped.asReversed()
+    }
+    val visibleRows = remember(rows, displayLimit) { rows.take(displayLimit) }
+    val activePlaybackFlow = viewModel.activePlayback
 
     LazyColumn(Modifier.fillMaxSize().background(c.bg)) {
         item {
@@ -140,40 +180,6 @@ fun PodcastDetailScreen(
         item { TabsRow(tab = tab, onSelect = { tab = it }, newestFirst = newestFirst, onToggleSort = { newestFirst = !newestFirst }) }
 
         if (tab == DetailTab.Episodes) {
-            val rows: List<EpisodeRowData> = if (state.inLibrary) {
-                state.storedEpisodes.map {
-                    val active = it.id == state.playingEpisodeId
-                    EpisodeRowData(
-                        id = it.id,
-                        title = it.title,
-                        publishedAt = it.publishedAt,
-                        durationSec = it.durationSec.toInt(),
-                        fileSizeBytes = it.fileSizeBytes,
-                        playable = true,
-                        downloadState = state.downloadStates[it.id],
-                        isActive = active,
-                        isPlaying = active && state.isPlaying,
-                        progress = if (active) state.playbackProgress else 0f,
-                    )
-                }
-            } else {
-                state.remoteEpisodes.map {
-                    val active = it.id == state.playingEpisodeId
-                    EpisodeRowData(
-                        id = it.id,
-                        title = it.title,
-                        publishedAt = 0L,
-                        durationSec = it.durationMinutes * 60,
-                        fileSizeBytes = 0,
-                        playable = it.enclosureUrl.isNotBlank(),
-                        downloadState = null,
-                        isActive = active,
-                        isPlaying = active && state.isPlaying,
-                        progress = if (active) state.playbackProgress else 0f,
-                    )
-                }
-            }.let { if (newestFirst) it else it.asReversed() }
-
             if (state.loading && rows.isEmpty()) {
                 item { Text("Loading episodes…", color = c.textMute, fontSize = 12.sp, modifier = Modifier.padding(20.dp)) }
             }
@@ -181,21 +187,15 @@ fun PodcastDetailScreen(
                 item { Text(err, color = c.danger, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp)) }
             }
 
-            val visibleRows = rows.take(state.episodeDisplayLimit)
-            val hasMore = if (state.inLibrary) rows.size > visibleRows.size else state.remoteHasMore
+            val hasMore = if (inLibrary) rows.size > visibleRows.size else state.remoteHasMore
             items(visibleRows, key = { it.id }) { ep ->
                 EpisodeRow(
-                    ep,
-                    canDownload = state.inLibrary,
-                    onPlay = { if (ep.playable) viewModel.play(ep.id) },
-                    onOpen = {
-                        if (ep.playable) {
-                            viewModel.play(ep.id)
-                            onOpenPlayer()
-                        }
-                    },
-                    onDownload = { if (ep.playable && state.inLibrary) viewModel.download(ep.id) },
-                    onShare = { viewModel.shareEpisode(ep.id) },
+                    ep = ep,
+                    isActive = ep.id == playingEpisodeId,
+                    canDownload = inLibrary,
+                    activePlaybackFlow = activePlaybackFlow,
+                    viewModel = viewModel,
+                    onOpenPlayer = onOpenPlayer,
                 )
             }
             if (hasMore) {
@@ -494,39 +494,42 @@ private data class EpisodeRowData(
     val fileSizeBytes: Long,
     val playable: Boolean,
     val downloadState: String?,
-    val isActive: Boolean = false,
-    val isPlaying: Boolean = false,
-    val progress: Float = 0f,
 )
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun EpisodeRow(
     ep: EpisodeRowData,
+    isActive: Boolean,
     canDownload: Boolean,
-    onPlay: () -> Unit,
-    onOpen: () -> Unit,
-    onDownload: () -> Unit,
-    onShare: () -> Unit,
+    activePlaybackFlow: StateFlow<ActivePlayback>,
+    viewModel: PodcastDetailViewModel,
+    onOpenPlayer: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
+    val playable = ep.playable
+    val id = ep.id
     Row(
         Modifier
             .fillMaxWidth()
             .combinedClickable(
-                enabled = ep.playable,
-                onClick = onOpen,
-                onLongClick = onShare,
+                enabled = playable,
+                onClick = {
+                    if (playable) {
+                        viewModel.play(id)
+                        onOpenPlayer()
+                    }
+                },
+                onLongClick = { viewModel.shareEpisode(id) },
             )
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         EpisodePlayButton(
-            active = ep.isActive,
-            isPlaying = ep.isPlaying,
-            progress = ep.progress,
-            enabled = ep.playable,
-            onClick = onPlay,
+            isActive = isActive,
+            activePlaybackFlow = activePlaybackFlow,
+            enabled = playable,
+            onClick = { if (playable) viewModel.play(id) },
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -547,46 +550,81 @@ private fun EpisodeRow(
             )
         }
         Spacer(Modifier.width(8.dp))
-        // Right: state icon
-        StateIndicator(ep = ep, canDownload = canDownload, onDownload = onDownload)
+        StateIndicator(
+            ep = ep,
+            canDownload = canDownload,
+            onDownload = { if (playable && canDownload) viewModel.download(id) },
+        )
     }
 }
 
 @Composable
 private fun EpisodePlayButton(
-    active: Boolean,
+    isActive: Boolean,
+    activePlaybackFlow: StateFlow<ActivePlayback>,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    if (isActive) {
+        val playback by activePlaybackFlow.collectAsState()
+        ActivePlayButton(
+            isPlaying = playback.isPlaying,
+            progress = playback.progress,
+            enabled = enabled,
+            onClick = onClick,
+        )
+    } else {
+        IdlePlayButton(enabled = enabled, onClick = onClick)
+    }
+}
+
+@Composable
+private fun ActivePlayButton(
     isPlaying: Boolean,
     progress: Float,
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
-    val animatedProgress by animateFloatAsState(targetValue = if (active) progress else 0f, label = "epProgress")
+    val animatedProgress by animateFloatAsState(targetValue = progress, label = "epProgress")
     Box(
         Modifier
             .size(40.dp)
             .clip(RoundedCornerShape(999.dp))
-            .background(if (active) c.purple else c.purpleTint)
+            .background(c.purple)
             .clickable(enabled = enabled) { onClick() },
         contentAlignment = Alignment.Center,
     ) {
-        if (active) {
-            Canvas(Modifier.fillMaxSize().padding(2.dp)) {
-                val stroke = 2.5.dp.toPx()
-                drawArc(
-                    color = c.pink,
-                    startAngle = -90f,
-                    sweepAngle = 360f * animatedProgress,
-                    useCenter = false,
-                    style = Stroke(width = stroke, cap = StrokeCap.Round),
-                )
-            }
+        Canvas(Modifier.fillMaxSize().padding(2.dp)) {
+            val stroke = 2.5.dp.toPx()
+            drawArc(
+                color = c.pink,
+                startAngle = -90f,
+                sweepAngle = 360f * animatedProgress,
+                useCenter = false,
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
+            )
         }
         KPIcon(
-            name = if (active && isPlaying) KPIconName.Pause else KPIconName.Play,
-            color = if (active) Color.White else c.purple,
+            name = if (isPlaying) KPIconName.Pause else KPIconName.Play,
+            color = Color.White,
             size = 16.dp,
         )
+    }
+}
+
+@Composable
+private fun IdlePlayButton(enabled: Boolean, onClick: () -> Unit) {
+    val c = LocalKofipodColors.current
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .background(c.purpleTint)
+            .clickable(enabled = enabled) { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        KPIcon(name = KPIconName.Play, color = c.purple, size = 16.dp)
     }
 }
 

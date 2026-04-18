@@ -26,6 +26,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
@@ -45,9 +47,11 @@ data class DetailUiState(
     val episodeDisplayLimit: Int = PodcastIndexApi.PAGE_SIZE,
     val remoteHasMore: Boolean = false,
     val error: String? = null,
-    val playingEpisodeId: String? = null,
+)
+
+data class ActivePlayback(
     val isPlaying: Boolean = false,
-    val playbackProgress: Float = 0f,
+    val progress: Float = 0f,
 )
 
 data class EpisodePreview(
@@ -91,8 +95,7 @@ class PodcastDetailViewModel(
         combine(library.podcastFlow(podcastId), episodes.episodesFlow(podcastId), library.listsFlow(), ::StoredBundle),
         combine(remoteSummary, remoteEpisodes, remoteLimit, downloads.all(), ::RemoteBundle),
         combine(loading, loadingMore, displayLimit, error, ::UiFlags),
-        player.state,
-    ) { stored, remote, flags, playerState ->
+    ) { stored, remote, flags ->
         val storedSummary = stored.podcast?.toSummary()
         val merged = when {
             storedSummary != null && remote.summary != null -> storedSummary.copy(
@@ -120,13 +123,25 @@ class PodcastDetailViewModel(
             episodeDisplayLimit = flags.displayLimit,
             remoteHasMore = remote.episodes.size >= remote.limit,
             error = flags.error,
-            playingEpisodeId = playerState.episodeId,
-            isPlaying = playerState.isPlaying,
-            playbackProgress = if (playerState.durationMs > 0L) {
-                (playerState.positionMs.toFloat() / playerState.durationMs.toFloat()).coerceIn(0f, 1f)
-            } else 0f,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DetailUiState())
+
+    val playingEpisodeId: StateFlow<String?> = player.state
+        .map { it.episodeId }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val activePlayback: StateFlow<ActivePlayback> = player.state
+        .map {
+            ActivePlayback(
+                isPlaying = it.isPlaying,
+                progress = if (it.durationMs > 0L) {
+                    (it.positionMs.toFloat() / it.durationMs.toFloat()).coerceIn(0f, 1f)
+                } else 0f,
+            )
+        }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ActivePlayback())
 
     init { loadRemote(loadMore = false) }
 
@@ -183,8 +198,8 @@ class PodcastDetailViewModel(
 
     fun play(episodeId: String) {
         val current = state.value
-        if (current.playingEpisodeId == episodeId) {
-            if (current.isPlaying) player.pause() else player.resume()
+        if (playingEpisodeId.value == episodeId) {
+            if (activePlayback.value.isPlaying) player.pause() else player.resume()
             return
         }
         val summary = current.summary ?: return

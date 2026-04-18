@@ -4,12 +4,14 @@ package app.kofipod.ui.primitives
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -51,16 +53,32 @@ fun KPIcon(
     size: Dp = 22.dp,
     strokeWidth: Float = 1.8f,
 ) {
-    Canvas(modifier = modifier.size(size)) {
-        val w = this.size.width
-        val h = this.size.height
-        val scale = w / 24f
-        val stroke = Stroke(
-            width = strokeWidth * scale,
+    val sizePx = with(LocalDensity.current) { size.toPx() }
+    val path = remember(name, sizePx) { buildKPIconPath(name, sizePx / 24f) }
+    val stroke = remember(strokeWidth, sizePx) {
+        Stroke(
+            width = strokeWidth * (sizePx / 24f),
             cap = StrokeCap.Round,
             join = StrokeJoin.Round,
         )
-        val path = when (name) {
+    }
+    val filled = isFilledIcon(name)
+    Canvas(modifier = modifier.size(size)) {
+        if (filled) drawPath(path = path, color = color)
+        else drawPath(path = path, color = color, style = stroke)
+    }
+}
+
+private fun isFilledIcon(name: KPIconName): Boolean =
+    name == KPIconName.Play ||
+        name == KPIconName.Pause ||
+        name == KPIconName.PrevTrack ||
+        name == KPIconName.NextTrack ||
+        name == KPIconName.SpeedUp ||
+        name == KPIconName.Moon
+
+private fun buildKPIconPath(name: KPIconName, scale: Float): Path {
+    return when (name) {
             KPIconName.Library -> Path().apply {
                 // Three book stacks
                 addRect(androidx.compose.ui.geometry.Rect(4f * scale, 4f * scale, 8f * scale, 20f * scale))
@@ -233,24 +251,12 @@ fun KPIcon(
                 moveTo(13f * scale, 3f * scale); lineTo(5f * scale, 13f * scale); lineTo(11f * scale, 13f * scale)
                 lineTo(10f * scale, 21f * scale); lineTo(19f * scale, 10f * scale); lineTo(13f * scale, 10f * scale); close()
             }
-            KPIconName.Pencil -> Path().apply {
-                // Tip at bottom-left, shaft diagonal to top-right, eraser/cap at top
-                moveTo(4f * scale, 20f * scale); lineTo(8f * scale, 19f * scale)
-                lineTo(20f * scale, 7f * scale); lineTo(17f * scale, 4f * scale)
-                lineTo(5f * scale, 16f * scale); close()
-                moveTo(14f * scale, 7f * scale); lineTo(17f * scale, 10f * scale)
-            }
-        }
-        val filled = name == KPIconName.Play ||
-            name == KPIconName.Pause ||
-            name == KPIconName.PrevTrack ||
-            name == KPIconName.NextTrack ||
-            name == KPIconName.SpeedUp ||
-            name == KPIconName.Moon
-        if (filled) {
-            drawPath(path = path, color = color)
-        } else {
-            drawPath(path = path, color = color, style = stroke)
+        KPIconName.Pencil -> Path().apply {
+            // Tip at bottom-left, shaft diagonal to top-right, eraser/cap at top
+            moveTo(4f * scale, 20f * scale); lineTo(8f * scale, 19f * scale)
+            lineTo(20f * scale, 7f * scale); lineTo(17f * scale, 4f * scale)
+            lineTo(5f * scale, 16f * scale); close()
+            moveTo(14f * scale, 7f * scale); lineTo(17f * scale, 10f * scale)
         }
     }
 }
