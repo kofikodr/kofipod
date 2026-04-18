@@ -2,27 +2,35 @@
 package app.kofipod.ui.shell
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import app.kofipod.ui.nav.KofipodNavHost
 import app.kofipod.ui.nav.Route
 import app.kofipod.ui.player.MiniPlayer
+import app.kofipod.ui.primitives.KPIcon
+import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.theme.LocalKofipodColors
 
 @Composable
@@ -43,33 +51,80 @@ fun AppShell() {
     }
 }
 
+private data class Tab(
+    val route: Route,
+    val routeKey: String,
+    val label: String,
+    val icon: KPIconName,
+)
+
+private val TABS = listOf(
+    Tab(Route.Library, Route.Library::class.qualifiedName!!, "Library", KPIconName.Library),
+    Tab(Route.Search, Route.Search::class.qualifiedName!!, "Search", KPIconName.Search),
+    Tab(Route.Downloads, Route.Downloads::class.qualifiedName!!, "Downloads", KPIconName.Downloads),
+    Tab(Route.Settings, Route.Settings::class.qualifiedName!!, "Settings", KPIconName.Settings),
+)
+
 @Composable
 private fun BottomNav(nav: NavHostController) {
     val c = LocalKofipodColors.current
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
-    Row(
-        Modifier.fillMaxWidth().background(c.surface).padding(vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceAround,
-        verticalAlignment = Alignment.CenterVertically,
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(c.surface)
+            .border(width = 0.5.dp, color = c.border),
     ) {
-        NavItem("Search", matches(currentRoute, Route.Search::class.qualifiedName)) { nav.navigate(Route.Search) }
-        NavItem("Library", matches(currentRoute, Route.Library::class.qualifiedName)) { nav.navigate(Route.Library) }
-        NavItem("Downloads", matches(currentRoute, Route.Downloads::class.qualifiedName)) { nav.navigate(Route.Downloads) }
-        NavItem("Settings", matches(currentRoute, Route.Settings::class.qualifiedName)) { nav.navigate(Route.Settings) }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            TABS.forEach { tab ->
+                val selected = currentRoute == tab.routeKey
+                TabItem(
+                    tab = tab,
+                    selected = selected,
+                    modifier = Modifier.weight(1f),
+                    onClick = { nav.navigate(tab.route) },
+                )
+            }
+        }
     }
 }
 
-private fun matches(current: String?, target: String?): Boolean =
-    current != null && target != null && current == target
-
 @Composable
-private fun NavItem(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun TabItem(
+    tab: Tab,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
     val c = LocalKofipodColors.current
-    Text(
-        text = label,
-        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-        color = if (selected) c.pink else c.textSoft,
-        modifier = Modifier.clickable { onClick() }.padding(horizontal = 16.dp, vertical = 8.dp),
-    )
+    val bg = if (selected) c.purpleTint else androidx.compose.ui.graphics.Color.Transparent
+    val iconColor = if (selected) c.purple else c.textMute
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(bg)
+            .clickable { onClick() }
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        KPIcon(
+            name = tab.icon,
+            color = iconColor,
+            size = 22.dp,
+            strokeWidth = if (selected) 2.2f else 1.8f,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            tab.label,
+            color = if (selected) c.purple else c.textMute,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            fontSize = 10.5.sp,
+        )
+    }
 }

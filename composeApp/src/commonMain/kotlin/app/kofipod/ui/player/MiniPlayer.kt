@@ -41,11 +41,12 @@ fun MiniPlayer(onOpen: () -> Unit) {
             .testTag("miniPlayer"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(c.purpleTint),
+        app.kofipod.ui.primitives.KofipodArtwork(
+            size = 40.dp,
+            seed = state.episodeId?.hashCode() ?: 0,
+            label = state.title,
+            radius = 8.dp,
+            model = state.artworkUrl.ifBlank { null },
         )
         Spacer(Modifier.width(12.dp))
         Text(

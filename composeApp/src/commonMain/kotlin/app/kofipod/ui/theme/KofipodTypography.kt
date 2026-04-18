@@ -9,15 +9,34 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import kofipod.composeapp.generated.resources.Res
+import kofipod.composeapp.generated.resources.jetbrains_mono_bold
+import kofipod.composeapp.generated.resources.jetbrains_mono_medium
+import kofipod.composeapp.generated.resources.jetbrains_mono_regular
+import kofipod.composeapp.generated.resources.jetbrains_mono_semibold
+import kofipod.composeapp.generated.resources.plus_jakarta_sans_variable
+import org.jetbrains.compose.resources.Font
 
-// The Kofipod design calls for Plus Jakarta Sans (UI) and JetBrains Mono (metadata).
-// We wire these as FontFamily.Default for now so the app compiles without font
-// resources; swap in bundled TTFs under composeResources/font/ in a follow-up.
 @Composable
-fun plusJakartaSans(): FontFamily = FontFamily.Default
+fun plusJakartaSans(): FontFamily {
+    val file = Res.font.plus_jakarta_sans_variable
+    // Variable font: one TTF, Android's font system picks the right weight from the wght axis.
+    return FontFamily(
+        Font(file, FontWeight.Normal),
+        Font(file, FontWeight.Medium),
+        Font(file, FontWeight.SemiBold),
+        Font(file, FontWeight.Bold),
+        Font(file, FontWeight.ExtraBold),
+    )
+}
 
 @Composable
-fun jetBrainsMono(): FontFamily = FontFamily.Monospace
+fun jetBrainsMono(): FontFamily = FontFamily(
+    Font(Res.font.jetbrains_mono_regular, FontWeight.Normal),
+    Font(Res.font.jetbrains_mono_medium, FontWeight.Medium),
+    Font(Res.font.jetbrains_mono_semibold, FontWeight.SemiBold),
+    Font(Res.font.jetbrains_mono_bold, FontWeight.Bold),
+)
 
 @Composable
 fun kofipodTypography(): Typography {

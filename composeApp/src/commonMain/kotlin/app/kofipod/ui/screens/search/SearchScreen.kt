@@ -16,16 +16,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kofipod.domain.PodcastSummary
+import app.kofipod.ui.primitives.KofipodArtwork
 import app.kofipod.ui.theme.LocalKofipodColors
 import app.kofipod.ui.theme.LocalKofipodRadii
-import coil3.compose.AsyncImage
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
@@ -129,11 +128,12 @@ private fun ResultCard(p: PodcastSummary, onClick: () -> Unit) {
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AsyncImage(
+        KofipodArtwork(
+            size = 64.dp,
+            seed = p.feedId.toInt(),
+            label = p.title,
+            radius = 12.dp,
             model = p.artworkUrl.ifBlank { null },
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(64.dp).clip(RoundedCornerShape(r.sm)).background(c.purpleTint),
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {

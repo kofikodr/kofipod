@@ -28,8 +28,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kofipod.playback.KofipodPlayer
+import app.kofipod.ui.primitives.KofipodArtwork
 import app.kofipod.ui.theme.LocalKofipodColors
-import coil3.compose.AsyncImage
 import org.koin.compose.koinInject
 
 @Composable
@@ -53,15 +53,13 @@ fun PlayerScreen(onBack: () -> Unit) {
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(16.dp))
-        AsyncImage(
+        KofipodArtwork(
+            seed = state.episodeId?.hashCode() ?: 0,
+            label = state.title,
+            labelSize = 36.dp,
+            radius = 20.dp,
             model = state.artworkUrl.ifBlank { null },
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(280.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(c.purpleTint),
+            modifier = Modifier.fillMaxWidth().height(280.dp),
         )
         Spacer(Modifier.height(24.dp))
         Text(

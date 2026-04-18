@@ -27,9 +27,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import app.kofipod.db.PodcastList
 import app.kofipod.ui.primitives.KPButton
+import app.kofipod.ui.primitives.KofipodArtwork
 import app.kofipod.ui.theme.LocalKofipodColors
 import app.kofipod.ui.theme.LocalKofipodRadii
-import coil3.compose.AsyncImage
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
 
@@ -59,12 +59,13 @@ fun PodcastDetailScreen(
             Column(Modifier.padding(20.dp)) {
                 Text("← Back", color = c.textSoft, modifier = Modifier.clickable { onBack() })
                 Spacer(Modifier.height(16.dp))
-                AsyncImage(
+                KofipodArtwork(
+                    seed = summary.feedId.toInt(),
+                    label = summary.title,
+                    radius = r.lg,
+                    labelSize = 28.dp,
                     model = summary.artworkUrl.ifBlank { null },
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxWidth().height(220.dp)
-                        .clip(RoundedCornerShape(r.lg)).background(c.purpleTint),
+                    modifier = Modifier.fillMaxWidth().height(220.dp),
                 )
                 Spacer(Modifier.height(16.dp))
                 Text(summary.title, color = c.text, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp)

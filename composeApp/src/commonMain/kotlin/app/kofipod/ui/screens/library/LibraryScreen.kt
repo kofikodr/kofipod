@@ -25,9 +25,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import app.kofipod.db.Podcast
 import app.kofipod.ui.primitives.KPButton
+import app.kofipod.ui.primitives.KofipodArtwork
 import app.kofipod.ui.theme.LocalKofipodColors
 import app.kofipod.ui.theme.LocalKofipodRadii
-import coil3.compose.AsyncImage
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
@@ -131,10 +131,12 @@ private fun PodcastRow(p: Podcast, onClick: () -> Unit) {
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AsyncImage(
+        KofipodArtwork(
+            size = 48.dp,
+            seed = p.id.toIntOrNull() ?: p.id.hashCode(),
+            label = p.title,
+            radius = 12.dp,
             model = p.artworkUrl.ifBlank { null },
-            contentDescription = null,
-            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(r.sm)).background(c.purpleTint),
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
