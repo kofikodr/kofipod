@@ -37,7 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.kofipod.db.Download
+import app.kofipod.data.repo.DownloadRow
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.primitives.KofipodArtwork
@@ -292,7 +292,7 @@ private fun ProgressRing(fraction: Float, usedLabel: String) {
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun InProgressRow(d: Download, onCancel: () -> Unit) {
+private fun InProgressRow(d: DownloadRow, onCancel: () -> Unit) {
     val c = LocalKofipodColors.current
     val progress: Float = if (d.totalBytes > 0) {
         (d.downloadedBytes.toFloat() / d.totalBytes.toFloat()).coerceIn(0f, 1f)
@@ -306,13 +306,14 @@ private fun InProgressRow(d: Download, onCancel: () -> Unit) {
             KofipodArtwork(
                 size = 40.dp,
                 seed = d.episodeId.hashCode(),
-                label = d.episodeId.take(2),
+                label = (d.podcastTitle ?: d.episodeTitle ?: d.episodeId).take(2),
                 radius = 10.dp,
+                model = d.artworkUrl?.ifBlank { null },
             )
             Spacer(Modifier.size(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = d.episodeId,
+                    text = d.episodeTitle ?: d.episodeId,
                     color = c.text,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
@@ -320,7 +321,7 @@ private fun InProgressRow(d: Download, onCancel: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = d.source,
+                    text = "${d.podcastTitle ?: "\u2014"} \u00B7 ${d.source}",
                     color = c.textMute,
                     fontSize = 12.sp,
                     maxLines = 1,
@@ -364,7 +365,7 @@ private fun InProgressRow(d: Download, onCancel: () -> Unit) {
 }
 
 @Composable
-private fun QueuedRow(d: Download) {
+private fun QueuedRow(d: DownloadRow) {
     val c = LocalKofipodColors.current
     Row(
         modifier = Modifier
@@ -375,13 +376,14 @@ private fun QueuedRow(d: Download) {
         KofipodArtwork(
             size = 40.dp,
             seed = d.episodeId.hashCode(),
-            label = d.episodeId.take(2),
+            label = (d.podcastTitle ?: d.episodeTitle ?: d.episodeId).take(2),
             radius = 10.dp,
+            model = d.artworkUrl?.ifBlank { null },
         )
         Spacer(Modifier.size(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                text = d.episodeId,
+                text = d.episodeTitle ?: d.episodeId,
                 color = c.text,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
@@ -389,7 +391,7 @@ private fun QueuedRow(d: Download) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${d.source.uppercase()} \u00B7 ${formatMb(d.totalBytes.coerceAtLeast(d.downloadedBytes))}",
+                text = "${d.podcastTitle ?: "\u2014"} \u00B7 ${d.source.uppercase()} \u00B7 ${formatMb(d.totalBytes.coerceAtLeast(d.downloadedBytes))}",
                 color = c.textMute,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
@@ -407,7 +409,7 @@ private fun QueuedRow(d: Download) {
 }
 
 @Composable
-private fun CompletedRow(d: Download, onDelete: () -> Unit) {
+private fun CompletedRow(d: DownloadRow, onDelete: () -> Unit) {
     val c = LocalKofipodColors.current
     Row(
         modifier = Modifier
@@ -418,13 +420,14 @@ private fun CompletedRow(d: Download, onDelete: () -> Unit) {
         KofipodArtwork(
             size = 40.dp,
             seed = d.episodeId.hashCode(),
-            label = d.episodeId.take(2),
+            label = (d.podcastTitle ?: d.episodeTitle ?: d.episodeId).take(2),
             radius = 10.dp,
+            model = d.artworkUrl?.ifBlank { null },
         )
         Spacer(Modifier.size(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                text = d.episodeId,
+                text = d.episodeTitle ?: d.episodeId,
                 color = c.text,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
@@ -432,7 +435,7 @@ private fun CompletedRow(d: Download, onDelete: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = completedCaption(d),
+                text = "${d.podcastTitle ?: "\u2014"} \u00B7 ${completedCaption(d)}",
                 color = c.textMute,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
@@ -529,7 +532,7 @@ private fun pow10(n: Int): Long {
     return r
 }
 
-private fun etaLabel(d: Download): String {
+private fun etaLabel(d: DownloadRow): String {
     val total = d.totalBytes
     val done = d.downloadedBytes
     val started = d.startedAt
@@ -545,7 +548,7 @@ private fun etaLabel(d: Download): String {
     return "ETA ${m}m ${s}s"
 }
 
-private fun completedCaption(d: Download): String {
+private fun completedCaption(d: DownloadRow): String {
     val size = formatMb(d.totalBytes.coerceAtLeast(d.downloadedBytes))
     val age = when {
         d.completedAt != null -> "DONE"

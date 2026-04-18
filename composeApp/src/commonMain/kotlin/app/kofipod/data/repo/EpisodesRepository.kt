@@ -36,7 +36,10 @@ class EpisodesRepository(
                 guid = ep.guid,
                 title = ep.title,
                 description = ep.description.orEmpty(),
-                publishedAt = ep.datePublished.toEpochMilliseconds(),
+                // The Podcast Index API returns datePublished in Unix **seconds**, but the
+                // podcastindex-sdk's Instant deserializer reads the raw number as milliseconds,
+                // so ep.datePublished is 1000× too small (lands on 1970-01-21). Restore real ms.
+                publishedAt = ep.datePublished.toEpochMilliseconds() * 1000L,
                 durationSec = (ep.duration ?: 0).toLong(),
                 enclosureUrl = ep.enclosureUrl,
                 enclosureMimeType = ep.enclosureType,

@@ -1,0 +1,3 @@
+-- Fix Episode.publishedAt values that were stored as Unix seconds instead of ms.
+-- Any value below 10_000_000_000 is clearly seconds (year ~2286 in ms) — scale it up.
+UPDATE Episode SET publishedAt = publishedAt * 1000 WHERE publishedAt > 0 AND publishedAt < 10000000000;

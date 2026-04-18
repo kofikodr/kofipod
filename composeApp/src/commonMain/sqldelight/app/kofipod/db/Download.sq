@@ -22,6 +22,25 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 selectAll:
 SELECT * FROM Download;
 
+selectAllWithMeta:
+SELECT
+    d.episodeId,
+    d.state,
+    d.localPath,
+    d.downloadedBytes,
+    d.totalBytes,
+    d.source,
+    d.startedAt,
+    d.completedAt,
+    d.errorMessage,
+    e.title       AS episodeTitle,
+    e.podcastId   AS podcastId,
+    p.title       AS podcastTitle,
+    p.artworkUrl  AS artworkUrl
+FROM Download d
+LEFT JOIN Episode e ON e.id = d.episodeId
+LEFT JOIN Podcast p ON p.id = e.podcastId;
+
 selectByEpisode:
 SELECT * FROM Download WHERE episodeId = ?;
 

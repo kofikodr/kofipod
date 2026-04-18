@@ -5,6 +5,7 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.kofipod.db.Download
 import app.kofipod.db.KofipodDatabase
+import app.kofipod.db.SelectAllWithMeta
 import app.kofipod.downloads.DownloadEngine
 import app.kofipod.downloads.DownloadJob
 import app.kofipod.downloads.DownloadProgress
@@ -12,7 +13,40 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+
+data class DownloadRow(
+    val episodeId: String,
+    val state: String,
+    val localPath: String?,
+    val downloadedBytes: Long,
+    val totalBytes: Long,
+    val source: String,
+    val startedAt: Long?,
+    val completedAt: Long?,
+    val errorMessage: String?,
+    val episodeTitle: String?,
+    val podcastId: String?,
+    val podcastTitle: String?,
+    val artworkUrl: String?,
+)
+
+private fun SelectAllWithMeta.toDownloadRow(): DownloadRow = DownloadRow(
+    episodeId = episodeId,
+    state = state,
+    localPath = localPath,
+    downloadedBytes = downloadedBytes,
+    totalBytes = totalBytes,
+    source = source,
+    startedAt = startedAt,
+    completedAt = completedAt,
+    errorMessage = errorMessage,
+    episodeTitle = episodeTitle,
+    podcastId = podcastId,
+    podcastTitle = podcastTitle,
+    artworkUrl = artworkUrl,
+)
 
 class DownloadRepository(
     private val db: KofipodDatabase,
@@ -42,6 +76,12 @@ class DownloadRepository(
 
     fun all(): Flow<List<Download>> =
         db.downloadQueries.selectAll().asFlow().mapToList(Dispatchers.Default)
+
+    fun allWithMeta(): Flow<List<DownloadRow>> =
+        db.downloadQueries.selectAllWithMeta()
+            .asFlow()
+            .mapToList(Dispatchers.Default)
+            .map { rows -> rows.map { it.toDownloadRow() } }
 
     fun enqueue(episodeId: String, url: String, fileName: String, source: DownloadJob.Source) {
         val now = System.currentTimeMillis()
