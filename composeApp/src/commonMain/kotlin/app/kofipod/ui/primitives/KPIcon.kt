@@ -34,6 +34,7 @@ enum class KPIconName {
     ChevronDown,
     Radar,
     Trash,
+    Pencil,
 }
 
 @Composable
@@ -163,6 +164,13 @@ fun KPIcon(
                 moveTo(6f * scale, 7f * scale); lineTo(7f * scale, 20f * scale); lineTo(17f * scale, 20f * scale); lineTo(18f * scale, 7f * scale)
                 moveTo(10f * scale, 11f * scale); lineTo(10f * scale, 17f * scale)
                 moveTo(14f * scale, 11f * scale); lineTo(14f * scale, 17f * scale)
+            }
+            KPIconName.Pencil -> Path().apply {
+                // Tip at bottom-left, shaft diagonal to top-right, eraser/cap at top
+                moveTo(4f * scale, 20f * scale); lineTo(8f * scale, 19f * scale)
+                lineTo(20f * scale, 7f * scale); lineTo(17f * scale, 4f * scale)
+                lineTo(5f * scale, 16f * scale); close()
+                moveTo(14f * scale, 7f * scale); lineTo(17f * scale, 10f * scale)
             }
         }
         if (name == KPIconName.Play) {

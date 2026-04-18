@@ -1,0 +1,13 @@
+CREATE TABLE RecentPodcastView (
+    id TEXT NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL,
+    author TEXT NOT NULL,
+    description TEXT NOT NULL,
+    artworkUrl TEXT NOT NULL,
+    feedUrl TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT '',
+    episodeCount INTEGER NOT NULL DEFAULT 0,
+    viewedAt INTEGER NOT NULL
+);
+
+CREATE INDEX recent_podcast_view_viewedAt ON RecentPodcastView(viewedAt);

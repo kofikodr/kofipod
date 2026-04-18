@@ -8,6 +8,7 @@ import app.kofipod.data.repo.DownloadRepository
 import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.data.repo.LibraryRepository
 import app.kofipod.data.repo.PlaybackRepository
+import app.kofipod.data.repo.RecentlyViewedRepository
 import app.kofipod.data.repo.autoDownloadEnabledBool
 import app.kofipod.data.repo.notifyNewEpisodesEnabledBool
 import app.kofipod.db.Download
@@ -62,6 +63,7 @@ class PodcastDetailViewModel(
     private val playback: PlaybackRepository,
     private val downloads: DownloadRepository,
     private val sharer: Sharer,
+    private val recentlyViewed: RecentlyViewedRepository,
 ) : ViewModel() {
 
     private val remoteSummary = MutableStateFlow<PodcastSummary?>(null)
@@ -146,7 +148,9 @@ class PodcastDetailViewModel(
             runCatching {
                 if (!loadMore) {
                     val feed = api.podcastByFeedId(feedId)
-                    remoteSummary.value = feed.toSummary()
+                    val summary = feed.toSummary()
+                    remoteSummary.value = summary
+                    recentlyViewed.recordView(summary, Clock.System.now().toEpochMilliseconds())
                 }
                 val eps = api.episodesByFeedId(feedId, limit = remoteLimit.value)
                 remoteEpisodes.value = eps.map { it.toPreview() }

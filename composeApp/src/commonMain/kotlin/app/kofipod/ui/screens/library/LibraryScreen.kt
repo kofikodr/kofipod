@@ -96,7 +96,7 @@ fun LibraryScreen(
         Modifier.fillMaxSize().background(c.bg),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 24.dp),
     ) {
-        item { LibraryHeader(onNewList = { newListOpen = true }) }
+        item { LibraryHeader() }
 
         if (lists.isEmpty() && podcasts.isEmpty()) {
             item { LibraryEmptyState(onCreateList = { newListOpen = true }) }
@@ -202,49 +202,29 @@ private sealed interface Tile {
 }
 
 @Composable
-private fun LibraryHeader(onNewList: () -> Unit) {
+private fun LibraryHeader() {
     val c = LocalKofipodColors.current
-    Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                "Library",
-                color = c.text,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 32.sp,
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            "Library",
+            color = c.text,
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 32.sp,
+        )
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(c.success),
             )
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(c.success),
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    "Synced recently · Drive",
-                    color = c.textMute,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-            }
-        }
-        Box(
-            Modifier
-                .size(52.dp)
-                .clip(CircleShape)
-                .background(c.pink)
-                .clickable { onNewList() },
-            contentAlignment = Alignment.Center,
-        ) {
-            KPIcon(
-                name = KPIconName.Plus,
-                color = Color.White,
-                size = 26.dp,
-                strokeWidth = 2.4f,
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "Synced recently · Drive",
+                color = c.textMute,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
             )
         }
     }
