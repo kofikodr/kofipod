@@ -30,36 +30,38 @@ internal fun PlayerArtworkCard(
 ) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(r.xl)),
-    ) {
-        KofipodArtwork(
-            seed = seed,
-            label = podcastTitle.take(2).uppercase().ifBlank { "" },
-            labelSize = 48.dp,
-            radius = r.xl,
-            model = imageUrl.ifBlank { null },
-            modifier = Modifier.fillMaxWidth().aspectRatio(1f),
-        )
-        if (episodeNumber != null) {
-            Box(
-                Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(12.dp)
-                    .clip(RoundedCornerShape(r.pill))
-                    .background(c.pink)
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-            ) {
-                Text(
-                    text = "EP · $episodeNumber",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                )
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .fillMaxWidth(0.5f)
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(r.xl)),
+        ) {
+            KofipodArtwork(
+                seed = seed,
+                label = podcastTitle.take(2).uppercase().ifBlank { "" },
+                labelSize = 36.dp,
+                radius = r.xl,
+                model = imageUrl.ifBlank { null },
+                modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+            )
+            if (episodeNumber != null) {
+                Box(
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(8.dp)
+                        .clip(RoundedCornerShape(r.pill))
+                        .background(c.pink)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        text = "EP · $episodeNumber",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
             }
         }
     }
