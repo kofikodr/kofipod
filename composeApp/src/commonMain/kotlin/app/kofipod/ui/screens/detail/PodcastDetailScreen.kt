@@ -106,11 +106,17 @@ fun PodcastDetailScreen(
             }
         }
         val eps = if (state.inLibrary) {
-            state.storedEpisodes.map { EpisodeDisplay(it.id, it.title, (it.durationSec / 60).toInt()) }
+            state.storedEpisodes.map {
+                EpisodeDisplay(it.id, it.title, (it.durationSec / 60).toInt(), playable = true)
+            }
         } else {
-            state.remoteEpisodes.map { EpisodeDisplay(it.id, it.title, it.durationMinutes) }
+            state.remoteEpisodes.map {
+                EpisodeDisplay(it.id, it.title, it.durationMinutes, playable = false)
+            }
         }
-        items(eps, key = { it.id }) { ep -> EpisodeRow(ep) }
+        items(eps, key = { it.id }) { ep ->
+            EpisodeRow(ep, onPlay = { viewModel.play(ep.id) })
+        }
         item { Spacer(Modifier.height(24.dp)) }
     }
 
@@ -127,15 +133,42 @@ fun PodcastDetailScreen(
     }
 }
 
-private data class EpisodeDisplay(val id: String, val title: String, val durationMinutes: Int)
+private data class EpisodeDisplay(
+    val id: String,
+    val title: String,
+    val durationMinutes: Int,
+    val playable: Boolean,
+)
 
 @Composable
-private fun EpisodeRow(ep: EpisodeDisplay) {
+private fun EpisodeRow(ep: EpisodeDisplay, onPlay: () -> Unit) {
     val c = LocalKofipodColors.current
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
-        Text(ep.title, color = c.text, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        val label = if (ep.durationMinutes > 0) "${ep.durationMinutes} min" else "—"
-        Text(label, color = c.textMute, fontSize = 12.sp)
+    val r = LocalKofipodRadii.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .let { if (ep.playable) it.clickable { onPlay() } else it }
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(ep.title, color = c.text, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val label = if (ep.durationMinutes > 0) "${ep.durationMinutes} min" else "—"
+            Text(label, color = c.textMute, fontSize = 12.sp)
+        }
+        if (ep.playable) {
+            Spacer(Modifier.width(12.dp))
+            Box(
+                Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(r.pill))
+                    .background(c.pink)
+                    .clickable { onPlay() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("▶", color = c.surface, fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 

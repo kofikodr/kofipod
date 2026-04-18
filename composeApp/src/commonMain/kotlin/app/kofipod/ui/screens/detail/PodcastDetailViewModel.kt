@@ -6,12 +6,15 @@ import androidx.lifecycle.viewModelScope
 import app.kofipod.data.api.PodcastIndexApi
 import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.data.repo.LibraryRepository
+import app.kofipod.data.repo.PlaybackRepository
 import app.kofipod.data.repo.autoDownloadEnabledBool
 import app.kofipod.db.Episode
 import app.kofipod.db.Podcast
 import app.kofipod.db.PodcastList
 import app.kofipod.domain.PodcastSummary
 import app.kofipod.domain.toSummary
+import app.kofipod.playback.KofipodPlayer
+import app.kofipod.playback.PlayableEpisode
 import com.mr3y.podcastindex.model.EpisodeFeed
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -44,6 +47,8 @@ class PodcastDetailViewModel(
     private val library: LibraryRepository,
     private val episodes: EpisodeSource,
     private val api: PodcastIndexApi,
+    private val player: KofipodPlayer,
+    private val playback: PlaybackRepository,
 ) : ViewModel() {
 
     private val remoteSummary = MutableStateFlow<PodcastSummary?>(null)
@@ -102,6 +107,23 @@ class PodcastDetailViewModel(
         } else {
             library.movePodcastToList(podcastId, listId)
         }
+    }
+
+    fun play(episodeId: String) {
+        val ep = state.value.storedEpisodes.firstOrNull { it.id == episodeId } ?: return
+        if (ep.enclosureUrl.isBlank()) return
+        val summary = state.value.summary ?: return
+        val startMs = playback.positionFor(episodeId)
+        player.play(
+            PlayableEpisode(
+                episodeId = ep.id,
+                podcastTitle = summary.title,
+                title = ep.title,
+                artworkUrl = summary.artworkUrl,
+                sourceUrl = ep.enclosureUrl,
+                startPositionMs = startMs,
+            ),
+        )
     }
 
     fun toggleAutoDownload(enabled: Boolean) {

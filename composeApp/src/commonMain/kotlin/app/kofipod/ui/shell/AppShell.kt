@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -21,6 +22,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import app.kofipod.ui.nav.KofipodNavHost
 import app.kofipod.ui.nav.Route
+import app.kofipod.ui.player.MiniPlayer
 import app.kofipod.ui.theme.LocalKofipodColors
 
 @Composable
@@ -28,7 +30,12 @@ fun AppShell() {
     val nav = rememberNavController()
     Scaffold(
         containerColor = LocalKofipodColors.current.bg,
-        bottomBar = { BottomNav(nav) },
+        bottomBar = {
+            Column {
+                MiniPlayer(onOpen = { nav.navigate(Route.Player) })
+                BottomNav(nav)
+            }
+        },
     ) { padding ->
         Box(Modifier.padding(padding)) {
             KofipodNavHost(nav)
