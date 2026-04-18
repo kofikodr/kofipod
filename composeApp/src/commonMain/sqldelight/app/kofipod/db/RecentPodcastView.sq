@@ -1,0 +1,30 @@
+CREATE TABLE RecentPodcastView (
+    id TEXT NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL,
+    author TEXT NOT NULL,
+    description TEXT NOT NULL,
+    artworkUrl TEXT NOT NULL,
+    feedUrl TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT '',
+    episodeCount INTEGER NOT NULL DEFAULT 0,
+    viewedAt INTEGER NOT NULL
+);
+
+CREATE INDEX recent_podcast_view_viewedAt ON RecentPodcastView(viewedAt);
+
+-- Recently viewed podcasts that are NOT currently saved in any list.
+selectExcludingSaved:
+SELECT r.*
+FROM RecentPodcastView r
+LEFT JOIN Podcast p ON p.id = r.id
+WHERE p.id IS NULL
+ORDER BY r.viewedAt DESC
+LIMIT :maxRows;
+
+upsert:
+INSERT OR REPLACE INTO RecentPodcastView
+(id, title, author, description, artworkUrl, feedUrl, category, episodeCount, viewedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteById:
+DELETE FROM RecentPodcastView WHERE id = ?;

@@ -40,6 +40,7 @@ enum class KPIconName {
     NextTrack,
     Moon,
     SpeedUp,
+    Pencil,
 }
 
 @Composable
@@ -231,6 +232,13 @@ fun KPIcon(
                 // Lightning bolt
                 moveTo(13f * scale, 3f * scale); lineTo(5f * scale, 13f * scale); lineTo(11f * scale, 13f * scale)
                 lineTo(10f * scale, 21f * scale); lineTo(19f * scale, 10f * scale); lineTo(13f * scale, 10f * scale); close()
+            }
+            KPIconName.Pencil -> Path().apply {
+                // Tip at bottom-left, shaft diagonal to top-right, eraser/cap at top
+                moveTo(4f * scale, 20f * scale); lineTo(8f * scale, 19f * scale)
+                lineTo(20f * scale, 7f * scale); lineTo(17f * scale, 4f * scale)
+                lineTo(5f * scale, 16f * scale); close()
+                moveTo(14f * scale, 7f * scale); lineTo(17f * scale, 10f * scale)
             }
         }
         val filled = name == KPIconName.Play ||

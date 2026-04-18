@@ -48,6 +48,8 @@ class LibraryRepository(private val db: KofipodDatabase) {
         db.podcastListQueries.insert(id, name, position.toLong(), now)
     }
 
+    fun renameList(id: String, name: String) = db.podcastListQueries.rename(name, id)
+
     fun deleteList(id: String) = db.podcastListQueries.delete(id)
 
     fun movePodcastToList(podcastId: String, listId: String?) =
