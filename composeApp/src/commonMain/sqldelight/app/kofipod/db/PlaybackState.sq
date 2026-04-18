@@ -1,0 +1,19 @@
+CREATE TABLE PlaybackState (
+    episodeId TEXT NOT NULL PRIMARY KEY,
+    positionMs INTEGER NOT NULL,
+    durationMs INTEGER NOT NULL,
+    completedAt INTEGER,
+    playbackSpeed REAL NOT NULL DEFAULT 1.0,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
+);
+
+upsert:
+INSERT OR REPLACE INTO PlaybackState (episodeId, positionMs, durationMs, completedAt, playbackSpeed, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?);
+
+selectByEpisode:
+SELECT * FROM PlaybackState WHERE episodeId = ?;
+
+selectAll:
+SELECT * FROM PlaybackState;

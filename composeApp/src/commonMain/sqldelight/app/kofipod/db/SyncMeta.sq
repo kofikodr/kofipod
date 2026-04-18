@@ -1,0 +1,10 @@
+CREATE TABLE SyncMeta (
+    key TEXT NOT NULL PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+put:
+INSERT OR REPLACE INTO SyncMeta (key, value) VALUES (?, ?);
+
+get:
+SELECT value FROM SyncMeta WHERE key = ?;

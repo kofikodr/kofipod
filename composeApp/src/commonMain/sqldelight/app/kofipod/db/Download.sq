@@ -1,0 +1,44 @@
+CREATE TABLE Download (
+    episodeId TEXT NOT NULL PRIMARY KEY,
+    state TEXT NOT NULL,
+    localPath TEXT,
+    downloadedBytes INTEGER NOT NULL DEFAULT 0,
+    totalBytes INTEGER NOT NULL DEFAULT 0,
+    source TEXT NOT NULL,
+    startedAt INTEGER,
+    completedAt INTEGER,
+    errorMessage TEXT,
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
+);
+
+CREATE INDEX download_state ON Download(state);
+CREATE INDEX download_source_completed ON Download(source, completedAt);
+
+upsert:
+INSERT OR REPLACE INTO Download
+(episodeId, state, localPath, downloadedBytes, totalBytes, source, startedAt, completedAt, errorMessage)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectAll:
+SELECT * FROM Download;
+
+selectByEpisode:
+SELECT * FROM Download WHERE episodeId = ?;
+
+selectByState:
+SELECT * FROM Download WHERE state = ?;
+
+selectAutoCompletedOldestFirst:
+SELECT * FROM Download WHERE source = 'Auto' AND state = 'Completed' ORDER BY completedAt ASC;
+
+totalCompletedBytes:
+SELECT COALESCE(SUM(totalBytes), 0) AS total FROM Download WHERE state = 'Completed';
+
+updateState:
+UPDATE Download SET state = ?, errorMessage = ? WHERE episodeId = ?;
+
+updateProgress:
+UPDATE Download SET downloadedBytes = ?, totalBytes = ? WHERE episodeId = ?;
+
+delete:
+DELETE FROM Download WHERE episodeId = ?;

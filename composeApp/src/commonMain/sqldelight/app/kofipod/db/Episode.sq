@@ -1,0 +1,35 @@
+CREATE TABLE Episode (
+    id TEXT NOT NULL PRIMARY KEY,
+    podcastId TEXT NOT NULL,
+    guid TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    publishedAt INTEGER NOT NULL,
+    durationSec INTEGER NOT NULL,
+    enclosureUrl TEXT NOT NULL,
+    enclosureMimeType TEXT NOT NULL,
+    fileSizeBytes INTEGER NOT NULL,
+    seasonNumber INTEGER,
+    episodeNumber INTEGER,
+    FOREIGN KEY (podcastId) REFERENCES Podcast(id) ON DELETE CASCADE
+);
+
+CREATE INDEX episode_podcastId ON Episode(podcastId);
+CREATE UNIQUE INDEX episode_podcastGuid ON Episode(podcastId, guid);
+
+insert:
+INSERT OR IGNORE INTO Episode
+(id, podcastId, guid, title, description, publishedAt, durationSec, enclosureUrl, enclosureMimeType, fileSizeBytes, seasonNumber, episodeNumber)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectByPodcast:
+SELECT * FROM Episode WHERE podcastId = ? ORDER BY publishedAt DESC;
+
+selectById:
+SELECT * FROM Episode WHERE id = ?;
+
+selectGuidsByPodcast:
+SELECT guid FROM Episode WHERE podcastId = ?;
+
+delete:
+DELETE FROM Episode WHERE id = ?;

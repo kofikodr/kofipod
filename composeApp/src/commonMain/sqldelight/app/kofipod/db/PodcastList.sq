@@ -1,0 +1,21 @@
+CREATE TABLE PodcastList (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    createdAt INTEGER NOT NULL
+);
+
+selectAll:
+SELECT * FROM PodcastList ORDER BY position ASC;
+
+insert:
+INSERT INTO PodcastList (id, name, position, createdAt) VALUES (?, ?, ?, ?);
+
+rename:
+UPDATE PodcastList SET name = ? WHERE id = ?;
+
+reposition:
+UPDATE PodcastList SET position = ? WHERE id = ?;
+
+delete:
+DELETE FROM PodcastList WHERE id = ?;
