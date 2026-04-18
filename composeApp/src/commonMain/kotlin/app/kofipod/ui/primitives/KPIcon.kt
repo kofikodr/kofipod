@@ -34,6 +34,12 @@ enum class KPIconName {
     ChevronDown,
     Radar,
     Trash,
+    SkipForward,
+    SkipBack,
+    PrevTrack,
+    NextTrack,
+    Moon,
+    SpeedUp,
 }
 
 @Composable
@@ -164,8 +170,76 @@ fun KPIcon(
                 moveTo(10f * scale, 11f * scale); lineTo(10f * scale, 17f * scale)
                 moveTo(14f * scale, 11f * scale); lineTo(14f * scale, 17f * scale)
             }
+            KPIconName.SkipForward -> Path().apply {
+                // Circular arrow with "+" suggestion: ‹arc› + arrowhead on top
+                addArc(
+                    androidx.compose.ui.geometry.Rect(4f * scale, 4f * scale, 20f * scale, 20f * scale),
+                    startAngleDegrees = -60f,
+                    sweepAngleDegrees = 300f,
+                )
+                moveTo(15f * scale, 2.5f * scale); lineTo(18f * scale, 5.5f * scale); lineTo(14.5f * scale, 7.5f * scale)
+            }
+            KPIconName.SkipBack -> Path().apply {
+                addArc(
+                    androidx.compose.ui.geometry.Rect(4f * scale, 4f * scale, 20f * scale, 20f * scale),
+                    startAngleDegrees = 240f,
+                    sweepAngleDegrees = -300f,
+                )
+                moveTo(9f * scale, 2.5f * scale); lineTo(6f * scale, 5.5f * scale); lineTo(9.5f * scale, 7.5f * scale)
+            }
+            KPIconName.PrevTrack -> Path().apply {
+                // Vertical bar on the left + triangle pointing left
+                addRect(androidx.compose.ui.geometry.Rect(5f * scale, 5f * scale, 8f * scale, 19f * scale))
+                moveTo(20f * scale, 5f * scale); lineTo(10f * scale, 12f * scale); lineTo(20f * scale, 19f * scale); close()
+            }
+            KPIconName.NextTrack -> Path().apply {
+                // Triangle pointing right + vertical bar on the right
+                moveTo(4f * scale, 5f * scale); lineTo(14f * scale, 12f * scale); lineTo(4f * scale, 19f * scale); close()
+                addRect(androidx.compose.ui.geometry.Rect(16f * scale, 5f * scale, 19f * scale, 19f * scale))
+            }
+            KPIconName.Moon -> Path().apply {
+                // Crescent moon via two overlapping arcs
+                moveTo(18f * scale, 14.5f * scale)
+                cubicTo(
+                    15.5f * scale, 16f * scale,
+                    11.5f * scale, 15.5f * scale,
+                    9.5f * scale, 13.5f * scale,
+                )
+                cubicTo(
+                    7f * scale, 11f * scale,
+                    7.5f * scale, 7f * scale,
+                    10f * scale, 5f * scale,
+                )
+                cubicTo(
+                    6f * scale, 6f * scale,
+                    4f * scale, 10f * scale,
+                    5f * scale, 14f * scale,
+                )
+                cubicTo(
+                    6f * scale, 18f * scale,
+                    11f * scale, 20f * scale,
+                    15f * scale, 19f * scale,
+                )
+                cubicTo(
+                    16.5f * scale, 18.5f * scale,
+                    17.5f * scale, 16.8f * scale,
+                    18f * scale, 14.5f * scale,
+                )
+                close()
+            }
+            KPIconName.SpeedUp -> Path().apply {
+                // Lightning bolt
+                moveTo(13f * scale, 3f * scale); lineTo(5f * scale, 13f * scale); lineTo(11f * scale, 13f * scale)
+                lineTo(10f * scale, 21f * scale); lineTo(19f * scale, 10f * scale); lineTo(13f * scale, 10f * scale); close()
+            }
         }
-        if (name == KPIconName.Play) {
+        val filled = name == KPIconName.Play ||
+            name == KPIconName.Pause ||
+            name == KPIconName.PrevTrack ||
+            name == KPIconName.NextTrack ||
+            name == KPIconName.SpeedUp ||
+            name == KPIconName.Moon
+        if (filled) {
             drawPath(path = path, color = color)
         } else {
             drawPath(path = path, color = color, style = stroke)

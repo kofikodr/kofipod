@@ -2,136 +2,93 @@
 package app.kofipod.ui.screens.player
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Text
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import app.kofipod.playback.KofipodPlayer
-import app.kofipod.ui.primitives.KofipodArtwork
 import app.kofipod.ui.theme.LocalKofipodColors
-import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
-fun PlayerScreen(onBack: () -> Unit) {
-    val player = koinInject<KofipodPlayer>()
-    val state by player.state.collectAsState()
+fun PlayerScreen(
+    onBack: () -> Unit,
+    onOpenPodcast: (String) -> Unit,
+    viewModel: PlayerViewModel = koinViewModel(),
+) {
+    val state by viewModel.state.collectAsState()
     val c = LocalKofipodColors.current
+    val p = state.player
 
-    Column(Modifier.fillMaxSize().background(c.bg).padding(24.dp)) {
-        Text(
-            "← Back",
-            color = c.textSoft,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.clickable { onBack() },
-        )
-        Spacer(Modifier.height(24.dp))
-        Text(
-            "Now playing",
-            color = c.textMute,
-            fontWeight = FontWeight.Bold,
-            fontSize = 12.sp,
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(c.bg)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp),
+    ) {
+        Spacer(Modifier.height(16.dp))
+        PlayerTopBar(
+            podcastTitle = p.podcastTitle,
+            onBack = onBack,
+            onShare = viewModel::share,
+            onGoToPodcast = {
+                if (p.podcastId.isNotBlank()) onOpenPodcast(p.podcastId)
+            },
+            onMarkPlayed = viewModel::markAsPlayed,
         )
         Spacer(Modifier.height(16.dp))
-        KofipodArtwork(
-            seed = state.episodeId?.hashCode() ?: 0,
-            label = state.title,
-            labelSize = 36.dp,
-            radius = 20.dp,
-            model = state.artworkUrl.ifBlank { null },
-            modifier = Modifier.fillMaxWidth().height(280.dp),
+        PlayerArtworkCard(
+            seed = p.episodeId?.hashCode() ?: 0,
+            imageUrl = p.artworkUrl,
+            podcastTitle = p.podcastTitle,
+            episodeNumber = p.episodeNumber,
         )
-        Spacer(Modifier.height(24.dp))
-        Text(
-            text = state.title.ifBlank { "—" },
-            color = c.text,
-            fontWeight = FontWeight.ExtraBold,
-            fontSize = 22.sp,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
+        Spacer(Modifier.height(20.dp))
+        PlayerHeader(
+            episodeNumber = p.episodeNumber,
+            durationMs = p.durationMs,
+            title = p.title,
+            podcastTitle = p.podcastTitle,
         )
-        if (state.podcastTitle.isNotBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text(state.podcastTitle, color = c.textSoft, fontWeight = FontWeight.Medium)
-        }
-
-        Spacer(Modifier.height(24.dp))
-        val progress =
-            if (state.durationMs > 0) state.positionMs.toFloat() / state.durationMs else 0f
-        Slider(
-            value = progress,
-            onValueChange = { player.seekTo((it * state.durationMs).toLong()) },
+        Spacer(Modifier.height(20.dp))
+        PlayerScrubber(
+            positionMs = p.positionMs,
+            durationMs = p.durationMs,
+            onSeek = viewModel::seekTo,
         )
-        Row(Modifier.fillMaxWidth()) {
-            Text(formatMs(state.positionMs), color = c.textMute, fontSize = 12.sp)
-            Spacer(Modifier.weight(1f))
-            Text(formatMs(state.durationMs), color = c.textMute, fontSize = 12.sp)
-        }
-
-        Spacer(Modifier.height(24.dp))
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "⟲ 10",
-                color = c.text,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable { player.skipBack() },
-            )
-            Box(
-                Modifier
-                    .size(72.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(c.pink)
-                    .clickable {
-                        if (state.isPlaying) player.pause() else player.resume()
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    if (state.isPlaying) "II" else "▶",
-                    color = c.surface,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 22.sp,
-                )
-            }
-            Text(
-                "30 ⟳",
-                color = c.text,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable { player.skipForward() },
-            )
-        }
+        Spacer(Modifier.height(20.dp))
+        PlayerTransport(
+            isPlaying = p.isPlaying,
+            skipBackSec = state.skipBackSec,
+            skipForwardSec = state.skipForwardSec,
+            hasPrev = state.hasPrev,
+            hasNext = state.hasNext,
+            onTogglePlay = viewModel::togglePlayPause,
+            onSkipBack = viewModel::skipBack,
+            onSkipForward = viewModel::skipForward,
+            onPrev = viewModel::prev,
+            onNext = viewModel::next,
+        )
+        Spacer(Modifier.height(20.dp))
+        PlayerBottomBar(
+            speed = p.speed,
+            isPlaying = p.isPlaying,
+            sleepRemainingMs = p.sleepRemainingMs,
+            onCycleSpeed = viewModel::cycleSpeed,
+            onSetSleep = viewModel::setSleepTimer,
+        )
+        Spacer(Modifier.height(32.dp))
     }
-}
 
-private fun formatMs(ms: Long): String {
-    if (ms <= 0) return "0:00"
-    val totalSec = ms / 1000
-    val m = totalSec / 60
-    val s = totalSec % 60
-    val sPadded = if (s < 10) "0$s" else s.toString()
-    return "$m:$sPadded"
+    state.toast?.let { text ->
+        PlayerToast(text = text, onDone = viewModel::dismissToast)
+    }
 }

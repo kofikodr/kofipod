@@ -42,12 +42,22 @@ fun AppShell() {
     val currentRoute = backStack?.destination?.route
     val hideChrome = currentRoute == Route.Onboarding::class.qualifiedName ||
         currentRoute == Route.Splash::class.qualifiedName
+    val onPlayerScreen = currentRoute == Route.Player::class.qualifiedName
     Scaffold(
         containerColor = LocalKofipodColors.current.bg,
         bottomBar = {
             if (!hideChrome) {
                 Column {
-                    MiniPlayer(onOpen = { nav.navigate(Route.Player) })
+                    if (!onPlayerScreen) {
+                        MiniPlayer(
+                            onOpen = {
+                                nav.navigate(
+                                    Route.Player,
+                                    navOptions { launchSingleTop = true },
+                                )
+                            },
+                        )
+                    }
                     BottomNav(nav)
                 }
             }

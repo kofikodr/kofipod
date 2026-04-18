@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.ui.nav
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
 import androidx.navigation.NavOptions
@@ -67,8 +72,34 @@ fun KofipodNavHost(navController: NavHostController) {
         }
         composable<Route.PodcastDetail> { entry ->
             val detail = entry.toRoute<Route.PodcastDetail>()
-            PodcastDetailScreen(podcastId = detail.podcastId, onBack = { navController.popBackStack() })
+            PodcastDetailScreen(
+                podcastId = detail.podcastId,
+                onBack = { navController.popBackStack() },
+                onOpenPlayer = {
+                    navController.navigate(
+                        Route.Player,
+                        NavOptions.Builder().setLaunchSingleTop(true).build(),
+                    )
+                },
+            )
         }
-        composable<Route.Player> { PlayerScreen(onBack = { navController.popBackStack() }) }
+        composable<Route.Player>(
+            enterTransition = {
+                slideInVertically(animationSpec = tween(300)) { it }
+            },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = {
+                slideOutVertically(animationSpec = tween(300)) { it }
+            },
+        ) {
+            PlayerScreen(
+                onBack = { navController.popBackStack() },
+                onOpenPodcast = { id ->
+                    navController.popBackStack()
+                    navController.navigate(Route.PodcastDetail(id))
+                },
+            )
+        }
     }
 }

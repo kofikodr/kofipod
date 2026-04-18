@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.ui.screens.detail
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -10,6 +12,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -50,6 +54,7 @@ private enum class DetailTab { Episodes, About }
 fun PodcastDetailScreen(
     podcastId: String,
     onBack: () -> Unit,
+    onOpenPlayer: () -> Unit,
     viewModel: PodcastDetailViewModel = koinViewModel { parametersOf(podcastId) },
 ) {
     val state by viewModel.state.collectAsState()
@@ -137,6 +142,7 @@ fun PodcastDetailScreen(
         if (tab == DetailTab.Episodes) {
             val rows: List<EpisodeRowData> = if (state.inLibrary) {
                 state.storedEpisodes.map {
+                    val active = it.id == state.playingEpisodeId
                     EpisodeRowData(
                         id = it.id,
                         title = it.title,
@@ -145,10 +151,14 @@ fun PodcastDetailScreen(
                         fileSizeBytes = it.fileSizeBytes,
                         playable = true,
                         downloadState = state.downloadStates[it.id],
+                        isActive = active,
+                        isPlaying = active && state.isPlaying,
+                        progress = if (active) state.playbackProgress else 0f,
                     )
                 }
             } else {
                 state.remoteEpisodes.map {
+                    val active = it.id == state.playingEpisodeId
                     EpisodeRowData(
                         id = it.id,
                         title = it.title,
@@ -157,6 +167,9 @@ fun PodcastDetailScreen(
                         fileSizeBytes = 0,
                         playable = it.enclosureUrl.isNotBlank(),
                         downloadState = null,
+                        isActive = active,
+                        isPlaying = active && state.isPlaying,
+                        progress = if (active) state.playbackProgress else 0f,
                     )
                 }
             }.let { if (newestFirst) it else it.asReversed() }
@@ -175,6 +188,12 @@ fun PodcastDetailScreen(
                     ep,
                     canDownload = state.inLibrary,
                     onPlay = { if (ep.playable) viewModel.play(ep.id) },
+                    onOpen = {
+                        if (ep.playable) {
+                            viewModel.play(ep.id)
+                            onOpenPlayer()
+                        }
+                    },
                     onDownload = { if (ep.playable && state.inLibrary) viewModel.download(ep.id) },
                     onShare = { viewModel.shareEpisode(ep.id) },
                 )
@@ -475,6 +494,9 @@ private data class EpisodeRowData(
     val fileSizeBytes: Long,
     val playable: Boolean,
     val downloadState: String?,
+    val isActive: Boolean = false,
+    val isPlaying: Boolean = false,
+    val progress: Float = 0f,
 )
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -483,6 +505,7 @@ private fun EpisodeRow(
     ep: EpisodeRowData,
     canDownload: Boolean,
     onPlay: () -> Unit,
+    onOpen: () -> Unit,
     onDownload: () -> Unit,
     onShare: () -> Unit,
 ) {
@@ -492,23 +515,19 @@ private fun EpisodeRow(
             .fillMaxWidth()
             .combinedClickable(
                 enabled = ep.playable,
-                onClick = onPlay,
+                onClick = onOpen,
                 onLongClick = onShare,
             )
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Left: circular play button
-        Box(
-            Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(999.dp))
-                .background(c.purpleTint)
-                .clickable(enabled = ep.playable) { onPlay() },
-            contentAlignment = Alignment.Center,
-        ) {
-            KPIcon(name = KPIconName.Play, color = c.purple, size = 16.dp)
-        }
+        EpisodePlayButton(
+            active = ep.isActive,
+            isPlaying = ep.isPlaying,
+            progress = ep.progress,
+            enabled = ep.playable,
+            onClick = onPlay,
+        )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -530,6 +549,44 @@ private fun EpisodeRow(
         Spacer(Modifier.width(8.dp))
         // Right: state icon
         StateIndicator(ep = ep, canDownload = canDownload, onDownload = onDownload)
+    }
+}
+
+@Composable
+private fun EpisodePlayButton(
+    active: Boolean,
+    isPlaying: Boolean,
+    progress: Float,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    val animatedProgress by animateFloatAsState(targetValue = if (active) progress else 0f, label = "epProgress")
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .background(if (active) c.purple else c.purpleTint)
+            .clickable(enabled = enabled) { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (active) {
+            Canvas(Modifier.fillMaxSize().padding(2.dp)) {
+                val stroke = 2.5.dp.toPx()
+                drawArc(
+                    color = c.pink,
+                    startAngle = -90f,
+                    sweepAngle = 360f * animatedProgress,
+                    useCenter = false,
+                    style = Stroke(width = stroke, cap = StrokeCap.Round),
+                )
+            }
+        }
+        KPIcon(
+            name = if (active && isPlaying) KPIconName.Pause else KPIconName.Play,
+            color = if (active) Color.White else c.purple,
+            size = 16.dp,
+        )
     }
 }
 

@@ -20,6 +20,7 @@ import app.kofipod.ui.screens.downloads.DownloadsViewModel
 import app.kofipod.ui.screens.library.LibraryDetailViewModel
 import app.kofipod.ui.screens.library.LibraryViewModel
 import app.kofipod.ui.screens.onboarding.OnboardingViewModel
+import app.kofipod.ui.screens.player.PlayerViewModel
 import app.kofipod.ui.screens.scheduler.SchedulerInfoViewModel
 import app.kofipod.ui.screens.search.SearchViewModel
 import app.kofipod.ui.screens.settings.SettingsViewModel
@@ -60,4 +61,5 @@ val commonDataModule = module {
     viewModel { (podcastId: String) ->
         PodcastDetailViewModel(podcastId, get(), get(), get(), get(), get(), get(), get())
     }
+    viewModel { PlayerViewModel(get(), get(), get(), get(), get()) }
 }

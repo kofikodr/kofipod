@@ -4,6 +4,7 @@ package app.kofipod.playback
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
+import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -13,11 +14,16 @@ import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+private const val EXTRA_PODCAST_ID = "kofipod.podcastId"
+private const val EXTRA_EPISODE_NUMBER = "kofipod.episodeNumber"
 
 actual class KofipodPlayer(private val context: Context) {
 
@@ -26,8 +32,11 @@ actual class KofipodPlayer(private val context: Context) {
 
     private var controller: MediaController? = null
     private var tickJob: Job? = null
-    private val scope = CoroutineScope(Dispatchers.Main)
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var pendingEpisode: PlayableEpisode? = null
+
+    private var sleepJob: Job? = null
+    private var sleepExpiresAt: Long? = null
 
     init {
         connect()
@@ -73,19 +82,30 @@ actual class KofipodPlayer(private val context: Context) {
     private fun pushState() {
         val c = controller ?: return
         val meta = c.currentMediaItem?.mediaMetadata
+        val extras = meta?.extras
+        val remainingSleep = sleepExpiresAt?.let {
+            (it - System.currentTimeMillis()).coerceAtLeast(0L)
+        }
         _state.value = PlayerState(
             episodeId = c.currentMediaItem?.mediaId,
+            podcastId = extras?.getString(EXTRA_PODCAST_ID).orEmpty(),
             title = meta?.title?.toString().orEmpty(),
             podcastTitle = meta?.artist?.toString().orEmpty(),
             artworkUrl = meta?.artworkUri?.toString().orEmpty(),
+            episodeNumber = extras?.getInt(EXTRA_EPISODE_NUMBER, -1)?.takeIf { it > 0 },
             isPlaying = c.isPlaying,
             positionMs = c.currentPosition.coerceAtLeast(0),
             durationMs = c.duration.coerceAtLeast(0),
             speed = c.playbackParameters.speed,
+            sleepRemainingMs = remainingSleep,
         )
     }
 
     private fun doPlay(c: MediaController, episode: PlayableEpisode) {
+        val extras = Bundle().apply {
+            if (episode.podcastId.isNotBlank()) putString(EXTRA_PODCAST_ID, episode.podcastId)
+            episode.episodeNumber?.let { putInt(EXTRA_EPISODE_NUMBER, it) }
+        }
         val item = MediaItem.Builder()
             .setMediaId(episode.episodeId)
             .setUri(episode.sourceUrl)
@@ -96,6 +116,7 @@ actual class KofipodPlayer(private val context: Context) {
                     .setArtworkUri(
                         if (episode.artworkUrl.isNotBlank()) Uri.parse(episode.artworkUrl) else null,
                     )
+                    .setExtras(extras)
                     .build(),
             )
             .build()
@@ -119,5 +140,35 @@ actual class KofipodPlayer(private val context: Context) {
     actual fun skipBack() {
         controller?.let { it.seekTo((it.currentPosition - 10_000).coerceAtLeast(0)) }
     }
+
+    actual fun setSleepTimer(ms: Long?) {
+        sleepJob?.cancel()
+        sleepJob = null
+        if (ms == null || ms <= 0L) {
+            sleepExpiresAt = null
+            pushState()
+            return
+        }
+        sleepExpiresAt = System.currentTimeMillis() + ms
+        sleepJob = scope.launch {
+            delay(ms)
+            controller?.pause()
+            sleepExpiresAt = null
+            pushState()
+        }
+        pushState()
+    }
+
     actual fun stop() { controller?.stop() }
+
+    actual fun release() {
+        tickJob?.cancel()
+        tickJob = null
+        sleepJob?.cancel()
+        sleepJob = null
+        sleepExpiresAt = null
+        scope.cancel()
+        controller?.release()
+        controller = null
+    }
 }

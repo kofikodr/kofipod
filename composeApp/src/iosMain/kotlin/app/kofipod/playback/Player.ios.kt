@@ -15,5 +15,7 @@ actual class KofipodPlayer {
     actual fun setSpeed(speed: Float) {}
     actual fun skipForward() {}
     actual fun skipBack() {}
+    actual fun setSleepTimer(ms: Long?) {}
     actual fun stop() {}
+    actual fun release() {}
 }
