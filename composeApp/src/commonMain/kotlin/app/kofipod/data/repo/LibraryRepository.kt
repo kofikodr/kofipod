@@ -38,6 +38,7 @@ class LibraryRepository(private val db: KofipodDatabase) {
             feedUrl = summary.feedUrl,
             listId = listId,
             autoDownloadEnabled = 0,
+            notifyNewEpisodesEnabled = 1,
             lastCheckedAt = null,
             addedAt = now,
         )
@@ -55,6 +56,9 @@ class LibraryRepository(private val db: KofipodDatabase) {
     fun setAutoDownload(podcastId: String, enabled: Boolean) =
         db.podcastQueries.setAutoDownload(if (enabled) 1 else 0, podcastId)
 
+    fun setNotifyNewEpisodes(podcastId: String, enabled: Boolean) =
+        db.podcastQueries.setNotifyNewEpisodes(if (enabled) 1 else 0, podcastId)
+
     fun setLastChecked(podcastId: String, atMillis: Long) =
         db.podcastQueries.setLastChecked(atMillis, podcastId)
 
@@ -62,3 +66,5 @@ class LibraryRepository(private val db: KofipodDatabase) {
 }
 
 fun Podcast.autoDownloadEnabledBool(): Boolean = autoDownloadEnabled != 0L
+
+fun Podcast.notifyNewEpisodesEnabledBool(): Boolean = notifyNewEpisodesEnabled != 0L

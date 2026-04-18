@@ -9,6 +9,7 @@ import app.kofipod.data.repo.EpisodesRepository
 import app.kofipod.data.repo.LibraryRepository
 import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.data.repo.autoDownloadEnabledBool
+import app.kofipod.data.repo.notifyNewEpisodesEnabledBool
 import app.kofipod.downloads.DownloadJob
 import kotlinx.coroutines.flow.first
 import org.koin.core.component.KoinComponent
@@ -29,6 +30,8 @@ class EpisodeCheckWorker(
         val cap = settings.storageCapBytes().first()
         var totalNew = 0
         var showsWithNew = 0
+        var notifyNew = 0
+        var notifyShows = 0
         val now = System.currentTimeMillis()
 
         for (podcast in library.podcastsFlow().first()) {
@@ -37,6 +40,10 @@ class EpisodeCheckWorker(
             if (result.inserted > 0) {
                 totalNew += result.inserted
                 showsWithNew++
+                if (podcast.notifyNewEpisodesEnabledBool()) {
+                    notifyNew += result.inserted
+                    notifyShows++
+                }
                 if (podcast.autoDownloadEnabledBool()) {
                     episodes.episodesFlow(podcast.id).first()
                         .take(result.inserted)
@@ -57,7 +64,7 @@ class EpisodeCheckWorker(
             settings,
             SchedulerRun(at = now, inserted = totalNew, shows = showsWithNew),
         )
-        if (totalNew > 0) notifier.postNewEpisodes(totalNew, showsWithNew)
+        if (notifyNew > 0) notifier.postNewEpisodes(notifyNew, notifyShows)
         Result.success()
     }.getOrElse { Result.retry() }
 }

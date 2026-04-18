@@ -7,6 +7,7 @@ CREATE TABLE Podcast (
     feedUrl TEXT NOT NULL,
     listId TEXT,
     autoDownloadEnabled INTEGER NOT NULL DEFAULT 0,
+    notifyNewEpisodesEnabled INTEGER NOT NULL DEFAULT 1,
     lastCheckedAt INTEGER,
     addedAt INTEGER NOT NULL,
     FOREIGN KEY (listId) REFERENCES PodcastList(id) ON DELETE SET NULL
@@ -16,8 +17,8 @@ CREATE INDEX podcast_listId ON Podcast(listId);
 
 insert:
 INSERT OR REPLACE INTO Podcast
-(id, title, author, description, artworkUrl, feedUrl, listId, autoDownloadEnabled, lastCheckedAt, addedAt)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+(id, title, author, description, artworkUrl, feedUrl, listId, autoDownloadEnabled, notifyNewEpisodesEnabled, lastCheckedAt, addedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 selectAll:
 SELECT * FROM Podcast ORDER BY title COLLATE NOCASE ASC;
@@ -33,6 +34,9 @@ UPDATE Podcast SET listId = ? WHERE id = ?;
 
 setAutoDownload:
 UPDATE Podcast SET autoDownloadEnabled = ? WHERE id = ?;
+
+setNotifyNewEpisodes:
+UPDATE Podcast SET notifyNewEpisodesEnabled = ? WHERE id = ?;
 
 setLastChecked:
 UPDATE Podcast SET lastCheckedAt = ? WHERE id = ?;

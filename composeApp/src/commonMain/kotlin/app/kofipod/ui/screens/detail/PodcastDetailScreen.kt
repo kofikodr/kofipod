@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.ui.screens.detail
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -30,6 +34,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import androidx.compose.ui.window.Dialog
 import app.kofipod.db.PodcastList
+import app.kofipod.ui.permission.rememberNotificationPermissionRequester
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.primitives.KofipodArtwork
@@ -62,6 +67,10 @@ fun PodcastDetailScreen(
     var tab by remember { mutableStateOf(DetailTab.Episodes) }
     var newestFirst by remember { mutableStateOf(true) }
 
+    val requestNotificationPermission = rememberNotificationPermissionRequester { granted ->
+        viewModel.toggleNotifyNewEpisodes(granted)
+    }
+
     val listName = state.listId?.let { id -> state.lists.firstOrNull { it.id == id }?.name }
     val saveLabel = when {
         state.inLibrary && listName != null -> "Saved to $listName"
@@ -70,7 +79,12 @@ fun PodcastDetailScreen(
     }
 
     LazyColumn(Modifier.fillMaxSize().background(c.bg)) {
-        item { TopIconBar(onBack = onBack) }
+        item {
+            TopIconBar(
+                onBack = onBack,
+                onShare = { viewModel.sharePodcast() },
+            )
+        }
         item { HeroRow(summary) }
         if (summary.description.isNotBlank()) {
             item {
@@ -90,16 +104,32 @@ fun PodcastDetailScreen(
             ActionRow(
                 saveLabel = saveLabel,
                 saved = state.inLibrary,
-                bellOn = state.autoDownload,
+                bellOn = state.inLibrary && state.notifyNewEpisodes,
+                bellEnabled = state.inLibrary,
                 onSave = { listPickerOpen = true },
-                onToggleBell = { viewModel.toggleAutoDownload(!state.autoDownload) },
+                onToggleBell = {
+                    if (!state.inLibrary) return@ActionRow
+                    if (state.notifyNewEpisodes) {
+                        viewModel.toggleNotifyNewEpisodes(false)
+                    } else {
+                        requestNotificationPermission()
+                    }
+                },
                 onDownload = {
-                    val newest = (if (state.inLibrary) state.storedEpisodes.map { it.id } else state.remoteEpisodes.map { it.id })
-                        .firstOrNull()
+                    if (!state.inLibrary) return@ActionRow
+                    val newest = state.storedEpisodes.firstOrNull()?.id
                     if (newest != null) viewModel.download(newest)
                 },
                 downloadEnabled = state.inLibrary,
             )
+        }
+        if (state.inLibrary) {
+            item {
+                AutoDownloadRow(
+                    enabled = state.autoDownload,
+                    onToggle = { viewModel.toggleAutoDownload(it) },
+                )
+            }
         }
         item { TabsRow(tab = tab, onSelect = { tab = it }, newestFirst = newestFirst, onToggleSort = { newestFirst = !newestFirst }) }
 
@@ -124,7 +154,7 @@ fun PodcastDetailScreen(
                         publishedAt = 0L,
                         durationSec = it.durationMinutes * 60,
                         fileSizeBytes = 0,
-                        playable = false,
+                        playable = it.enclosureUrl.isNotBlank(),
                         downloadState = null,
                     )
                 }
@@ -140,8 +170,10 @@ fun PodcastDetailScreen(
             items(rows, key = { it.id }) { ep ->
                 EpisodeRow(
                     ep,
+                    canDownload = state.inLibrary,
                     onPlay = { if (ep.playable) viewModel.play(ep.id) },
-                    onDownload = { if (ep.playable) viewModel.download(ep.id) },
+                    onDownload = { if (ep.playable && state.inLibrary) viewModel.download(ep.id) },
+                    onShare = { viewModel.shareEpisode(ep.id) },
                 )
             }
         } else {
@@ -182,7 +214,7 @@ fun PodcastDetailScreen(
 }
 
 @Composable
-private fun TopIconBar(onBack: () -> Unit) {
+private fun TopIconBar(onBack: () -> Unit, onShare: () -> Unit) {
     val c = LocalKofipodColors.current
     Row(
         Modifier
@@ -194,7 +226,7 @@ private fun TopIconBar(onBack: () -> Unit) {
             KPIcon(name = KPIconName.Back, color = c.text, size = 22.dp)
         }
         Spacer(Modifier.weight(1f))
-        IconButton(onClick = { /* share not wired */ }) {
+        IconButton(onClick = onShare) {
             KPIcon(name = KPIconName.Share, color = c.text, size = 20.dp, strokeWidth = 1.6f)
         }
         IconButton(onClick = { /* more not wired */ }) {
@@ -276,6 +308,7 @@ private fun ActionRow(
     saveLabel: String,
     saved: Boolean,
     bellOn: Boolean,
+    bellEnabled: Boolean,
     onSave: () -> Unit,
     onToggleBell: () -> Unit,
     onDownload: () -> Unit,
@@ -305,8 +338,13 @@ private fun ActionRow(
             }
         }
         Spacer(Modifier.width(10.dp))
-        CircleButton(onClick = onToggleBell, tint = if (bellOn) c.pink else c.purple) {
-            KPIcon(name = KPIconName.Bell, color = if (bellOn) c.pink else c.purple, size = 18.dp)
+        val bellTint = when {
+            !bellEnabled -> c.textMute
+            bellOn -> c.pink
+            else -> c.purple
+        }
+        CircleButton(onClick = onToggleBell, tint = bellTint) {
+            KPIcon(name = KPIconName.Bell, color = bellTint, size = 18.dp)
         }
         Spacer(Modifier.width(8.dp))
         CircleButton(onClick = onDownload, tint = if (downloadEnabled) c.purple else c.textMute) {
@@ -316,6 +354,39 @@ private fun ActionRow(
                 size = 18.dp,
             )
         }
+    }
+}
+
+@Composable
+private fun AutoDownloadRow(enabled: Boolean, onToggle: (Boolean) -> Unit) {
+    val c = LocalKofipodColors.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                "Auto-download new episodes",
+                color = c.text,
+                fontWeight = FontWeight.Medium,
+                fontSize = 14.sp,
+            )
+            Text(
+                "On Wi-Fi while charging",
+                color = c.textMute,
+                fontSize = 12.sp,
+            )
+        }
+        Switch(
+            checked = enabled,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = c.pink,
+                checkedTrackColor = c.pinkSoft,
+            ),
+        )
     }
 }
 
@@ -398,13 +469,24 @@ private data class EpisodeRowData(
     val downloadState: String?,
 )
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun EpisodeRow(ep: EpisodeRowData, onPlay: () -> Unit, onDownload: () -> Unit) {
+private fun EpisodeRow(
+    ep: EpisodeRowData,
+    canDownload: Boolean,
+    onPlay: () -> Unit,
+    onDownload: () -> Unit,
+    onShare: () -> Unit,
+) {
     val c = LocalKofipodColors.current
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(enabled = ep.playable) { onPlay() }
+            .combinedClickable(
+                enabled = ep.playable,
+                onClick = onPlay,
+                onLongClick = onShare,
+            )
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -439,12 +521,12 @@ private fun EpisodeRow(ep: EpisodeRowData, onPlay: () -> Unit, onDownload: () ->
         }
         Spacer(Modifier.width(8.dp))
         // Right: state icon
-        StateIndicator(ep = ep, onDownload = onDownload)
+        StateIndicator(ep = ep, canDownload = canDownload, onDownload = onDownload)
     }
 }
 
 @Composable
-private fun StateIndicator(ep: EpisodeRowData, onDownload: () -> Unit) {
+private fun StateIndicator(ep: EpisodeRowData, canDownload: Boolean, onDownload: () -> Unit) {
     val c = LocalKofipodColors.current
     when (ep.downloadState) {
         "Completed" -> Box(Modifier.size(28.dp), Alignment.Center) {
@@ -453,15 +535,23 @@ private fun StateIndicator(ep: EpisodeRowData, onDownload: () -> Unit) {
         "Downloading", "Queued" -> Box(Modifier.size(28.dp), Alignment.Center) {
             KPIcon(name = KPIconName.Clock, color = c.pink, size = 18.dp)
         }
-        else -> Box(
-            Modifier
-                .size(32.dp)
-                .clip(RoundedCornerShape(999.dp))
-                .border(1.dp, c.border, RoundedCornerShape(999.dp))
-                .clickable(enabled = ep.playable) { onDownload() },
-            contentAlignment = Alignment.Center,
-        ) {
-            KPIcon(name = KPIconName.Download, color = c.textSoft, size = 14.dp, strokeWidth = 1.7f)
+        else -> {
+            val active = ep.playable && canDownload
+            Box(
+                Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .border(1.dp, c.border, RoundedCornerShape(999.dp))
+                    .clickable(enabled = active) { onDownload() },
+                contentAlignment = Alignment.Center,
+            ) {
+                KPIcon(
+                    name = KPIconName.Download,
+                    color = if (active) c.textSoft else c.textMute,
+                    size = 14.dp,
+                    strokeWidth = 1.7f,
+                )
+            }
         }
     }
 }

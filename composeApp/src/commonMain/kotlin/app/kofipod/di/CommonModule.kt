@@ -56,6 +56,6 @@ val commonDataModule = module {
     viewModel { DownloadsViewModel(get()) }
     viewModel { SchedulerInfoViewModel(get()) }
     viewModel { (podcastId: String) ->
-        PodcastDetailViewModel(podcastId, get(), get(), get(), get(), get(), get())
+        PodcastDetailViewModel(podcastId, get(), get(), get(), get(), get(), get(), get())
     }
 }

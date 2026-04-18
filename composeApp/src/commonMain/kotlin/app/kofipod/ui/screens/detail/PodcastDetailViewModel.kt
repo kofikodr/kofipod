@@ -9,6 +9,7 @@ import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.data.repo.LibraryRepository
 import app.kofipod.data.repo.PlaybackRepository
 import app.kofipod.data.repo.autoDownloadEnabledBool
+import app.kofipod.data.repo.notifyNewEpisodesEnabledBool
 import app.kofipod.db.Download
 import app.kofipod.db.Episode
 import app.kofipod.db.Podcast
@@ -18,6 +19,7 @@ import app.kofipod.domain.toSummary
 import app.kofipod.downloads.DownloadJob
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.playback.PlayableEpisode
+import app.kofipod.share.Sharer
 import com.mr3y.podcastindex.model.EpisodeFeed
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,6 +34,7 @@ data class DetailUiState(
     val inLibrary: Boolean = false,
     val listId: String? = null,
     val autoDownload: Boolean = false,
+    val notifyNewEpisodes: Boolean = true,
     val storedEpisodes: List<Episode> = emptyList(),
     val remoteEpisodes: List<EpisodePreview> = emptyList(),
     val downloadStates: Map<String, String> = emptyMap(),
@@ -44,6 +47,7 @@ data class EpisodePreview(
     val id: String,
     val title: String,
     val durationMinutes: Int,
+    val enclosureUrl: String = "",
 )
 
 private data class RemoteBundle(
@@ -61,6 +65,7 @@ class PodcastDetailViewModel(
     private val player: KofipodPlayer,
     private val playback: PlaybackRepository,
     private val downloads: DownloadRepository,
+    private val sharer: Sharer,
 ) : ViewModel() {
 
     private val remoteSummary = MutableStateFlow<PodcastSummary?>(null)
@@ -97,6 +102,7 @@ class PodcastDetailViewModel(
             inLibrary = storedPodcast != null,
             listId = storedPodcast?.listId,
             autoDownload = storedPodcast?.autoDownloadEnabledBool() ?: false,
+            notifyNewEpisodes = storedPodcast?.notifyNewEpisodesEnabledBool() ?: true,
             storedEpisodes = storedEps,
             remoteEpisodes = bundle.episodes,
             downloadStates = bundle.downloads.associate { it.episodeId to it.state },
@@ -139,17 +145,24 @@ class PodcastDetailViewModel(
     }
 
     fun play(episodeId: String) {
-        val ep = state.value.storedEpisodes.firstOrNull { it.id == episodeId } ?: return
-        if (ep.enclosureUrl.isBlank()) return
         val summary = state.value.summary ?: return
+        val stored = state.value.storedEpisodes.firstOrNull { it.id == episodeId }
+        val (title, url) = when {
+            stored != null && stored.enclosureUrl.isNotBlank() -> stored.title to stored.enclosureUrl
+            else -> {
+                val remote = state.value.remoteEpisodes.firstOrNull { it.id == episodeId } ?: return
+                if (remote.enclosureUrl.isBlank()) return
+                remote.title to remote.enclosureUrl
+            }
+        }
         val startMs = playback.positionFor(episodeId)
         player.play(
             PlayableEpisode(
-                episodeId = ep.id,
+                episodeId = episodeId,
                 podcastTitle = summary.title,
-                title = ep.title,
+                title = title,
                 artworkUrl = summary.artworkUrl,
-                sourceUrl = ep.enclosureUrl,
+                sourceUrl = url,
                 startPositionMs = startMs,
             ),
         )
@@ -172,6 +185,35 @@ class PodcastDetailViewModel(
         library.setAutoDownload(podcastId, enabled)
     }
 
+    fun toggleNotifyNewEpisodes(enabled: Boolean) {
+        if (!state.value.inLibrary) return
+        library.setNotifyNewEpisodes(podcastId, enabled)
+    }
+
+    fun sharePodcast() {
+        val summary = state.value.summary ?: return
+        val link = summary.feedUrl.ifBlank { "https://podcastindex.org/podcast/${summary.id}" }
+        sharer.shareText(
+            title = summary.title,
+            text = "${summary.title} — ${summary.author}\n$link",
+        )
+    }
+
+    fun shareEpisode(episodeId: String) {
+        val summary = state.value.summary ?: return
+        val stored = state.value.storedEpisodes.firstOrNull { it.id == episodeId }
+        val title = stored?.title
+            ?: state.value.remoteEpisodes.firstOrNull { it.id == episodeId }?.title
+            ?: return
+        val url = stored?.enclosureUrl?.takeIf { it.isNotBlank() }
+            ?: state.value.remoteEpisodes.firstOrNull { it.id == episodeId }?.enclosureUrl
+            ?: summary.feedUrl
+        sharer.shareText(
+            title = title,
+            text = "$title — ${summary.title}\n$url",
+        )
+    }
+
     private fun persistRemoteEpisodes() {
         viewModelScope.launch {
             val feedId = podcastId.toLongOrNull() ?: return@launch
@@ -185,4 +227,5 @@ private fun EpisodeFeed.toPreview(): EpisodePreview = EpisodePreview(
     id = id.toString(),
     title = title,
     durationMinutes = (duration ?: 0) / 60,
+    enclosureUrl = enclosureUrl,
 )
