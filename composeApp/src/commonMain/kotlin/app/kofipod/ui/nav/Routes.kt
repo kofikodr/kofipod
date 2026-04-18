@@ -12,5 +12,6 @@ sealed interface Route {
     @Serializable data object Settings : Route
     @Serializable data object SchedulerInfo : Route
     @Serializable data class PodcastDetail(val podcastId: String) : Route
+    @Serializable data class LibraryDetail(val listId: String? = null) : Route
     @Serializable data object Player : Route
 }

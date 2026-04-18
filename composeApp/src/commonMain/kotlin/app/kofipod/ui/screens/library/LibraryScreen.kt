@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.ui.screens.library
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,37 +58,39 @@ import app.kofipod.ui.theme.LocalKofipodColors
 import app.kofipod.ui.theme.LocalKofipodRadii
 import org.koin.compose.viewmodel.koinViewModel
 
-/**
- * Library screen: shows the user's lists as a 2-column folder grid followed by a
- * recently-opened rail. Navigation parameters match the NavHost wiring
- * (`LibraryScreen(onOpenPodcast = …)`) to keep the graph compiling.
- */
 @Composable
 fun LibraryScreen(
     onOpenPodcast: (String) -> Unit,
+    onOpenList: (String?) -> Unit,
     viewModel: LibraryViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
     val c = LocalKofipodColors.current
 
     var newListOpen by remember { mutableStateOf(false) }
+    var pendingDeletePodcast by remember { mutableStateOf<Podcast?>(null) }
+    var pendingDeleteList by remember { mutableStateOf<PodcastList?>(null) }
 
-    // Derive flat lists/podcasts from the grouped VM state so the screen only
-    // needs to read the single `groups` field the VM exposes today.
     val lists: List<PodcastList> = state.groups.mapNotNull { it.list }
     val podcasts: List<Podcast> = state.groups.flatMap { it.podcasts }
+    val unfiledCount = podcasts.count { it.listId == null }
 
-    // Active list = first list that actually has podcasts; fallback to first list.
     val activeListId: String? = lists
         .firstOrNull { l -> podcasts.any { it.listId == l.id } }
         ?.id
         ?: lists.firstOrNull()?.id
 
-    // Recently-opened: VM doesn't track opens, so sort all podcasts by addedAt
-    // (most recent first) and take 3. Stable fallback when addedAt is unset.
     val recent: List<Podcast> = podcasts
         .sortedByDescending { it.addedAt }
         .take(3)
+
+    // Tile slot descriptor: either a real list, an unfiled bucket, or the "New list" CTA.
+    // Lets the grid iterate uniformly without special-casing indices inline.
+    val tiles: List<Tile> = buildList {
+        lists.forEach { add(Tile.OfList(it)) }
+        if (unfiledCount > 0) add(Tile.Unfiled(unfiledCount))
+        add(Tile.NewList)
+    }
 
     LazyColumn(
         Modifier.fillMaxSize().background(c.bg),
@@ -95,46 +99,40 @@ fun LibraryScreen(
         item { LibraryHeader(onNewList = { newListOpen = true }) }
 
         if (lists.isEmpty() && podcasts.isEmpty()) {
-            // Completely empty library: show the centered onboarding block in
-            // place of the grid + recently-opened sections.
             item { LibraryEmptyState(onCreateList = { newListOpen = true }) }
         } else {
-            item {
-                SectionLabel(title = "Your lists", topSpacing = 18.dp)
-            }
+            item { SectionLabel(title = "Your lists", topSpacing = 18.dp) }
 
-            // 2-column grid of list tiles + a trailing "New list" tile.
-            val tileCount = lists.size + 1
-            val rows = (tileCount + 1) / 2
+            val rows = (tiles.size + 1) / 2
             items(rows) { rowIndex ->
-                val leftIndex = rowIndex * 2
-                val rightIndex = leftIndex + 1
+                val left = tiles.getOrNull(rowIndex * 2)
+                val right = tiles.getOrNull(rowIndex * 2 + 1)
                 Row(
                     Modifier.fillMaxWidth().padding(bottom = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     TileSlot(
                         modifier = Modifier.weight(1f),
-                        index = leftIndex,
-                        lists = lists,
+                        tile = left,
                         podcasts = podcasts,
                         activeListId = activeListId,
+                        onOpenList = onOpenList,
+                        onLongPressList = { pendingDeleteList = it },
                         onCreateList = { newListOpen = true },
                     )
                     TileSlot(
                         modifier = Modifier.weight(1f),
-                        index = rightIndex,
-                        lists = lists,
+                        tile = right,
                         podcasts = podcasts,
                         activeListId = activeListId,
+                        onOpenList = onOpenList,
+                        onLongPressList = { pendingDeleteList = it },
                         onCreateList = { newListOpen = true },
                     )
                 }
             }
 
-            item {
-                SectionLabel(title = "Recently opened", topSpacing = 20.dp)
-            }
+            item { SectionLabel(title = "Recently opened", topSpacing = 20.dp) }
 
             if (recent.isEmpty()) {
                 item {
@@ -153,6 +151,7 @@ fun LibraryScreen(
                         episodeCount = placeholderEpisodeCount(p),
                         showDivider = idx < recent.lastIndex,
                         onClick = { onOpenPodcast(p.id) },
+                        onLongClick = { pendingDeletePodcast = p },
                     )
                 }
             }
@@ -168,6 +167,38 @@ fun LibraryScreen(
             },
         )
     }
+
+    pendingDeletePodcast?.let { p ->
+        ConfirmDialog(
+            title = "Remove from library?",
+            message = "\"${p.title}\" and its episodes will be removed from your library.",
+            confirmLabel = "Remove",
+            onConfirm = {
+                viewModel.deletePodcast(p.id)
+                pendingDeletePodcast = null
+            },
+            onDismiss = { pendingDeletePodcast = null },
+        )
+    }
+
+    pendingDeleteList?.let { list ->
+        ConfirmDialog(
+            title = "Delete list?",
+            message = "\"${list.name}\" will be removed. Its podcasts will move to Unfiled.",
+            confirmLabel = "Delete",
+            onConfirm = {
+                viewModel.deleteList(list.id)
+                pendingDeleteList = null
+            },
+            onDismiss = { pendingDeleteList = null },
+        )
+    }
+}
+
+private sealed interface Tile {
+    data class OfList(val list: PodcastList) : Tile
+    data class Unfiled(val count: Int) : Tile
+    data object NewList : Tile
 }
 
 @Composable
@@ -193,8 +224,6 @@ private fun LibraryHeader(onNewList: () -> Unit) {
                         .background(c.success),
                 )
                 Spacer(Modifier.width(6.dp))
-                // VM doesn't expose a last-sync timestamp, so the subtitle is a
-                // stable placeholder that matches the mockup's formatting.
                 Text(
                     "Synced recently · Drive",
                     color = c.textMute,
@@ -224,34 +253,37 @@ private fun LibraryHeader(onNewList: () -> Unit) {
 @Composable
 private fun TileSlot(
     modifier: Modifier,
-    index: Int,
-    lists: List<PodcastList>,
+    tile: Tile?,
     podcasts: List<Podcast>,
     activeListId: String?,
+    onOpenList: (String?) -> Unit,
+    onLongPressList: (PodcastList) -> Unit,
     onCreateList: () -> Unit,
 ) {
-    when {
-        index < lists.size -> {
-            val list = lists[index]
-            val count = podcasts.count { it.listId == list.id }
+    when (tile) {
+        is Tile.OfList -> {
+            val count = podcasts.count { it.listId == tile.list.id }
             ListTile(
                 modifier = modifier,
-                list = list,
+                list = tile.list,
                 podcastCount = count,
-                active = list.id == activeListId,
-                seed = index,
+                active = tile.list.id == activeListId,
+                seed = tile.list.id.hashCode(),
+                onClick = { onOpenList(tile.list.id) },
+                onLongClick = { onLongPressList(tile.list) },
             )
         }
-        index == lists.size -> {
-            NewListTile(modifier = modifier, onClick = onCreateList)
-        }
-        else -> {
-            // Keep the grid row balanced when there's an odd count.
-            Box(modifier = modifier.aspectRatio(1f))
-        }
+        is Tile.Unfiled -> UnfiledTile(
+            modifier = modifier,
+            podcastCount = tile.count,
+            onClick = { onOpenList(null) },
+        )
+        Tile.NewList -> NewListTile(modifier = modifier, onClick = onCreateList)
+        null -> Box(modifier = modifier.aspectRatio(1f)) // balances odd-count rows
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ListTile(
     modifier: Modifier,
@@ -259,6 +291,8 @@ private fun ListTile(
     podcastCount: Int,
     active: Boolean,
     seed: Int,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
@@ -273,18 +307,15 @@ private fun ListTile(
             .aspectRatio(1f)
             .clip(RoundedCornerShape(r.md))
             .background(background)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(16.dp),
     ) {
-        // Top-left folder icon.
         KPIcon(
             name = KPIconName.Folder,
             color = folderColor,
             size = 22.dp,
             modifier = Modifier.align(Alignment.TopStart),
         )
-
-        // Top-right decorative gradient peek — small circular artwork stands in
-        // for the design's overlapping leaves.
         KofipodArtwork(
             size = 44.dp,
             seed = seed * 7 + 3,
@@ -292,8 +323,6 @@ private fun ListTile(
             radius = 22.dp,
             modifier = Modifier.align(Alignment.TopEnd),
         )
-
-        // Bottom-left label block.
         Column(Modifier.align(Alignment.BottomStart)) {
             Text(
                 list.name,
@@ -307,6 +336,51 @@ private fun ListTile(
             Text(
                 "$podcastCount PODCASTS",
                 color = subTextColor,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 0.6.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun UnfiledTile(
+    modifier: Modifier,
+    podcastCount: Int,
+    onClick: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    val r = LocalKofipodRadii.current
+
+    Box(
+        modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(r.md))
+            .background(c.surface)
+            .clickable { onClick() }
+            .padding(16.dp),
+    ) {
+        KPIcon(
+            name = KPIconName.Folder,
+            color = c.textSoft,
+            size = 22.dp,
+            modifier = Modifier.align(Alignment.TopStart),
+        )
+        Column(Modifier.align(Alignment.BottomStart)) {
+            Text(
+                "Unfiled",
+                color = c.text,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "$podcastCount PODCASTS",
+                color = c.textMute,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
@@ -347,7 +421,6 @@ private fun NewListTile(modifier: Modifier, onClick: () -> Unit) {
     }
 }
 
-/** Draws a rounded dashed border inside the layout bounds. */
 private fun Modifier.dashedBorder(
     color: Color,
     cornerRadius: androidx.compose.ui.unit.Dp,
@@ -374,18 +447,20 @@ private fun Modifier.dashedBorder(
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RecentRow(
     podcast: Podcast,
     episodeCount: Int,
     showDivider: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Column(
         Modifier
             .fillMaxWidth()
-            .clickable { onClick() },
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         Row(
             Modifier
@@ -441,22 +516,12 @@ private fun RecentRow(
     }
 }
 
-/**
- * Episode counts aren't tracked on [Podcast] yet, so this returns a deterministic
- * placeholder derived from the podcast id — stable across recompositions so the
- * UI doesn't flicker while real counts are plumbed through later.
- */
 private fun placeholderEpisodeCount(p: Podcast): Int {
     val h = p.id.hashCode()
     val positive = if (h == Int.MIN_VALUE) 0 else kotlin.math.abs(h)
     return (positive % 300) + 20
 }
 
-/**
- * Centered empty-state shown when the user has no lists and no podcasts yet.
- * Replaces the grid + "Recently opened" sections with a single onboarding
- * block that promotes creating the first list.
- */
 @Composable
 private fun LibraryEmptyState(onCreateList: () -> Unit) {
     val c = LocalKofipodColors.current

@@ -42,4 +42,6 @@ class LibraryViewModel(private val repo: LibraryRepository) : ViewModel() {
     }
 
     fun deletePodcast(podcastId: String) = repo.deletePodcast(podcastId)
+
+    fun deleteList(listId: String) = repo.deleteList(listId)
 }

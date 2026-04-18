@@ -43,6 +43,7 @@ import app.kofipod.ui.primitives.KPChipTone
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.primitives.KofipodArtwork
+import app.kofipod.ui.primitives.LoadMoreRow
 import app.kofipod.ui.theme.LocalKofipodColors
 import app.kofipod.ui.theme.LocalKofipodRadii
 import org.koin.compose.viewmodel.koinViewModel
@@ -106,6 +107,11 @@ fun SearchScreen(
                             isTopMatch = index == 0,
                             onClick = { onOpenPodcast(p.id) },
                         )
+                    }
+                    if (state.hasMore) {
+                        item(key = "load-more") {
+                            LoadMoreRow(loading = state.loadingMore, onClick = viewModel::loadMore)
+                        }
                     }
                 }
             }

@@ -40,6 +40,9 @@ data class DetailUiState(
     val downloadStates: Map<String, String> = emptyMap(),
     val lists: List<PodcastList> = emptyList(),
     val loading: Boolean = false,
+    val loadingMore: Boolean = false,
+    val episodeDisplayLimit: Int = PodcastIndexApi.PAGE_SIZE,
+    val remoteHasMore: Boolean = false,
     val error: String? = null,
 )
 
@@ -48,13 +51,6 @@ data class EpisodePreview(
     val title: String,
     val durationMinutes: Int,
     val enclosureUrl: String = "",
-)
-
-private data class RemoteBundle(
-    val episodes: List<EpisodePreview>,
-    val downloads: List<Download>,
-    val loading: Boolean,
-    val error: String?,
 )
 
 class PodcastDetailViewModel(
@@ -71,65 +67,92 @@ class PodcastDetailViewModel(
     private val remoteSummary = MutableStateFlow<PodcastSummary?>(null)
     private val remoteEpisodes = MutableStateFlow<List<EpisodePreview>>(emptyList())
     private val loading = MutableStateFlow(false)
+    private val loadingMore = MutableStateFlow(false)
+    private val displayLimit = MutableStateFlow(PodcastIndexApi.PAGE_SIZE)
+    private val remoteLimit = MutableStateFlow(PodcastIndexApi.PAGE_SIZE)
     private val error = MutableStateFlow<String?>(null)
 
+    private data class StoredBundle(val podcast: Podcast?, val episodes: List<Episode>, val lists: List<PodcastList>)
+    private data class RemoteBundle(
+        val summary: PodcastSummary?,
+        val episodes: List<EpisodePreview>,
+        val limit: Int,
+        val downloads: List<Download>,
+    )
+    private data class UiFlags(val loading: Boolean, val loadingMore: Boolean, val displayLimit: Int, val error: String?)
+
     val state: StateFlow<DetailUiState> = combine(
-        library.podcastFlow(podcastId),
-        episodes.episodesFlow(podcastId),
-        library.listsFlow(),
-        remoteSummary,
-        combine(
-            remoteEpisodes,
-            downloads.all(),
-            loading,
-            error,
-        ) { e, dls, l, err -> RemoteBundle(e, dls, l, err) },
-    ) { storedPodcast: Podcast?, storedEps, lists, remote, bundle ->
-        val stored = storedPodcast?.toSummary()
-        val summary = when {
-            stored != null && remote != null -> stored.copy(
-                category = remote.category.ifBlank { stored.category },
-                episodeCount = if (remote.episodeCount > 0) remote.episodeCount else stored.episodeCount,
+        combine(library.podcastFlow(podcastId), episodes.episodesFlow(podcastId), library.listsFlow(), ::StoredBundle),
+        combine(remoteSummary, remoteEpisodes, remoteLimit, downloads.all(), ::RemoteBundle),
+        combine(loading, loadingMore, displayLimit, error, ::UiFlags),
+    ) { stored, remote, flags ->
+        val storedSummary = stored.podcast?.toSummary()
+        val merged = when {
+            storedSummary != null && remote.summary != null -> storedSummary.copy(
+                category = remote.summary.category.ifBlank { storedSummary.category },
+                episodeCount = if (remote.summary.episodeCount > 0) remote.summary.episodeCount else storedSummary.episodeCount,
             )
-            stored != null -> stored
-            else -> remote
+            storedSummary != null -> storedSummary
+            else -> remote.summary
         }
-        val resolvedCount = if ((summary?.episodeCount ?: 0) == 0 && storedEps.isNotEmpty()) {
-            summary?.copy(episodeCount = storedEps.size)
-        } else summary
+        val summary = if ((merged?.episodeCount ?: 0) == 0 && stored.episodes.isNotEmpty()) {
+            merged?.copy(episodeCount = stored.episodes.size)
+        } else merged
         DetailUiState(
-            summary = resolvedCount,
-            inLibrary = storedPodcast != null,
-            listId = storedPodcast?.listId,
-            autoDownload = storedPodcast?.autoDownloadEnabledBool() ?: false,
-            notifyNewEpisodes = storedPodcast?.notifyNewEpisodesEnabledBool() ?: true,
-            storedEpisodes = storedEps,
-            remoteEpisodes = bundle.episodes,
-            downloadStates = bundle.downloads.associate { it.episodeId to it.state },
-            lists = lists,
-            loading = bundle.loading,
-            error = bundle.error,
+            summary = summary,
+            inLibrary = stored.podcast != null,
+            listId = stored.podcast?.listId,
+            autoDownload = stored.podcast?.autoDownloadEnabledBool() ?: false,
+            notifyNewEpisodes = stored.podcast?.notifyNewEpisodesEnabledBool() ?: true,
+            storedEpisodes = stored.episodes,
+            remoteEpisodes = remote.episodes,
+            downloadStates = remote.downloads.associate { it.episodeId to it.state },
+            lists = stored.lists,
+            loading = flags.loading,
+            loadingMore = flags.loadingMore,
+            episodeDisplayLimit = flags.displayLimit,
+            remoteHasMore = remote.episodes.size >= remote.limit,
+            error = flags.error,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DetailUiState())
 
-    init { loadRemote() }
+    init { loadRemote(loadMore = false) }
 
-    private fun loadRemote() {
+    fun loadMoreEpisodes() {
+        if (loadingMore.value) return
+        if (state.value.inLibrary) {
+            val stored = state.value.storedEpisodes.size
+            if (displayLimit.value < stored) {
+                displayLimit.value = (displayLimit.value + PodcastIndexApi.PAGE_SIZE).coerceAtMost(stored)
+            }
+            return
+        }
+        if (!state.value.remoteHasMore) return
+        remoteLimit.value = remoteLimit.value + PodcastIndexApi.PAGE_SIZE
+        displayLimit.value = remoteLimit.value
+        loadRemote(loadMore = true)
+    }
+
+    private fun loadRemote(loadMore: Boolean) {
         viewModelScope.launch {
-            loading.value = true
+            if (loadMore) loadingMore.value = true else loading.value = true
             val feedId = podcastId.toLongOrNull()
             if (feedId == null) {
                 error.value = "Invalid podcast id"
                 loading.value = false
+                loadingMore.value = false
                 return@launch
             }
             runCatching {
-                val feed = api.podcastByFeedId(feedId)
-                remoteSummary.value = feed.toSummary()
-                val eps = api.episodesByFeedId(feedId)
+                if (!loadMore) {
+                    val feed = api.podcastByFeedId(feedId)
+                    remoteSummary.value = feed.toSummary()
+                }
+                val eps = api.episodesByFeedId(feedId, limit = remoteLimit.value)
                 remoteEpisodes.value = eps.map { it.toPreview() }
             }.onFailure { error.value = it.message ?: "Failed to load podcast" }
             loading.value = false
+            loadingMore.value = false
         }
     }
 

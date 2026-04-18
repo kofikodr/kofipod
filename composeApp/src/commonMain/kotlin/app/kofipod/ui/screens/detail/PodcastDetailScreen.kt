@@ -38,6 +38,7 @@ import app.kofipod.ui.permission.rememberNotificationPermissionRequester
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.primitives.KofipodArtwork
+import app.kofipod.ui.primitives.LoadMoreRow
 import app.kofipod.ui.theme.LocalKofipodColors
 import app.kofipod.ui.theme.LocalKofipodRadii
 import org.koin.compose.viewmodel.koinViewModel
@@ -167,7 +168,9 @@ fun PodcastDetailScreen(
                 item { Text(err, color = c.danger, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp)) }
             }
 
-            items(rows, key = { it.id }) { ep ->
+            val visibleRows = rows.take(state.episodeDisplayLimit)
+            val hasMore = if (state.inLibrary) rows.size > visibleRows.size else state.remoteHasMore
+            items(visibleRows, key = { it.id }) { ep ->
                 EpisodeRow(
                     ep,
                     canDownload = state.inLibrary,
@@ -175,6 +178,11 @@ fun PodcastDetailScreen(
                     onDownload = { if (ep.playable && state.inLibrary) viewModel.download(ep.id) },
                     onShare = { viewModel.shareEpisode(ep.id) },
                 )
+            }
+            if (hasMore) {
+                item(key = "load-more") {
+                    LoadMoreRow(loading = state.loadingMore, onClick = viewModel::loadMoreEpisodes)
+                }
             }
         } else {
             item {
