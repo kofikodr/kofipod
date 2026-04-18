@@ -8,3 +8,4 @@ keystore/
 *.jks
 *.keystore
 .kotlin/
+build/
