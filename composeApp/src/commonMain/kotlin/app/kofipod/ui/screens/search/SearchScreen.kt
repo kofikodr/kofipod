@@ -106,7 +106,11 @@ private fun TabRow(current: SearchTab, onSelect: (SearchTab) -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    when (tab) { SearchTab.Title -> "By title"; SearchTab.Person -> "By person" },
+                    when (tab) {
+                        SearchTab.All -> "All"
+                        SearchTab.Title -> "By title"
+                        SearchTab.Person -> "By person"
+                    },
                     color = if (selected) c.surface else c.text,
                     fontWeight = FontWeight.Bold,
                 )

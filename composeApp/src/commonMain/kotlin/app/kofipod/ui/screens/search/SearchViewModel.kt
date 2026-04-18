@@ -12,11 +12,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-enum class SearchTab { Title, Person }
+enum class SearchTab { All, Title, Person }
 
 data class SearchUiState(
     val query: String = "",
-    val tab: SearchTab = SearchTab.Title,
+    val tab: SearchTab = SearchTab.All,
     val results: List<PodcastSummary> = emptyList(),
     val loading: Boolean = false,
     val error: String? = null,
@@ -51,6 +51,7 @@ class SearchViewModel(private val repo: SearchSource) : ViewModel() {
             _state.value = _state.value.copy(loading = true, error = null)
             runCatching {
                 when (s.tab) {
+                    SearchTab.All -> repo.searchAll(s.query)
                     SearchTab.Title -> repo.searchByTitle(s.query)
                     SearchTab.Person -> repo.searchByPerson(s.query)
                 }
