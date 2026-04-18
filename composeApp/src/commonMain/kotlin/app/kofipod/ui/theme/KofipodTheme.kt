@@ -50,6 +50,7 @@ fun KofipodTheme(
             error = colors.danger,
         )
     }
+    SystemBarAppearance(isDark = isDark, barColor = colors.bg)
     CompositionLocalProvider(
         LocalKofipodColors provides colors,
         LocalKofipodRadii provides DefaultKofipodRadii,

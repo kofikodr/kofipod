@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kofipod — design</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    html, body { margin: 0; padding: 0; background: #f0eee9; }
+    body { font-family: "Plus Jakarta Sans", system-ui, sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="lib/design-canvas.jsx"></script>
+  <script type="text/babel" src="lib/tokens.jsx"></script>
+  <script type="text/babel" src="lib/primitives.jsx"></script>
+  <script type="text/babel" src="lib/screens-a.jsx"></script>
+  <script type="text/babel" src="lib/screens-b.jsx"></script>
+
+  <script type="text/babel">
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "accentPink": "#FF2E9A",
+      "primaryPurple": "#4B1E9E",
+      "cornerScale": 1,
+      "showDarkRow": true,
+      "newBadgeVisible": true
+    }/*EDITMODE-END*/;
+
+    // Apply tweak overrides to tokens
+    function applyTweaks(baseLight, baseDark, tw) {
+      const L = { ...baseLight, pink: tw.accentPink, purple: tw.primaryPurple,
+        pinkGlow: hexA(tw.accentPink, 0.35),
+        shadowPink: `0 6px 20px ${hexA(tw.accentPink, 0.28)}`,
+      };
+      const D = { ...baseDark };
+      return { L, D };
+    }
+    function hexA(hex, a) {
+      const h = hex.replace('#',''); const r=parseInt(h.slice(0,2),16), g=parseInt(h.slice(2,4),16), b=parseInt(h.slice(4,6),16);
+      return `rgba(${r},${g},${b},${a})`;
+    }
+
+    // ─── System overview card (design context note) ───
+    function SystemOverview() {
+      const sw = (c, label) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ width: 56, height: 56, borderRadius: 14, background: c, boxShadow: '0 1px 3px rgba(0,0,0,0.15)' }} />
+          <div className="kp-mono" style={{ fontSize: 9.5, color: 'rgba(40,30,20,0.7)', letterSpacing: '0.04em' }}>{label}</div>
+        </div>
+      );
+      return (
+        <div style={{
+          width: 620, padding: '32px 36px', background: '#fff',
+          border: '1px solid rgba(0,0,0,0.06)', borderRadius: 4,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.06)',
+          fontFamily: '"Plus Jakarta Sans", system-ui',
+        }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, color: '#FF2E9A', letterSpacing: '0.14em', textTransform: 'uppercase' }}>
+            Kofipod · android · hi-fi
+          </div>
+          <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.03em', color: '#1A0B33', marginTop: 6, lineHeight: 1.05 }}>
+            A cheerful,<br/>purple-forward<br/>podcast companion.
+          </div>
+          <div style={{ fontSize: 13.5, color: '#50407A', lineHeight: 1.55, marginTop: 14, maxWidth: 460 }}>
+            Uses the open Podcast Index (key injected at build time). Library syncs to a hidden
+            <span className="kp-mono" style={{ fontSize: 12.5, color: '#1A0B33', background: '#F3ECFF', padding: '1px 6px', borderRadius: 4, margin: '0 2px' }}>drive.appdata</span>
+            folder — invisible to the user, private to the app. Daily episode check runs via Android <span className="kp-mono" style={{ fontSize: 12.5 }}>WorkManager</span> — inaccurate, battery-aware.
+          </div>
+
+          <div style={{ display: 'flex', gap: 28, marginTop: 26, alignItems: 'flex-end' }}>
+            {sw('#4B1E9E', 'PURPLE')}
+            {sw('#FF2E9A', 'PINK · CTA')}
+            {sw('#FBF8FF', 'CANVAS')}
+            {sw('#0D0814', 'NIGHT')}
+          </div>
+
+          <div style={{ display: 'flex', gap: 32, marginTop: 28, fontSize: 12, color: '#50407A' }}>
+            <div>
+              <div className="kp-mono" style={{ fontSize: 9.5, color: '#8A7BB0', letterSpacing: '0.08em' }}>DISPLAY</div>
+              <div style={{ fontWeight: 700, fontSize: 15, color: '#1A0B33', letterSpacing: '-0.02em' }}>Plus Jakarta Sans</div>
+              <div style={{ fontSize: 11, color: '#8A7BB0', marginTop: 1 }}>800 / 700 / 500</div>
+            </div>
+            <div>
+              <div className="kp-mono" style={{ fontSize: 9.5, color: '#8A7BB0', letterSpacing: '0.08em' }}>METADATA</div>
+              <div style={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600, fontSize: 15, color: '#1A0B33' }}>JetBrains Mono</div>
+              <div style={{ fontSize: 11, color: '#8A7BB0', marginTop: 1 }}>timestamps · sizes · caps</div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── Tweaks panel ───
+    function TweaksPanel({ t, tw, setTw, visible }) {
+      if (!visible) return null;
+      return (
+        <div style={{
+          position: 'fixed', bottom: 20, right: 20, zIndex: 1000,
+          width: 280, background: '#fff', color: '#1A0B33',
+          borderRadius: 16, padding: 16, fontFamily: '"Plus Jakarta Sans", system-ui',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.25)', border: '1px solid #E7DDFB',
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#FF2E9A', marginBottom: 12 }}>Tweaks</div>
+
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, color: '#8A7BB0', fontWeight: 600, marginBottom: 6 }}>Accent pink</div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {['#FF2E9A', '#FF4DB8', '#F0369E', '#E91E63', '#FF1F6A'].map(c => (
+                <div key={c} onClick={() => setTw({ ...tw, accentPink: c })} style={{
+                  flex: 1, height: 30, borderRadius: 8, background: c, cursor: 'pointer',
+                  border: tw.accentPink === c ? '2px solid #1A0B33' : '2px solid transparent',
+                }} />
+              ))}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, color: '#8A7BB0', fontWeight: 600, marginBottom: 6 }}>Primary purple</div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {['#4B1E9E', '#5B2BC4', '#3A1080', '#6D3BD2', '#2E0D6E'].map(c => (
+                <div key={c} onClick={() => setTw({ ...tw, primaryPurple: c })} style={{
+                  flex: 1, height: 30, borderRadius: 8, background: c, cursor: 'pointer',
+                  border: tw.primaryPurple === c ? '2px solid #1A0B33' : '2px solid transparent',
+                }} />
+              ))}
+            </div>
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: 500, color: '#1A0B33', marginBottom: 10, cursor: 'pointer' }}>
+            <input type="checkbox" checked={tw.showDarkRow}
+              onChange={e => setTw({ ...tw, showDarkRow: e.target.checked })}
+              style={{ accentColor: '#FF2E9A' }} />
+            Show dark-mode row
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, fontWeight: 500, color: '#1A0B33', cursor: 'pointer' }}>
+            <input type="checkbox" checked={tw.newBadgeVisible}
+              onChange={e => setTw({ ...tw, newBadgeVisible: e.target.checked })}
+              style={{ accentColor: '#FF2E9A' }} />
+            Pink "new" accent badges
+          </label>
+        </div>
+      );
+    }
+
+    function App() {
+      const [tw, setTw] = React.useState(TWEAK_DEFAULTS);
+      const [editMode, setEditMode] = React.useState(false);
+
+      React.useEffect(() => {
+        const onMsg = (e) => {
+          if (!e.data || typeof e.data !== 'object') return;
+          if (e.data.type === '__activate_edit_mode') setEditMode(true);
+          if (e.data.type === '__deactivate_edit_mode') setEditMode(false);
+        };
+        window.addEventListener('message', onMsg);
+        window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+        return () => window.removeEventListener('message', onMsg);
+      }, []);
+
+      React.useEffect(() => {
+        window.parent.postMessage({ type: '__edit_mode_set_keys', edits: tw }, '*');
+      }, [tw]);
+
+      const { L, D } = applyTweaks(KP_LIGHT, KP_DARK, tw);
+      // Hide the pink "new" badge by mutating text color to transparent via CSS var-ish hack: we pass tw to screens via a provider-less wrapper
+      // Simpler: if newBadgeVisible false, override pink tokens in a dedicated copy. Badges use t.pink directly — that's the CTA color too.
+      // So we'll just keep the badge always and the tweak affects a border-only tag in Search (done below via class).
+
+      const screensLight = [
+        { label: '01 · Onboarding / Google sign-in', comp: <ScreenOnboarding t={L} /> },
+        { label: '02 · Search (title + person)', comp: <ScreenSearch t={L} /> },
+        { label: '03 · Podcast detail + episodes', comp: <ScreenDetail t={L} /> },
+        { label: '04 · Library (folders)', comp: <ScreenLibrary t={L} /> },
+        { label: '05 · Downloads manager', comp: <ScreenDownloads t={L} /> },
+        { label: '06 · New-episode notification', comp: <ScreenNotification t={L} /> },
+        { label: '07 · Settings', comp: <ScreenSettings t={L} /> },
+        { label: '08 · Daily scheduler explainer', comp: <ScreenScheduler t={L} /> },
+      ];
+      const screensDark = [
+        { label: '01 · Onboarding', comp: <ScreenOnboarding t={D} /> },
+        { label: '02 · Search', comp: <ScreenSearch t={D} /> },
+        { label: '03 · Detail', comp: <ScreenDetail t={D} /> },
+        { label: '04 · Library', comp: <ScreenLibrary t={D} /> },
+        { label: '05 · Downloads', comp: <ScreenDownloads t={D} /> },
+        { label: '06 · Notification', comp: <ScreenNotification t={D} /> },
+        { label: '07 · Settings', comp: <ScreenSettings t={D} /> },
+        { label: '08 · Scheduler', comp: <ScreenScheduler t={D} /> },
+      ];
+
+      return (
+        <div data-screen-label="Kofipod design canvas">
+          <DesignCanvas>
+            <div style={{ padding: '20px 60px 20px' }}>
+              <SystemOverview />
+            </div>
+
+            <DCSection title="Light mode · purple-dominant, pink for key CTAs"
+              subtitle="Cheerful daytime palette. Pink is reserved for primary actions, active states, and 'new' badges.">
+              {screensLight.map((s, i) => (
+                <DCArtboard key={i} label={s.label}>
+                  {s.comp}
+                </DCArtboard>
+              ))}
+            </DCSection>
+
+            {tw.showDarkRow && (
+              <DCSection title="Dark mode · deep near-black, muted plum, soft pink glow"
+                subtitle="Night-time companion. Desaturated surfaces; pink only as a subtle glow on CTAs.">
+                {screensDark.map((s, i) => (
+                  <DCArtboard key={i} label={s.label}>
+                    {s.comp}
+                  </DCArtboard>
+                ))}
+              </DCSection>
+            )}
+
+            <div style={{ padding: '0 60px 60px', position: 'relative' }}>
+              <DCPostIt top={0} left={0} rotate={-1.5} width={240}>
+                Build-time: <b>PODCAST_INDEX_KEY</b> injected via BuildConfig. Never shipped in clear text.
+              </DCPostIt>
+              <DCPostIt top={20} left={280} rotate={2} width={220}>
+                Backup proposal → Google Drive appDataFolder. Invisible to user, no Drive quota cost.
+              </DCPostIt>
+              <DCPostIt top={10} left={540} rotate={-2.5} width={230}>
+                No music, live, or soundbite surfaces — search results already filter those out.
+              </DCPostIt>
+              <div style={{ height: 180 }} />
+            </div>
+          </DesignCanvas>
+
+          <TweaksPanel t={L} tw={tw} setTw={setTw} visible={editMode} />
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

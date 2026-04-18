@@ -217,7 +217,7 @@ Tests follow the CLAUDE.md rules: behavioural names, real assertions, no interna
 
 ## 10. References
 
-- Design bundle: `/tmp/kofipod-design/kofipod/` (HTML/CSS/JSX mockup, tokens, chats).
+- Design bundle: `kofipod-design/kofipod/` (HTML/CSS/JSX mockup, tokens, chats).
 - Podcast Index SDK: https://github.com/mr3y-the-programmer/PodcastIndex-SDK
 - Podcast Index docs: https://podcastindex-org.github.io/docs-api/
 - Compose Multiplatform: https://www.jetbrains.com/compose-multiplatform/

@@ -9,6 +9,7 @@ import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.data.repo.LibraryRepository
 import app.kofipod.data.repo.PlaybackRepository
 import app.kofipod.data.repo.autoDownloadEnabledBool
+import app.kofipod.db.Download
 import app.kofipod.db.Episode
 import app.kofipod.db.Podcast
 import app.kofipod.db.PodcastList
@@ -33,6 +34,7 @@ data class DetailUiState(
     val autoDownload: Boolean = false,
     val storedEpisodes: List<Episode> = emptyList(),
     val remoteEpisodes: List<EpisodePreview> = emptyList(),
+    val downloadStates: Map<String, String> = emptyMap(),
     val lists: List<PodcastList> = emptyList(),
     val loading: Boolean = false,
     val error: String? = null,
@@ -42,6 +44,13 @@ data class EpisodePreview(
     val id: String,
     val title: String,
     val durationMinutes: Int,
+)
+
+private data class RemoteBundle(
+    val episodes: List<EpisodePreview>,
+    val downloads: List<Download>,
+    val loading: Boolean,
+    val error: String?,
 )
 
 class PodcastDetailViewModel(
@@ -64,19 +73,36 @@ class PodcastDetailViewModel(
         episodes.episodesFlow(podcastId),
         library.listsFlow(),
         remoteSummary,
-        combine(remoteEpisodes, loading, error) { e, l, err -> Triple(e, l, err) },
-    ) { storedPodcast: Podcast?, storedEps, lists, remote, (remoteEps, isLoading, err) ->
-        val summary = storedPodcast?.toSummary() ?: remote
+        combine(
+            remoteEpisodes,
+            downloads.all(),
+            loading,
+            error,
+        ) { e, dls, l, err -> RemoteBundle(e, dls, l, err) },
+    ) { storedPodcast: Podcast?, storedEps, lists, remote, bundle ->
+        val stored = storedPodcast?.toSummary()
+        val summary = when {
+            stored != null && remote != null -> stored.copy(
+                category = remote.category.ifBlank { stored.category },
+                episodeCount = if (remote.episodeCount > 0) remote.episodeCount else stored.episodeCount,
+            )
+            stored != null -> stored
+            else -> remote
+        }
+        val resolvedCount = if ((summary?.episodeCount ?: 0) == 0 && storedEps.isNotEmpty()) {
+            summary?.copy(episodeCount = storedEps.size)
+        } else summary
         DetailUiState(
-            summary = summary,
+            summary = resolvedCount,
             inLibrary = storedPodcast != null,
             listId = storedPodcast?.listId,
             autoDownload = storedPodcast?.autoDownloadEnabledBool() ?: false,
             storedEpisodes = storedEps,
-            remoteEpisodes = remoteEps,
+            remoteEpisodes = bundle.episodes,
+            downloadStates = bundle.downloads.associate { it.episodeId to it.state },
             lists = lists,
-            loading = isLoading,
-            error = err,
+            loading = bundle.loading,
+            error = bundle.error,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DetailUiState())
 

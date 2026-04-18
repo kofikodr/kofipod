@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Inset to keep art inside the 66dp safe zone of adaptive icons (icon is drawn on 108x108 canvas;
+         system masks to 66dp circle on some launchers). Center at (54,54), base radius 21. -->
+    <!-- Pink disc -->
+    <path
+        android:pathData="M54,54 m-21,0 a21,21 0 1,0 42,0 a21,21 0 1,0 -42,0 Z"
+        android:fillColor="#FF2E9A" />
+    <!-- White ring inside the pink disc (alpha 0.45) -->
+    <path
+        android:pathData="M54,54 m-17,0 a17,17 0 1,0 34,0 a17,17 0 1,0 -34,0 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.45"
+        android:strokeWidth="1.8"
+        android:fillColor="#00000000" />
+    <!-- White inner disc -->
+    <path
+        android:pathData="M54,54 m-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0 Z"
+        android:fillColor="#FFFFFF" />
+    <!-- Purple center dot -->
+    <path
+        android:pathData="M54,54 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0 Z"
+        android:fillColor="#4B1E9E" />
+</vector>

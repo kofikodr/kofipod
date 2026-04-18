@@ -58,6 +58,10 @@ class SettingsRepository(private val db: KofipodDatabase) {
     fun getMetaNow(key: String): String? =
         db.syncMetaQueries.get(key).executeAsOneOrNull()
 
+    fun onboardedNow(): Boolean = getMetaNow(KEY_ONBOARDED)?.toBoolean() ?: false
+
+    fun setOnboarded(done: Boolean) = put(KEY_ONBOARDED, done.toString())
+
     companion object {
         const val DEFAULT_CAP_BYTES: Long = 2L * 1024 * 1024 * 1024 // 2 GB
         const val KEY_STORAGE_CAP = "storage_cap_bytes"
@@ -68,5 +72,6 @@ class SettingsRepository(private val db: KofipodDatabase) {
         const val KEY_SCHEDULER_RUNS = "scheduler_runs"
         const val KEY_BACKUP_ENABLED = "backup_enabled"
         const val KEY_GOOGLE_EMAIL = "google_email"
+        const val KEY_ONBOARDED = "onboarded"
     }
 }

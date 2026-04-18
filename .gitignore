@@ -9,3 +9,10 @@ keystore/
 *.keystore
 .kotlin/
 build/
+
+# Worktrees and local agent state
+.claude/
+.playwright-mcp/
+
+# Design scratch files
+detail-design*.png

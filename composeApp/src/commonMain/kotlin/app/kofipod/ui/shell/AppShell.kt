@@ -23,9 +23,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navOptions
 import app.kofipod.ui.nav.KofipodNavHost
 import app.kofipod.ui.nav.Route
 import app.kofipod.ui.player.MiniPlayer
@@ -36,12 +38,18 @@ import app.kofipod.ui.theme.LocalKofipodColors
 @Composable
 fun AppShell() {
     val nav = rememberNavController()
+    val backStack by nav.currentBackStackEntryAsState()
+    val currentRoute = backStack?.destination?.route
+    val hideChrome = currentRoute == Route.Onboarding::class.qualifiedName ||
+        currentRoute == Route.Splash::class.qualifiedName
     Scaffold(
         containerColor = LocalKofipodColors.current.bg,
         bottomBar = {
-            Column {
-                MiniPlayer(onOpen = { nav.navigate(Route.Player) })
-                BottomNav(nav)
+            if (!hideChrome) {
+                Column {
+                    MiniPlayer(onOpen = { nav.navigate(Route.Player) })
+                    BottomNav(nav)
+                }
             }
         },
     ) { padding ->
@@ -88,7 +96,17 @@ private fun BottomNav(nav: NavHostController) {
                     tab = tab,
                     selected = selected,
                     modifier = Modifier.weight(1f),
-                    onClick = { nav.navigate(tab.route) },
+                    onClick = {
+                        if (selected) return@TabItem
+                        val options = navOptions {
+                            popUpTo(nav.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                        nav.navigate(tab.route, options)
+                    },
                 )
             }
         }
