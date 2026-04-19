@@ -16,3 +16,6 @@ build/
 
 # Design scratch files
 detail-design*.png
+
+# Release artifacts
+dist/

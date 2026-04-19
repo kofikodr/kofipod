@@ -85,6 +85,21 @@ kotlin {
     }
 }
 
+val versionProps = Properties().apply {
+    val f = rootProject.file("version.properties")
+    require(f.exists()) { "version.properties missing at repo root" }
+    f.inputStream().use { load(it) }
+}
+val appVersionName: String = versionProps.getProperty("VERSION_NAME")
+    ?: error("VERSION_NAME missing in version.properties")
+val appVersionCode: Int = (versionProps.getProperty("VERSION_CODE")
+    ?: error("VERSION_CODE missing in version.properties")).toInt()
+
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
 android {
     namespace = "app.kofipod"
     compileSdk = 35
@@ -92,8 +107,8 @@ android {
         applicationId = "app.kofipod"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -103,9 +118,26 @@ android {
     packaging {
         resources.excludes += setOf("META-INF/*.md", "META-INF/LICENSE*", "META-INF/NOTICE*")
     }
+    signingConfigs {
+        if (!keystoreProps.isEmpty) {
+            create("release") {
+                val storePath = keystoreProps.getProperty("storeFile")
+                    ?: error("storeFile missing in keystore.properties")
+                storeFile = rootProject.file(storePath)
+                storePassword = keystoreProps.getProperty("storePassword")
+                    ?: error("storePassword missing in keystore.properties")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                    ?: error("keyAlias missing in keystore.properties")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+                    ?: error("keyPassword missing in keystore.properties")
+            }
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
+            // TODO(release): enable R8 with proguard-rules.pro after sideload-verifying a minified build
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 }
@@ -131,7 +163,35 @@ buildkonfig {
     defaultConfigs {
         buildConfigField(STRING, "PODCAST_INDEX_KEY", readSecret("PODCAST_INDEX_KEY"))
         buildConfigField(STRING, "PODCAST_INDEX_SECRET", readSecret("PODCAST_INDEX_SECRET"))
-        buildConfigField(STRING, "USER_AGENT", "Kofipod/0.1 (github.com/ebernie/kofipod)")
+        buildConfigField(STRING, "USER_AGENT", "Kofipod/$appVersionName (github.com/ebernie/kofipod)")
         buildConfigField(STRING, "GOOGLE_SERVER_CLIENT_ID", readSecret("GOOGLE_SERVER_CLIENT_ID"))
+    }
+}
+
+tasks.register("bumpVersion") {
+    description = "Bump version.properties (VERSION_CODE +1, VERSION_NAME per -Ptype=patch|minor|major)"
+    group = "release"
+    doLast {
+        val type = (project.findProperty("type") as? String) ?: "patch"
+        val file = rootProject.file("version.properties")
+        val props = Properties().apply { file.inputStream().use { load(it) } }
+        val oldName = props.getProperty("VERSION_NAME")
+            ?: error("VERSION_NAME missing in version.properties")
+        val oldCode = (props.getProperty("VERSION_CODE")
+            ?: error("VERSION_CODE missing in version.properties")).toInt()
+        val parts = oldName.split(".").map { it.toInt() }.toMutableList()
+        require(parts.size == 3) {
+            "VERSION_NAME must be semver MAJOR.MINOR.PATCH (was: $oldName)"
+        }
+        when (type) {
+            "major" -> { parts[0] += 1; parts[1] = 0; parts[2] = 0 }
+            "minor" -> { parts[1] += 1; parts[2] = 0 }
+            "patch" -> { parts[2] += 1 }
+            else -> error("Unknown -Ptype=$type, expected patch|minor|major")
+        }
+        val newName = parts.joinToString(".")
+        val newCode = oldCode + 1
+        file.writeText("VERSION_NAME=$newName\nVERSION_CODE=$newCode\n")
+        println("Bumped $oldName ($oldCode) → $newName ($newCode)")
     }
 }
