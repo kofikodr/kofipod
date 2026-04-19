@@ -7,6 +7,7 @@ import app.kofipod.data.db.DatabaseFactory
 import app.kofipod.downloads.DownloadEngine
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.share.Sharer
+import app.kofipod.ui.theme.ThemeSystem
 import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
 
@@ -18,4 +19,5 @@ val androidPlatformModule =
         single { Scheduler(androidContext()) }
         single { Notifier(androidContext()) }
         single { Sharer(androidContext()) }
+        single { ThemeSystem(androidContext()) }
     }

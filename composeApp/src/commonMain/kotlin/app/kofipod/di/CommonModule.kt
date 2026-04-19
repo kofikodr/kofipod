@@ -64,7 +64,7 @@ val commonDataModule =
         viewModel { LibraryViewModel(get()) }
         viewModel { StarterPackViewModel(get()) }
         viewModel { (listId: String?) -> LibraryDetailViewModel(listId, get(), get(), get()) }
-        viewModel { SettingsViewModel(get(), get()) }
+        viewModel { SettingsViewModel(get(), get(), get()) }
         viewModel { DownloadsViewModel(get()) }
         viewModel { SchedulerInfoViewModel(get()) }
         viewModel { (podcastId: String) ->
