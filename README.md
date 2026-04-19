@@ -2,6 +2,14 @@
 
 A personal podcasting app for Android (Kotlin Multiplatform, iOS to follow).
 
+## Screenshots
+
+<p align="left">
+  <img src="docs/screenshots/01-library.png" alt="Library"        width="240" />
+  <img src="docs/screenshots/02-folder-detail.png" alt="Folder"   width="240" />
+  <img src="docs/screenshots/03-podcast-detail.png" alt="Podcast" width="240" />
+</p>
+
 ## Setup
 
 1. Register a Podcast Index account at https://api.podcastindex.org/ and obtain an API key and secret.
@@ -14,12 +22,11 @@ A personal podcasting app for Android (Kotlin Multiplatform, iOS to follow).
 
    CI builds can provide the same values via environment variables.
 
-3. For Google Sign-In and Drive backup, create a Google Cloud project:
-   - Enable the **Drive API** (scope: `drive.appdata`).
-   - Under Credentials, create an **OAuth client ID** of type *Android*. Add your debug and release keystore SHA-1 fingerprints.
-   - For release builds, copy `keystore.properties.template` to `keystore.properties` and place your release keystore at `keystore/release.jks`.
+3. For release builds, copy `keystore.properties.template` to `keystore.properties` and place your release keystore at `keystore/release.jks`.
 
 4. Build: `./gradlew :composeApp:assembleDebug`
+
+User data (library + playback state) backs up transparently via Android Auto Backup to the user's Google account — no in-app sign-in, no OAuth client. See `composeApp/src/androidMain/res/xml/backup_rules.xml`.
 
 ## Release
 
