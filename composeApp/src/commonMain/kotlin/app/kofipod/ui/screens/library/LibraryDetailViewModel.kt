@@ -3,6 +3,7 @@ package app.kofipod.ui.screens.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.data.repo.LibraryRepository
 import app.kofipod.data.repo.RecentlyViewedRepository
 import app.kofipod.data.repo.SearchSource
@@ -22,6 +23,8 @@ data class LibraryDetailUiState(
     val listId: String? = null,
     val listName: String = "",
     val podcasts: List<Podcast> = emptyList(),
+    // Podcast IDs (within this folder) that have at least one new episode.
+    val podcastsWithNew: Set<String> = emptySet(),
     val gone: Boolean = false,
     val searchQuery: String = "",
     val searchResults: List<PodcastSummary> = emptyList(),
@@ -35,6 +38,7 @@ class LibraryDetailViewModel(
     private val repo: LibraryRepository,
     private val search: SearchSource,
     private val recentlyViewed: RecentlyViewedRepository,
+    episodes: EpisodeSource,
 ) : ViewModel() {
     private val searchQuery = MutableStateFlow("")
     private val searchResults = MutableStateFlow<List<PodcastSummary>>(emptyList())
@@ -48,13 +52,20 @@ class LibraryDetailViewModel(
             combine(repo.listsFlow(), repo.podcastsInList(listId), ::Pair),
             combine(searchQuery, searchResults, searching, searchError, ::SearchBundle),
             recentlyViewed.recentExcludingSavedFlow(),
-        ) { (lists, podcasts), s, recent ->
+            episodes.newEpisodeCountsFlow(),
+        ) { (lists, podcasts), s, recent, newCounts ->
             val resolved = listId?.let { id -> lists.firstOrNull { it.id == id } }
             val gone = listId != null && resolved == null
+            val withNew =
+                podcasts
+                    .filter { (newCounts[it.id] ?: 0) > 0 }
+                    .map { it.id }
+                    .toSet()
             LibraryDetailUiState(
                 listId = listId,
                 listName = resolved?.name ?: if (listId == null) "Unfiled" else "",
                 podcasts = podcasts,
+                podcastsWithNew = withNew,
                 gone = gone,
                 searchQuery = s.query,
                 searchResults = s.results,

@@ -8,9 +8,16 @@ import app.kofipod.db.Episode
 import app.kofipod.db.KofipodDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 interface EpisodeSource {
     fun episodesFlow(podcastId: String): Flow<List<Episode>>
+
+    /**
+     * podcastId → count of "new" episodes (never-started AND published after the podcast
+     * was added to library). Podcasts with zero new episodes are absent from the map.
+     */
+    fun newEpisodeCountsFlow(): Flow<Map<String, Int>>
 
     suspend fun refresh(
         podcastId: String,
@@ -27,6 +34,13 @@ class EpisodesRepository(
 ) : EpisodeSource {
     override fun episodesFlow(podcastId: String): Flow<List<Episode>> =
         db.episodeQueries.selectByPodcast(podcastId).asFlow().mapToList(Dispatchers.Default)
+
+    override fun newEpisodeCountsFlow(): Flow<Map<String, Int>> =
+        db.episodeQueries
+            .selectNewEpisodeCountsByPodcast()
+            .asFlow()
+            .mapToList(Dispatchers.Default)
+            .map { rows -> rows.associate { it.podcastId to it.newCount.toInt() } }
 
     override suspend fun refresh(
         podcastId: String,

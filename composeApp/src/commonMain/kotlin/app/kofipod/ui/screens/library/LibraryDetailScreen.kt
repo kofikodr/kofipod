@@ -139,6 +139,7 @@ fun LibraryDetailScreen(
                 artworkUrl = p.artworkUrl,
                 onClick = { onOpenPodcast(p.id) },
                 onLongClick = { pendingDeletePodcast = p },
+                hasNew = p.id in state.podcastsWithNew,
             )
         }
     }

@@ -39,6 +39,7 @@ fun PodcastCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
+    hasNew: Boolean = false,
 ) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
@@ -60,13 +61,20 @@ fun PodcastCard(
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                color = c.text,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    title,
+                    color = c.text,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (hasNew) {
+                    Spacer(Modifier.width(8.dp))
+                    KPBadge(label = "New")
+                }
+            }
             if (author.isNotBlank()) {
                 Text(
                     author,

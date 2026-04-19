@@ -3,6 +3,7 @@ package app.kofipod.ui.screens.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.data.repo.LibraryRepository
 import app.kofipod.db.Podcast
 import app.kofipod.db.PodcastList
@@ -16,21 +17,32 @@ data class LibraryGroup(val list: PodcastList?, val podcasts: List<Podcast>)
 
 data class LibraryUiState(
     val groups: List<LibraryGroup> = emptyList(),
+    // Folder listId (or null for Unfiled) → true when any podcast in that bucket has a new episode.
+    val groupsWithNew: Set<String?> = emptySet(),
 )
 
 class LibraryViewModel(
     private val repo: LibraryRepository,
+    episodes: EpisodeSource,
 ) : ViewModel() {
     val state: StateFlow<LibraryUiState> =
         combine(
             repo.listsFlow(),
             repo.podcastsFlow(),
-        ) { lists, podcasts ->
+            episodes.newEpisodeCountsFlow(),
+        ) { lists, podcasts, newCounts ->
             val byList = podcasts.groupBy { it.listId }
             val named = lists.map { l -> LibraryGroup(l, byList[l.id].orEmpty()) }
             val unfiled = byList[null].orEmpty()
             val groups = if (unfiled.isEmpty()) named else named + LibraryGroup(null, unfiled)
-            LibraryUiState(groups = groups)
+
+            val groupsWithNew: Set<String?> =
+                groups
+                    .filter { g -> g.podcasts.any { (newCounts[it.id] ?: 0) > 0 } }
+                    .map { it.list?.id }
+                    .toSet()
+
+            LibraryUiState(groups = groups, groupsWithNew = groupsWithNew)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryUiState())
 
     fun createList(name: String) {

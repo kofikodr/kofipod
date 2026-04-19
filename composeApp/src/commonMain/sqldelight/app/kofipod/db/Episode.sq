@@ -31,5 +31,18 @@ SELECT * FROM Episode WHERE id = ?;
 selectGuidsByPodcast:
 SELECT guid FROM Episode WHERE podcastId = ?;
 
+-- Counts of "new" episodes per podcast: never started (no PlaybackState row) AND
+-- published after the podcast was added to the library (so historical back catalog
+-- on first subscribe doesn't flood the indicator). Podcasts with zero matches are
+-- absent from the result.
+selectNewEpisodeCountsByPodcast:
+SELECT e.podcastId AS podcastId, COUNT(*) AS newCount
+FROM Episode e
+INNER JOIN Podcast p ON p.id = e.podcastId
+LEFT JOIN PlaybackState ps ON ps.episodeId = e.id
+WHERE ps.episodeId IS NULL
+  AND e.publishedAt > p.addedAt
+GROUP BY e.podcastId;
+
 delete:
 DELETE FROM Episode WHERE id = ?;

@@ -96,18 +96,25 @@ fun LibraryScreen(
 
     // Tile slot descriptor: either a real list, an unfiled bucket, or the "New list" CTA.
     // Lets the grid iterate uniformly without special-casing indices inline.
+    // NewList tile appears only before any folder exists — once folders are created the "+"
+    // moves to the header to free up grid space.
     val tiles: List<Tile> =
         buildList {
             lists.forEach { add(Tile.OfList(it)) }
             if (unfiledCount > 0) add(Tile.Unfiled(unfiledCount))
-            add(Tile.NewList)
+            if (lists.isEmpty()) add(Tile.NewList)
         }
 
     LazyColumn(
         Modifier.fillMaxSize().background(c.bg),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 24.dp),
     ) {
-        item { LibraryHeader() }
+        item {
+            LibraryHeader(
+                showAddButton = lists.isNotEmpty(),
+                onNewList = { newListOpen = true },
+            )
+        }
 
         if (lists.isEmpty() && podcasts.isEmpty()) {
             item {
@@ -134,6 +141,7 @@ fun LibraryScreen(
                         tile = left,
                         podcasts = podcasts,
                         activeListId = activeListId,
+                        groupsWithNew = state.groupsWithNew,
                         onOpenList = onOpenList,
                         onLongPressList = { pendingDeleteList = it },
                         onCreateList = { newListOpen = true },
@@ -143,6 +151,7 @@ fun LibraryScreen(
                         tile = right,
                         podcasts = podcasts,
                         activeListId = activeListId,
+                        groupsWithNew = state.groupsWithNew,
                         onOpenList = onOpenList,
                         onLongPressList = { pendingDeleteList = it },
                         onCreateList = { newListOpen = true },
@@ -226,15 +235,40 @@ private sealed interface Tile {
 }
 
 @Composable
-private fun LibraryHeader() {
+private fun LibraryHeader(
+    showAddButton: Boolean,
+    onNewList: () -> Unit,
+) {
     val c = LocalKofipodColors.current
-    Text(
-        "Library",
-        color = c.text,
-        fontWeight = FontWeight.ExtraBold,
-        fontSize = 32.sp,
+    Row(
         modifier = Modifier.fillMaxWidth(),
-    )
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Library",
+            color = c.text,
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 32.sp,
+            modifier = Modifier.weight(1f),
+        )
+        if (showAddButton) {
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(c.pink)
+                    .clickable(onClick = onNewList),
+                contentAlignment = Alignment.Center,
+            ) {
+                KPIcon(
+                    name = KPIconName.Plus,
+                    color = Color.White,
+                    size = 20.dp,
+                    strokeWidth = 2.4f,
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -243,6 +277,7 @@ private fun TileSlot(
     tile: Tile?,
     podcasts: List<Podcast>,
     activeListId: String?,
+    groupsWithNew: Set<String?>,
     onOpenList: (String?) -> Unit,
     onLongPressList: (PodcastList) -> Unit,
     onCreateList: () -> Unit,
@@ -255,6 +290,7 @@ private fun TileSlot(
                 list = tile.list,
                 podcastCount = count,
                 active = tile.list.id == activeListId,
+                hasNew = tile.list.id in groupsWithNew,
                 seed = tile.list.id.hashCode(),
                 onClick = { onOpenList(tile.list.id) },
                 onLongClick = { onLongPressList(tile.list) },
@@ -264,6 +300,7 @@ private fun TileSlot(
             UnfiledTile(
                 modifier = modifier,
                 podcastCount = tile.count,
+                hasNew = null in groupsWithNew,
                 onClick = { onOpenList(null) },
             )
         Tile.NewList -> NewListTile(modifier = modifier, onClick = onCreateList)
@@ -278,6 +315,7 @@ private fun ListTile(
     list: PodcastList,
     podcastCount: Int,
     active: Boolean,
+    hasNew: Boolean,
     seed: Int,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -304,13 +342,20 @@ private fun ListTile(
             size = 22.dp,
             modifier = Modifier.align(Alignment.TopStart),
         )
-        KofipodArtwork(
-            size = 44.dp,
-            seed = seed * 7 + 3,
-            label = null,
-            radius = 22.dp,
-            modifier = Modifier.align(Alignment.TopEnd),
-        )
+        Box(Modifier.align(Alignment.TopEnd)) {
+            KofipodArtwork(
+                size = 44.dp,
+                seed = seed * 7 + 3,
+                label = null,
+                radius = 22.dp,
+            )
+            if (hasNew) {
+                NewDot(
+                    ringColor = background,
+                    modifier = Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-2).dp),
+                )
+            }
+        }
         Column(Modifier.align(Alignment.BottomStart)) {
             Text(
                 list.name,
@@ -337,6 +382,7 @@ private fun ListTile(
 private fun UnfiledTile(
     modifier: Modifier,
     podcastCount: Int,
+    hasNew: Boolean,
     onClick: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
@@ -356,6 +402,9 @@ private fun UnfiledTile(
             size = 22.dp,
             modifier = Modifier.align(Alignment.TopStart),
         )
+        if (hasNew) {
+            NewDot(ringColor = c.surface, modifier = Modifier.align(Alignment.TopEnd))
+        }
         Column(Modifier.align(Alignment.BottomStart)) {
             Text(
                 "Unfiled",
@@ -409,6 +458,32 @@ private fun NewListTile(
                 fontSize = 14.sp,
             )
         }
+    }
+}
+
+/**
+ * Small pink "new episode" dot. Rendered with a 2dp ring in [ringColor] (the tile's
+ * background) so the dot reads clearly when it overlaps artwork or folder chrome.
+ */
+@Composable
+private fun NewDot(
+    ringColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    val c = LocalKofipodColors.current
+    Box(
+        modifier
+            .size(14.dp)
+            .clip(CircleShape)
+            .background(ringColor),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(c.pink),
+        )
     }
 }
 
