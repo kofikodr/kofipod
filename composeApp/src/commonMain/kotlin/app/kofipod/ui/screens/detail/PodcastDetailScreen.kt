@@ -12,8 +12,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -27,16 +25,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.datetime.Instant
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 import androidx.compose.ui.window.Dialog
 import app.kofipod.db.PodcastList
 import app.kofipod.ui.permission.rememberNotificationPermissionRequester
@@ -46,6 +42,10 @@ import app.kofipod.ui.primitives.KofipodArtwork
 import app.kofipod.ui.primitives.LoadMoreRow
 import app.kofipod.ui.theme.LocalKofipodColors
 import app.kofipod.ui.theme.LocalKofipodRadii
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
 
@@ -65,8 +65,11 @@ fun PodcastDetailScreen(
     val summary = state.summary
     if (summary == null) {
         Box(Modifier.fillMaxSize().background(c.bg), Alignment.Center) {
-            if (state.error != null) Text(state.error!!, color = c.danger)
-            else Text("Loading…", color = c.textMute)
+            if (state.error != null) {
+                Text(state.error!!, color = c.danger)
+            } else {
+                Text("Loading…", color = c.textMute)
+            }
         }
         return
     }
@@ -75,52 +78,60 @@ fun PodcastDetailScreen(
     var tab by remember { mutableStateOf(DetailTab.Episodes) }
     var newestFirst by remember { mutableStateOf(true) }
 
-    val requestNotificationPermission = rememberNotificationPermissionRequester { granted ->
-        viewModel.toggleNotifyNewEpisodes(granted)
-    }
+    val requestNotificationPermission =
+        rememberNotificationPermissionRequester { granted ->
+            viewModel.toggleNotifyNewEpisodes(granted)
+        }
 
     val listName = state.listId?.let { id -> state.lists.firstOrNull { it.id == id }?.name }
-    val saveLabel = when {
-        state.inLibrary && listName != null -> "Saved to $listName"
-        state.inLibrary -> "Saved"
-        else -> "Save to list"
-    }
+    val saveLabel =
+        when {
+            state.inLibrary && listName != null -> "Saved to $listName"
+            state.inLibrary -> "Saved"
+            else -> "Save to list"
+        }
 
     val inLibrary = state.inLibrary
     val storedEpisodes = state.storedEpisodes
     val remoteEpisodes = state.remoteEpisodes
     val downloadStates = state.downloadStates
     val displayLimit = state.episodeDisplayLimit
-    val rows: List<EpisodeRowData> = remember(
-        inLibrary, storedEpisodes, remoteEpisodes, downloadStates, newestFirst,
-    ) {
-        val mapped = if (inLibrary) {
-            storedEpisodes.map {
-                EpisodeRowData(
-                    id = it.id,
-                    title = it.title,
-                    publishedAt = it.publishedAt,
-                    durationSec = it.durationSec.toInt(),
-                    fileSizeBytes = it.fileSizeBytes,
-                    playable = true,
-                    downloadState = downloadStates[it.id],
-                )
-            }
-        } else {
-            remoteEpisodes.map {
-                EpisodeRowData(
-                    id = it.id,
-                    title = it.title,
-                    publishedAt = 0L,
-                    durationSec = it.durationMinutes * 60,
-                    fileSizeBytes = 0,
-                    playable = it.enclosureUrl.isNotBlank(),
-                    downloadState = null,
-                )
-            }
+    val rows: List<EpisodeRowData> =
+        remember(
+            inLibrary,
+            storedEpisodes,
+            remoteEpisodes,
+            downloadStates,
+            newestFirst,
+        ) {
+            val mapped =
+                if (inLibrary) {
+                    storedEpisodes.map {
+                        EpisodeRowData(
+                            id = it.id,
+                            title = it.title,
+                            publishedAt = it.publishedAt,
+                            durationSec = it.durationSec.toInt(),
+                            fileSizeBytes = it.fileSizeBytes,
+                            playable = true,
+                            downloadState = downloadStates[it.id],
+                        )
+                    }
+                } else {
+                    remoteEpisodes.map {
+                        EpisodeRowData(
+                            id = it.id,
+                            title = it.title,
+                            publishedAt = 0L,
+                            durationSec = it.durationMinutes * 60,
+                            fileSizeBytes = 0,
+                            playable = it.enclosureUrl.isNotBlank(),
+                            downloadState = null,
+                        )
+                    }
+                }
+            if (newestFirst) mapped else mapped.asReversed()
         }
-        if (newestFirst) mapped else mapped.asReversed()
-    }
     val visibleRows = remember(rows, displayLimit) { rows.take(displayLimit) }
     val activePlaybackFlow = viewModel.activePlayback
 
@@ -241,7 +252,10 @@ fun PodcastDetailScreen(
 }
 
 @Composable
-private fun TopIconBar(onBack: () -> Unit, onShare: () -> Unit) {
+private fun TopIconBar(
+    onBack: () -> Unit,
+    onShare: () -> Unit,
+) {
     val c = LocalKofipodColors.current
     Row(
         Modifier
@@ -263,7 +277,10 @@ private fun TopIconBar(onBack: () -> Unit, onShare: () -> Unit) {
 }
 
 @Composable
-private fun IconButton(onClick: () -> Unit, content: @Composable () -> Unit) {
+private fun IconButton(
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
     Box(
         Modifier
             .size(40.dp)
@@ -365,11 +382,12 @@ private fun ActionRow(
             }
         }
         Spacer(Modifier.width(10.dp))
-        val bellTint = when {
-            !bellEnabled -> c.textMute
-            bellOn -> c.pink
-            else -> c.purple
-        }
+        val bellTint =
+            when {
+                !bellEnabled -> c.textMute
+                bellOn -> c.pink
+                else -> c.purple
+            }
         CircleButton(onClick = onToggleBell, tint = bellTint) {
             KPIcon(name = KPIconName.Bell, color = bellTint, size = 18.dp)
         }
@@ -385,7 +403,10 @@ private fun ActionRow(
 }
 
 @Composable
-private fun AutoDownloadRow(enabled: Boolean, onToggle: (Boolean) -> Unit) {
+private fun AutoDownloadRow(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
     val c = LocalKofipodColors.current
     Row(
         Modifier
@@ -409,16 +430,21 @@ private fun AutoDownloadRow(enabled: Boolean, onToggle: (Boolean) -> Unit) {
         Switch(
             checked = enabled,
             onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = c.pink,
-                checkedTrackColor = c.pinkSoft,
-            ),
+            colors =
+                SwitchDefaults.colors(
+                    checkedThumbColor = c.pink,
+                    checkedTrackColor = c.pinkSoft,
+                ),
         )
     }
 }
 
 @Composable
-private fun CircleButton(onClick: () -> Unit, tint: Color, content: @Composable () -> Unit) {
+private fun CircleButton(
+    onClick: () -> Unit,
+    tint: Color,
+    content: @Composable () -> Unit,
+) {
     val c = LocalKofipodColors.current
     Box(
         Modifier
@@ -464,7 +490,11 @@ private fun TabsRow(
 }
 
 @Composable
-private fun TabPill(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun TabPill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
     val c = LocalKofipodColors.current
     Column(
         Modifier.clickable { onClick() },
@@ -614,7 +644,10 @@ private fun ActivePlayButton(
 }
 
 @Composable
-private fun IdlePlayButton(enabled: Boolean, onClick: () -> Unit) {
+private fun IdlePlayButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
     val c = LocalKofipodColors.current
     Box(
         Modifier
@@ -629,15 +662,21 @@ private fun IdlePlayButton(enabled: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun StateIndicator(ep: EpisodeRowData, canDownload: Boolean, onDownload: () -> Unit) {
+private fun StateIndicator(
+    ep: EpisodeRowData,
+    canDownload: Boolean,
+    onDownload: () -> Unit,
+) {
     val c = LocalKofipodColors.current
     when (ep.downloadState) {
-        "Completed" -> Box(Modifier.size(28.dp), Alignment.Center) {
-            KPIcon(name = KPIconName.Check, color = c.success, size = 18.dp, strokeWidth = 2.2f)
-        }
-        "Downloading", "Queued" -> Box(Modifier.size(28.dp), Alignment.Center) {
-            KPIcon(name = KPIconName.Clock, color = c.pink, size = 18.dp)
-        }
+        "Completed" ->
+            Box(Modifier.size(28.dp), Alignment.Center) {
+                KPIcon(name = KPIconName.Check, color = c.success, size = 18.dp, strokeWidth = 2.2f)
+            }
+        "Downloading", "Queued" ->
+            Box(Modifier.size(28.dp), Alignment.Center) {
+                KPIcon(name = KPIconName.Clock, color = c.pink, size = 18.dp)
+            }
         else -> {
             val active = ep.playable && canDownload
             Box(
@@ -659,7 +698,11 @@ private fun StateIndicator(ep: EpisodeRowData, canDownload: Boolean, onDownload:
     }
 }
 
-private fun episodeMetaLine(publishedAt: Long, durationSec: Int, fileSizeBytes: Long): String {
+private fun episodeMetaLine(
+    publishedAt: Long,
+    durationSec: Int,
+    fileSizeBytes: Long,
+): String {
     val parts = mutableListOf<String>()
     if (publishedAt > 0) parts += formatDate(publishedAt)
     if (durationSec > 0) parts += formatDuration(durationSec)
@@ -668,8 +711,9 @@ private fun episodeMetaLine(publishedAt: Long, durationSec: Int, fileSizeBytes: 
 }
 
 private fun formatDate(epochMs: Long): String {
-    val ld = Instant.fromEpochMilliseconds(epochMs)
-        .toLocalDateTime(TimeZone.currentSystemDefault()).date
+    val ld =
+        Instant.fromEpochMilliseconds(epochMs)
+            .toLocalDateTime(TimeZone.currentSystemDefault()).date
     val months = arrayOf("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
     return "${months[ld.monthNumber - 1]} ${ld.dayOfMonth.toString().padStart(2, '0')}"
 }
@@ -728,7 +772,11 @@ private fun ListPickerDialog(
 }
 
 @Composable
-private fun PickerRow(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun PickerRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
     val c = LocalKofipodColors.current
     Row(
         Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 10.dp),

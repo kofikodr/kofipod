@@ -135,7 +135,10 @@ fun OnboardingScreen(
 }
 
 @Composable
-private fun FeatureRow(icon: KPIconName, text: String) {
+private fun FeatureRow(
+    icon: KPIconName,
+    text: String,
+) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
     Row(

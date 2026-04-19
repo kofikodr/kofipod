@@ -1,0 +1,35 @@
+# Minimal detekt config — intentionally narrow.
+# Only enables rules we actively want to enforce. Run `./gradlew :composeApp:detekt`.
+# See https://detekt.dev/docs/rules/style/#forbiddenimport for the rule reference.
+
+build:
+  maxIssues: 0
+
+config:
+  validation: true
+  warningsAsErrors: true
+
+style:
+  active: true
+  ForbiddenImport:
+    active: true
+    # Scope: commonMain only. Android-only and JVM-only imports are fine in
+    # androidMain / androidTest, and JVM stdlib is fine in iosMain too.
+    includes: ['**/commonMain/**']
+    imports:
+      - value: 'java.**'
+        reason: 'java.* is JVM-only and breaks iOS targets. Use kotlinx or expect/actual.'
+      - value: 'javax.**'
+        reason: 'javax.* is JVM-only and breaks iOS targets.'
+      - value: 'kotlin.jvm.**'
+        reason: 'kotlin.jvm.* is JVM-only and breaks iOS targets.'
+      - value: 'androidx.lifecycle.viewmodel.compose.**'
+        reason: 'Android-only aar. Use koin-compose-viewmodel in commonMain, or scope to androidMain.'
+      - value: 'androidx.media3.**'
+        reason: 'Android-only. Scope to androidMain (wrap via expect/actual if needed).'
+      - value: 'androidx.work.**'
+        reason: 'Android-only. Scope to androidMain.'
+      - value: 'androidx.credentials.**'
+        reason: 'Android-only. Scope to androidMain.'
+      - value: 'com.google.android.**'
+        reason: 'Android-only. Scope to androidMain.'

@@ -33,7 +33,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -125,7 +124,10 @@ private fun SpeedPanel(
 }
 
 @Composable
-private fun VuBars(active: Boolean, modifier: Modifier = Modifier) {
+private fun VuBars(
+    active: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val c = LocalKofipodColors.current
     val transition = rememberInfiniteTransition(label = "vu")
     val phase by transition.animateFloat(
@@ -141,11 +143,12 @@ private fun VuBars(active: Boolean, modifier: Modifier = Modifier) {
         val barWidth = (size.width - gap * (bars - 1)) / bars
         for (i in 0 until bars) {
             val offset = i.toFloat() / bars
-            val osc = if (active) {
-                0.5f + 0.5f * sin((phase + offset) * 2f * kotlin.math.PI.toFloat() + i)
-            } else {
-                0.25f
-            }
+            val osc =
+                if (active) {
+                    0.5f + 0.5f * sin((phase + offset) * 2f * kotlin.math.PI.toFloat() + i)
+                } else {
+                    0.25f
+                }
             val h = size.height * (0.25f + 0.75f * osc) * calm
             val x = i * (barWidth + gap)
             val y = size.height - h
@@ -187,16 +190,21 @@ private fun SleepPanel(
             listOf(5, 15, 30, 60).forEach { m ->
                 DropdownMenuItem(
                     text = { Text("$m minutes") },
-                    onClick = { menuOpen = false; onSetSleep(m) },
+                    onClick = {
+                        menuOpen = false
+                        onSetSleep(m)
+                    },
                 )
             }
             if (remainingMs != null) {
                 DropdownMenuItem(
                     text = { Text("Cancel") },
-                    onClick = { menuOpen = false; onSetSleep(null) },
+                    onClick = {
+                        menuOpen = false
+                        onSetSleep(null)
+                    },
                 )
             }
         }
     }
 }
-

@@ -11,22 +11,22 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 
 @Composable
-actual fun rememberNotificationPermissionRequester(
-    onResult: (granted: Boolean) -> Unit,
-): () -> Unit {
+actual fun rememberNotificationPermissionRequester(onResult: (granted: Boolean) -> Unit): () -> Unit {
     val context = LocalContext.current
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { granted -> onResult(granted) },
-    )
+    val launcher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+            onResult = { granted -> onResult(granted) },
+        )
     return {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             onResult(true)
         } else {
-            val already = ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.POST_NOTIFICATIONS,
-            ) == PackageManager.PERMISSION_GRANTED
+            val already =
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) == PackageManager.PERMISSION_GRANTED
             if (already) onResult(true) else launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }

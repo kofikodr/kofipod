@@ -6,8 +6,9 @@ import kotlinx.serialization.json.Json
 
 expect fun buildHttpClient(): HttpClient
 
-val kofipodJson: Json = Json {
-    ignoreUnknownKeys = true
-    coerceInputValues = true
-    isLenient = true
-}
+val kofipodJson: Json =
+    Json {
+        ignoreUnknownKeys = true
+        coerceInputValues = true
+        isLenient = true
+    }

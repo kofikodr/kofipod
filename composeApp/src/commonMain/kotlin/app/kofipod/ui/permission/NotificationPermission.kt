@@ -8,6 +8,4 @@ import androidx.compose.runtime.Composable
  * [onResult] is called with the resulting grant state (true if no runtime prompt is needed).
  */
 @Composable
-expect fun rememberNotificationPermissionRequester(
-    onResult: (granted: Boolean) -> Unit,
-): () -> Unit
+expect fun rememberNotificationPermissionRequester(onResult: (granted: Boolean) -> Unit): () -> Unit

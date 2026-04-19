@@ -28,19 +28,21 @@ fun KPChip(
     onClick: (() -> Unit)? = null,
 ) {
     val c = LocalKofipodColors.current
-    val (bg, fg, border) = when {
-        selected && tone == KPChipTone.Pink -> Triple(c.pink, c.surface, c.pink)
-        selected -> Triple(c.purple, c.surface, c.purple)
-        tone == KPChipTone.Outline -> Triple(Color.Transparent, c.textSoft, c.border)
-        else -> Triple(c.purpleTint, c.text, c.purpleTint)
-    }
+    val (bg, fg, border) =
+        when {
+            selected && tone == KPChipTone.Pink -> Triple(c.pink, c.surface, c.pink)
+            selected -> Triple(c.purple, c.surface, c.purple)
+            tone == KPChipTone.Outline -> Triple(Color.Transparent, c.textSoft, c.border)
+            else -> Triple(c.purpleTint, c.text, c.purpleTint)
+        }
     Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(bg)
-            .border(1.dp, border, RoundedCornerShape(999.dp))
-            .let { if (onClick != null) it.clickable { onClick() } else it }
-            .padding(horizontal = 14.dp, vertical = 6.dp),
+        modifier =
+            modifier
+                .clip(RoundedCornerShape(999.dp))
+                .background(bg)
+                .border(1.dp, border, RoundedCornerShape(999.dp))
+                .let { if (onClick != null) it.clickable { onClick() } else it }
+                .padding(horizontal = 14.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(

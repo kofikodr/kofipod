@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.datetime.Clock
 
 data class DownloadRow(
     val episodeId: String,
@@ -32,21 +33,22 @@ data class DownloadRow(
     val artworkUrl: String?,
 )
 
-private fun SelectAllWithMeta.toDownloadRow(): DownloadRow = DownloadRow(
-    episodeId = episodeId,
-    state = state,
-    localPath = localPath,
-    downloadedBytes = downloadedBytes,
-    totalBytes = totalBytes,
-    source = source,
-    startedAt = startedAt,
-    completedAt = completedAt,
-    errorMessage = errorMessage,
-    episodeTitle = episodeTitle,
-    podcastId = podcastId,
-    podcastTitle = podcastTitle,
-    artworkUrl = artworkUrl,
-)
+private fun SelectAllWithMeta.toDownloadRow(): DownloadRow =
+    DownloadRow(
+        episodeId = episodeId,
+        state = state,
+        localPath = localPath,
+        downloadedBytes = downloadedBytes,
+        totalBytes = totalBytes,
+        source = source,
+        startedAt = startedAt,
+        completedAt = completedAt,
+        errorMessage = errorMessage,
+        episodeTitle = episodeTitle,
+        podcastId = podcastId,
+        podcastTitle = podcastTitle,
+        artworkUrl = artworkUrl,
+    )
 
 class DownloadRepository(
     private val db: KofipodDatabase,
@@ -74,8 +76,7 @@ class DownloadRepository(
         }.launchIn(scope)
     }
 
-    fun all(): Flow<List<Download>> =
-        db.downloadQueries.selectAll().asFlow().mapToList(Dispatchers.Default)
+    fun all(): Flow<List<Download>> = db.downloadQueries.selectAll().asFlow().mapToList(Dispatchers.Default)
 
     fun allWithMeta(): Flow<List<DownloadRow>> =
         db.downloadQueries.selectAllWithMeta()
@@ -83,8 +84,13 @@ class DownloadRepository(
             .mapToList(Dispatchers.Default)
             .map { rows -> rows.map { it.toDownloadRow() } }
 
-    fun enqueue(episodeId: String, url: String, fileName: String, source: DownloadJob.Source) {
-        val now = System.currentTimeMillis()
+    fun enqueue(
+        episodeId: String,
+        url: String,
+        fileName: String,
+        source: DownloadJob.Source,
+    ) {
+        val now = Clock.System.now().toEpochMilliseconds()
         db.downloadQueries.upsert(
             episodeId = episodeId,
             state = "Queued",

@@ -77,15 +77,24 @@ internal fun PlayerTopBar(
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
                     text = { Text("Share episode") },
-                    onClick = { menuOpen = false; onShare() },
+                    onClick = {
+                        menuOpen = false
+                        onShare()
+                    },
                 )
                 DropdownMenuItem(
                     text = { Text("Go to podcast") },
-                    onClick = { menuOpen = false; onGoToPodcast() },
+                    onClick = {
+                        menuOpen = false
+                        onGoToPodcast()
+                    },
                 )
                 DropdownMenuItem(
                     text = { Text("Mark as played") },
-                    onClick = { menuOpen = false; onMarkPlayed() },
+                    onClick = {
+                        menuOpen = false
+                        onMarkPlayed()
+                    },
                 )
             }
         }
@@ -93,7 +102,10 @@ internal fun PlayerTopBar(
 }
 
 @Composable
-private fun TopRoundButton(icon: KPIconName, onClick: () -> Unit) {
+private fun TopRoundButton(
+    icon: KPIconName,
+    onClick: () -> Unit,
+) {
     val c = LocalKofipodColors.current
     Box(
         Modifier

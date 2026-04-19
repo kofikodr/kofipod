@@ -22,26 +22,31 @@ import org.junit.Rule
 import org.junit.Test
 
 class PrimitivesSnapshots {
-
     @get:Rule
-    val paparazzi = Paparazzi(
-        deviceConfig = DeviceConfig.PIXEL_5,
-        theme = "android:Theme.Material.Light.NoActionBar",
-    )
+    val paparazzi =
+        Paparazzi(
+            deviceConfig = DeviceConfig.PIXEL_5,
+            theme = "android:Theme.Material.Light.NoActionBar",
+        )
 
     @Test
-    fun primitives_light() = paparazzi.snapshot {
-        ThemedPreview(KofipodThemeMode.Light) { Primitives() }
-    }
+    fun primitives_light() =
+        paparazzi.snapshot {
+            ThemedPreview(KofipodThemeMode.Light) { Primitives() }
+        }
 
     @Test
-    fun primitives_dark() = paparazzi.snapshot {
-        ThemedPreview(KofipodThemeMode.Dark) { Primitives() }
-    }
+    fun primitives_dark() =
+        paparazzi.snapshot {
+            ThemedPreview(KofipodThemeMode.Dark) { Primitives() }
+        }
 }
 
 @Composable
-private fun ThemedPreview(mode: KofipodThemeMode, content: @Composable () -> Unit) {
+private fun ThemedPreview(
+    mode: KofipodThemeMode,
+    content: @Composable () -> Unit,
+) {
     KofipodTheme(mode) {
         Column(
             Modifier

@@ -2,5 +2,8 @@
 package app.kofipod.background
 
 expect class Notifier {
-    fun postNewEpisodes(totalEpisodes: Int, totalShows: Int)
+    fun postNewEpisodes(
+        totalEpisodes: Int,
+        totalShows: Int,
+    )
 }

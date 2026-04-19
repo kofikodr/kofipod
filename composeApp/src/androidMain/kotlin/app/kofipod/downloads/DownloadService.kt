@@ -21,7 +21,6 @@ import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentHashMap
 
 class DownloadService : Service() {
-
     private val client = OkHttpClient()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val active = ConcurrentHashMap<String, Job>()
@@ -33,7 +32,11 @@ class DownloadService : Service() {
         ensureChannel()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int,
+    ): Int {
         startForegroundIfNeeded()
         val action = intent?.action ?: return START_NOT_STICKY
         when (action) {
@@ -44,22 +47,23 @@ class DownloadService : Service() {
                 DownloadBroadcaster.tryEmit(
                     DownloadProgress(episodeId, 0, 0, DownloadProgress.State.Queued),
                 )
-                active[episodeId] = scope.launch {
-                    runCatching { downloadWithResume(episodeId, url, name) }
-                        .onFailure {
-                            DownloadBroadcaster.emit(
-                                DownloadProgress(
-                                    episodeId,
-                                    0,
-                                    0,
-                                    DownloadProgress.State.Failed,
-                                    it.message,
-                                ),
-                            )
-                        }
-                    active.remove(episodeId)
-                    stopIfIdle()
-                }
+                active[episodeId] =
+                    scope.launch {
+                        runCatching { downloadWithResume(episodeId, url, name) }
+                            .onFailure {
+                                DownloadBroadcaster.emit(
+                                    DownloadProgress(
+                                        episodeId,
+                                        0,
+                                        0,
+                                        DownloadProgress.State.Failed,
+                                        it.message,
+                                    ),
+                                )
+                            }
+                        active.remove(episodeId)
+                        stopIfIdle()
+                    }
             }
             ACTION_CANCEL -> {
                 val episodeId = intent.getStringExtra(EXTRA_EPISODE_ID) ?: return START_NOT_STICKY
@@ -77,12 +81,17 @@ class DownloadService : Service() {
         if (active.isEmpty()) stopSelf()
     }
 
-    private suspend fun downloadWithResume(episodeId: String, url: String, name: String) {
+    private suspend fun downloadWithResume(
+        episodeId: String,
+        url: String,
+        name: String,
+    ) {
         val file = File(filesDir, "downloads/$name").apply { parentFile?.mkdirs() }
         val existing = if (file.exists()) file.length() else 0L
-        val request = Request.Builder().url(url).apply {
-            if (existing > 0) addHeader("Range", "bytes=$existing-")
-        }.build()
+        val request =
+            Request.Builder().url(url).apply {
+                if (existing > 0) addHeader("Range", "bytes=$existing-")
+            }.build()
         client.newCall(request).execute().use { resp ->
             if (!resp.isSuccessful) {
                 DownloadBroadcaster.emit(
@@ -149,11 +158,12 @@ class DownloadService : Service() {
     }
 
     private fun startForegroundIfNeeded() {
-        val notif = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("Downloading episodes")
-            .setOngoing(true)
-            .build()
+        val notif =
+            NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.stat_sys_download)
+                .setContentTitle("Downloading episodes")
+                .setOngoing(true)
+                .build()
         startForeground(NOTIF_ID, notif)
     }
 

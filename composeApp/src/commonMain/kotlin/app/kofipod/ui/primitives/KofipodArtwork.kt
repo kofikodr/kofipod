@@ -85,9 +85,10 @@ fun KofipodArtwork(
                 fontWeight = FontWeight.SemiBold,
                 fontSize = labelSize.value.sp,
                 fontFamily = FontFamily.Monospace,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 8.dp, bottom = 6.dp),
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 8.dp, bottom = 6.dp),
             )
         }
     }
@@ -113,7 +114,10 @@ fun KofipodArtwork(
     contentDescription = contentDescription,
 )
 
-private fun artGradient(seed: Int, dark: Boolean): Pair<Color, Color> {
+private fun artGradient(
+    seed: Int,
+    dark: Boolean,
+): Pair<Color, Color> {
     val slot = ((seed * 37) and 0x7FFFFFFF) % GRADIENTS.size
     val entry = GRADIENTS[slot]
     return if (dark) entry.dark else entry.light
@@ -121,11 +125,12 @@ private fun artGradient(seed: Int, dark: Boolean): Pair<Color, Color> {
 
 private data class GradientPair(val light: Pair<Color, Color>, val dark: Pair<Color, Color>)
 
-private val GRADIENTS: List<GradientPair> = listOf(
-    GradientPair(Color(0xFF6D3BD2) to Color(0xFF8B5CF6), Color(0xFF7C4DEB) to Color(0xFFC4A6FF)),
-    GradientPair(Color(0xFF4B1E9E) to Color(0xFF7C3AED), Color(0xFFA881F5) to Color(0xFFC4A6FF)),
-    GradientPair(Color(0xFF8B5CF6) to Color(0xFFD946EF), Color(0xFFC4A6FF) to Color(0xFFFF6BB5)),
-    GradientPair(Color(0xFF6D3BD2) to Color(0xFF4B1E9E), Color(0xFF7C4DEB) to Color(0xFF4B1E9E)),
-    GradientPair(Color(0xFFFF2E9A) to Color(0xFF8B5CF6), Color(0xFFFF6BB5) to Color(0xFFA881F5)),
-    GradientPair(Color(0xFF4F46E5) to Color(0xFF8B5CF6), Color(0xFF6366F1) to Color(0xFFA881F5)),
-)
+private val GRADIENTS: List<GradientPair> =
+    listOf(
+        GradientPair(Color(0xFF6D3BD2) to Color(0xFF8B5CF6), Color(0xFF7C4DEB) to Color(0xFFC4A6FF)),
+        GradientPair(Color(0xFF4B1E9E) to Color(0xFF7C3AED), Color(0xFFA881F5) to Color(0xFFC4A6FF)),
+        GradientPair(Color(0xFF8B5CF6) to Color(0xFFD946EF), Color(0xFFC4A6FF) to Color(0xFFFF6BB5)),
+        GradientPair(Color(0xFF6D3BD2) to Color(0xFF4B1E9E), Color(0xFF7C4DEB) to Color(0xFF4B1E9E)),
+        GradientPair(Color(0xFFFF2E9A) to Color(0xFF8B5CF6), Color(0xFFFF6BB5) to Color(0xFFA881F5)),
+        GradientPair(Color(0xFF4F46E5) to Color(0xFF8B5CF6), Color(0xFF6366F1) to Color(0xFFA881F5)),
+    )

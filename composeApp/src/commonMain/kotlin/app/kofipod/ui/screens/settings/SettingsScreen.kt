@@ -94,9 +94,10 @@ fun SettingsScreen(
                 err,
                 color = c.danger,
                 fontSize = 12.sp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { viewModel.clearBackupError() },
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.clearBackupError() },
             )
         }
 
@@ -167,9 +168,10 @@ fun SettingsScreen(
             color = c.textMute,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier
-                .clickable { onOpenScheduler() }
-                .padding(vertical = 4.dp),
+            modifier =
+                Modifier
+                    .clickable { onOpenScheduler() }
+                    .padding(vertical = 4.dp),
         )
 
         Spacer(Modifier.height(16.dp))
@@ -181,9 +183,9 @@ fun SettingsScreen(
     }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Theme mode selector                                                       */
-/* -------------------------------------------------------------------------- */
+// --------------------------------------------------------------------------
+// Theme mode selector
+// --------------------------------------------------------------------------
 
 @Composable
 private fun ThemeModeSelector(
@@ -212,11 +214,12 @@ private fun ThemeModeSelector(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = when (mode) {
-                        KofipodThemeMode.System -> "System"
-                        KofipodThemeMode.Light -> "Light"
-                        KofipodThemeMode.Dark -> "Dark"
-                    },
+                    text =
+                        when (mode) {
+                            KofipodThemeMode.System -> "System"
+                            KofipodThemeMode.Light -> "Light"
+                            KofipodThemeMode.Dark -> "Dark"
+                        },
                     color = if (active) Color.White else c.text,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp,
@@ -226,9 +229,9 @@ private fun ThemeModeSelector(
     }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Hero card                                                                 */
-/* -------------------------------------------------------------------------- */
+// --------------------------------------------------------------------------
+// Hero card
+// --------------------------------------------------------------------------
 
 @Composable
 private fun AccountHeroCard(
@@ -245,10 +248,11 @@ private fun AccountHeroCard(
         SettingRow(
             icon = KPIconName.Folder,
             title = "Back up to Google Drive",
-            subtitle = when {
-                signingIn -> "Signing in…"
-                else -> "Off — your library stays on this device"
-            },
+            subtitle =
+                when {
+                    signingIn -> "Signing in…"
+                    else -> "Off — your library stays on this device"
+                },
             trailing = {
                 PinkSwitch(
                     checked = false,
@@ -261,9 +265,10 @@ private fun AccountHeroCard(
         return
     }
 
-    val gradient = Brush.linearGradient(
-        colors = listOf(c.purpleDeep, c.purpleSoft),
-    )
+    val gradient =
+        Brush.linearGradient(
+            colors = listOf(c.purpleDeep, c.purpleSoft),
+        )
     Box(
         Modifier
             .fillMaxWidth()
@@ -286,9 +291,10 @@ private fun AccountHeroCard(
         }
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 18.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // Avatar
@@ -326,12 +332,13 @@ private fun AccountHeroCard(
 
         // Floating pill — top-right.
         Row(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 12.dp, end = 12.dp)
-                .clip(RoundedCornerShape(999.dp))
-                .background(Color.Black.copy(alpha = 0.22f))
-                .padding(horizontal = 10.dp, vertical = 5.dp),
+            modifier =
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 12.dp, end = 12.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(Color.Black.copy(alpha = 0.22f))
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -356,8 +363,10 @@ private fun initialsFromEmail(email: String): String {
     val local = email.substringBefore('@')
     val parts = local.split('.', '_', '-').filter { it.isNotBlank() }
     return when {
-        parts.size >= 2 -> (parts[0].first().uppercaseChar().toString() +
-            parts[1].first().uppercaseChar())
+        parts.size >= 2 -> (
+            parts[0].first().uppercaseChar().toString() +
+                parts[1].first().uppercaseChar()
+        )
         local.length >= 2 -> local.take(2).uppercase()
         local.isNotEmpty() -> local.take(1).uppercase()
         else -> "?"
@@ -372,12 +381,15 @@ private fun displayNameFromEmail(email: String): String {
         .joinToString(" ") { it.replaceFirstChar { ch -> ch.uppercaseChar() } }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Max auto-download size card — gradient slider                             */
-/* -------------------------------------------------------------------------- */
+// --------------------------------------------------------------------------
+// Max auto-download size card — gradient slider
+// --------------------------------------------------------------------------
 
 @Composable
-private fun MaxDownloadSizeCard(bytes: Long, onChange: (Long) -> Unit) {
+private fun MaxDownloadSizeCard(
+    bytes: Long,
+    onChange: (Long) -> Unit,
+) {
     val c = LocalKofipodColors.current
     Column(
         Modifier
@@ -454,16 +466,23 @@ private fun GradientSlider(
     val thumbRadius = 10.dp
     val haloRadius = 14.dp
 
-    val fraction = remember(value, valueRange) {
-        if (valueRange.endInclusive == valueRange.start) 0f
-        else ((value - valueRange.start) /
-            (valueRange.endInclusive - valueRange.start)).coerceIn(0f, 1f)
-    }
+    val fraction =
+        remember(value, valueRange) {
+            if (valueRange.endInclusive == valueRange.start) {
+                0f
+            } else {
+                (
+                    (value - valueRange.start) /
+                        (valueRange.endInclusive - valueRange.start)
+                ).coerceIn(0f, 1f)
+            }
+        }
 
     BoxWithConstraints(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(haloRadius * 2 + 8.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(haloRadius * 2 + 8.dp),
     ) {
         val maxPx = with(density) { maxWidth.toPx() }
         var dragX by remember { mutableStateOf(0f) }
@@ -476,21 +495,25 @@ private fun GradientSlider(
         }
 
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(maxPx) {
-                    detectTapGestures(onTap = { emit(it.x) })
-                }
-                .pointerInput(maxPx) {
-                    detectDragGestures(
-                        onDragStart = { dragX = it.x; emit(it.x) },
-                        onDrag = { change, drag ->
-                            change.consume()
-                            dragX += drag.x
-                            emit(dragX)
-                        },
-                    )
-                },
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(maxPx) {
+                        detectTapGestures(onTap = { emit(it.x) })
+                    }
+                    .pointerInput(maxPx) {
+                        detectDragGestures(
+                            onDragStart = {
+                                dragX = it.x
+                                emit(it.x)
+                            },
+                            onDrag = { change, drag ->
+                                change.consume()
+                                dragX += drag.x
+                                emit(dragX)
+                            },
+                        )
+                    },
         ) {
             Canvas(Modifier.fillMaxSize()) {
                 val w = size.width
@@ -511,11 +534,12 @@ private fun GradientSlider(
                 val activeW = w * fraction
                 if (activeW > 0f) {
                     drawRoundRect(
-                        brush = Brush.horizontalGradient(
-                            colors = listOf(c.purple, c.pink),
-                            startX = 0f,
-                            endX = w,
-                        ),
+                        brush =
+                            Brush.horizontalGradient(
+                                colors = listOf(c.purple, c.pink),
+                                startX = 0f,
+                                endX = w,
+                            ),
                         topLeft = Offset(0f, y - trackH / 2f),
                         size = Size(activeW, trackH),
                         cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackH),
@@ -543,9 +567,9 @@ private fun GradientSlider(
     }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Shared pink switch                                                        */
-/* -------------------------------------------------------------------------- */
+// --------------------------------------------------------------------------
+// Shared pink switch
+// --------------------------------------------------------------------------
 
 @Composable
 private fun PinkSwitch(
@@ -560,20 +584,21 @@ private fun PinkSwitch(
         onCheckedChange = onCheckedChange,
         enabled = enabled,
         modifier = if (testTag != null) Modifier.testTag(testTag) else Modifier,
-        colors = SwitchDefaults.colors(
-            checkedThumbColor = Color.White,
-            checkedTrackColor = c.pink,
-            checkedBorderColor = c.pink,
-            uncheckedThumbColor = Color.White,
-            uncheckedTrackColor = c.purpleTint,
-            uncheckedBorderColor = c.border,
-        ),
+        colors =
+            SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = c.pink,
+                checkedBorderColor = c.pink,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = c.purpleTint,
+                uncheckedBorderColor = c.border,
+            ),
     )
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Formatting                                                                */
-/* -------------------------------------------------------------------------- */
+// --------------------------------------------------------------------------
+// Formatting
+// --------------------------------------------------------------------------
 
 private fun formatGb(bytes: Long): String {
     val gb = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
@@ -586,4 +611,3 @@ private fun formatGb(bytes: Long): String {
         "$mb MB"
     }
 }
-

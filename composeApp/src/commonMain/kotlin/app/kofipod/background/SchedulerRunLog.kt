@@ -20,7 +20,10 @@ object SchedulerRunLog {
         return runCatching { json.decodeFromString(listSerializer, raw) }.getOrDefault(emptyList())
     }
 
-    fun append(settings: SettingsRepository, run: SchedulerRun) {
+    fun append(
+        settings: SettingsRepository,
+        run: SchedulerRun,
+    ) {
         val current = read(settings)
         val updated = (current + run).takeLast(MAX_ENTRIES)
         settings.put(

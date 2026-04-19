@@ -55,17 +55,21 @@ fun KPIcon(
 ) {
     val sizePx = with(LocalDensity.current) { size.toPx() }
     val path = remember(name, sizePx) { buildKPIconPath(name, sizePx / 24f) }
-    val stroke = remember(strokeWidth, sizePx) {
-        Stroke(
-            width = strokeWidth * (sizePx / 24f),
-            cap = StrokeCap.Round,
-            join = StrokeJoin.Round,
-        )
-    }
+    val stroke =
+        remember(strokeWidth, sizePx) {
+            Stroke(
+                width = strokeWidth * (sizePx / 24f),
+                cap = StrokeCap.Round,
+                join = StrokeJoin.Round,
+            )
+        }
     val filled = isFilledIcon(name)
     Canvas(modifier = modifier.size(size)) {
-        if (filled) drawPath(path = path, color = color)
-        else drawPath(path = path, color = color, style = stroke)
+        if (filled) {
+            drawPath(path = path, color = color)
+        } else {
+            drawPath(path = path, color = color, style = stroke)
+        }
     }
 }
 
@@ -77,26 +81,41 @@ private fun isFilledIcon(name: KPIconName): Boolean =
         name == KPIconName.SpeedUp ||
         name == KPIconName.Moon
 
-private fun buildKPIconPath(name: KPIconName, scale: Float): Path {
+private fun buildKPIconPath(
+    name: KPIconName,
+    scale: Float,
+): Path {
     return when (name) {
-            KPIconName.Library -> Path().apply {
+        KPIconName.Library ->
+            Path().apply {
                 // Three book stacks
                 addRect(androidx.compose.ui.geometry.Rect(4f * scale, 4f * scale, 8f * scale, 20f * scale))
                 addRect(androidx.compose.ui.geometry.Rect(10f * scale, 4f * scale, 14f * scale, 20f * scale))
-                moveTo(16f * scale, 6f * scale); lineTo(20f * scale, 7f * scale)
-                lineTo(17f * scale, 21f * scale); lineTo(13f * scale, 20f * scale); close()
+                moveTo(16f * scale, 6f * scale)
+                lineTo(20f * scale, 7f * scale)
+                lineTo(17f * scale, 21f * scale)
+                lineTo(13f * scale, 20f * scale)
+                close()
             }
-            KPIconName.Search -> Path().apply {
+        KPIconName.Search ->
+            Path().apply {
                 addOval(androidx.compose.ui.geometry.Rect(4f * scale, 4f * scale, 18f * scale, 18f * scale))
-                moveTo(20f * scale, 20f * scale); lineTo(16.5f * scale, 16.5f * scale)
+                moveTo(20f * scale, 20f * scale)
+                lineTo(16.5f * scale, 16.5f * scale)
             }
-            KPIconName.Downloads, KPIconName.Download -> Path().apply {
-                moveTo(12f * scale, 3f * scale); lineTo(12f * scale, 16f * scale)
-                moveTo(12f * scale, 16f * scale); lineTo(8f * scale, 12f * scale)
-                moveTo(12f * scale, 16f * scale); lineTo(16f * scale, 12f * scale)
-                moveTo(4f * scale, 20f * scale); lineTo(20f * scale, 20f * scale)
+        KPIconName.Downloads, KPIconName.Download ->
+            Path().apply {
+                moveTo(12f * scale, 3f * scale)
+                lineTo(12f * scale, 16f * scale)
+                moveTo(12f * scale, 16f * scale)
+                lineTo(8f * scale, 12f * scale)
+                moveTo(12f * scale, 16f * scale)
+                lineTo(16f * scale, 12f * scale)
+                moveTo(4f * scale, 20f * scale)
+                lineTo(20f * scale, 20f * scale)
             }
-            KPIconName.Settings -> Path().apply {
+        KPIconName.Settings ->
+            Path().apply {
                 addOval(androidx.compose.ui.geometry.Rect(9f * scale, 9f * scale, 15f * scale, 15f * scale))
                 val cx = 12f * scale
                 val cy = 12f * scale
@@ -108,155 +127,242 @@ private fun buildKPIconPath(name: KPIconName, scale: Float): Path {
                     val y1 = (cy + r1 * kotlin.math.sin(a)).toFloat()
                     val x2 = (cx + r2 * kotlin.math.cos(a)).toFloat()
                     val y2 = (cy + r2 * kotlin.math.sin(a)).toFloat()
-                    moveTo(x1, y1); lineTo(x2, y2)
+                    moveTo(x1, y1)
+                    lineTo(x2, y2)
                 }
             }
-            KPIconName.Play -> Path().apply {
-                moveTo(7f * scale, 4f * scale); lineTo(7f * scale, 20f * scale)
-                lineTo(20f * scale, 12f * scale); close()
+        KPIconName.Play ->
+            Path().apply {
+                moveTo(7f * scale, 4f * scale)
+                lineTo(7f * scale, 20f * scale)
+                lineTo(20f * scale, 12f * scale)
+                close()
             }
-            KPIconName.Pause -> Path().apply {
+        KPIconName.Pause ->
+            Path().apply {
                 addRect(androidx.compose.ui.geometry.Rect(6f * scale, 5f * scale, 10f * scale, 19f * scale))
                 addRect(androidx.compose.ui.geometry.Rect(14f * scale, 5f * scale, 18f * scale, 19f * scale))
             }
-            KPIconName.Check -> Path().apply {
-                moveTo(5f * scale, 12f * scale); lineTo(10f * scale, 17f * scale)
+        KPIconName.Check ->
+            Path().apply {
+                moveTo(5f * scale, 12f * scale)
+                lineTo(10f * scale, 17f * scale)
                 lineTo(20f * scale, 7f * scale)
             }
-            KPIconName.Bell -> Path().apply {
+        KPIconName.Bell ->
+            Path().apply {
                 moveTo(6f * scale, 8f * scale)
                 // arc a=6
                 cubicTo(6f * scale, 4f * scale, 18f * scale, 4f * scale, 18f * scale, 8f * scale)
-                lineTo(18f * scale, 13f * scale); lineTo(20f * scale, 16f * scale)
-                lineTo(4f * scale, 16f * scale); lineTo(6f * scale, 13f * scale); close()
+                lineTo(18f * scale, 13f * scale)
+                lineTo(20f * scale, 16f * scale)
+                lineTo(4f * scale, 16f * scale)
+                lineTo(6f * scale, 13f * scale)
+                close()
                 moveTo(10f * scale, 19f * scale)
                 cubicTo(10f * scale, 21f * scale, 14f * scale, 21f * scale, 14f * scale, 19f * scale)
             }
-            KPIconName.Back -> Path().apply {
-                moveTo(15f * scale, 6f * scale); lineTo(9f * scale, 12f * scale)
+        KPIconName.Back ->
+            Path().apply {
+                moveTo(15f * scale, 6f * scale)
+                lineTo(9f * scale, 12f * scale)
                 lineTo(15f * scale, 18f * scale)
             }
-            KPIconName.Plus -> Path().apply {
-                moveTo(12f * scale, 5f * scale); lineTo(12f * scale, 19f * scale)
-                moveTo(5f * scale, 12f * scale); lineTo(19f * scale, 12f * scale)
+        KPIconName.Plus ->
+            Path().apply {
+                moveTo(12f * scale, 5f * scale)
+                lineTo(12f * scale, 19f * scale)
+                moveTo(5f * scale, 12f * scale)
+                lineTo(19f * scale, 12f * scale)
             }
-            KPIconName.Close -> Path().apply {
-                moveTo(6f * scale, 6f * scale); lineTo(18f * scale, 18f * scale)
-                moveTo(18f * scale, 6f * scale); lineTo(6f * scale, 18f * scale)
+        KPIconName.Close ->
+            Path().apply {
+                moveTo(6f * scale, 6f * scale)
+                lineTo(18f * scale, 18f * scale)
+                moveTo(18f * scale, 6f * scale)
+                lineTo(6f * scale, 18f * scale)
             }
-            KPIconName.Folder -> Path().apply {
+        KPIconName.Folder ->
+            Path().apply {
                 moveTo(3f * scale, 7f * scale)
                 cubicTo(3f * scale, 6f * scale, 4f * scale, 5f * scale, 5f * scale, 5f * scale)
-                lineTo(9f * scale, 5f * scale); lineTo(11f * scale, 7f * scale)
+                lineTo(9f * scale, 5f * scale)
+                lineTo(11f * scale, 7f * scale)
                 lineTo(19f * scale, 7f * scale)
                 cubicTo(20f * scale, 7f * scale, 21f * scale, 8f * scale, 21f * scale, 9f * scale)
                 lineTo(21f * scale, 18f * scale)
                 cubicTo(21f * scale, 19f * scale, 20f * scale, 20f * scale, 19f * scale, 20f * scale)
                 lineTo(5f * scale, 20f * scale)
-                cubicTo(4f * scale, 20f * scale, 3f * scale, 19f * scale, 3f * scale, 18f * scale); close()
+                cubicTo(4f * scale, 20f * scale, 3f * scale, 19f * scale, 3f * scale, 18f * scale)
+                close()
             }
-            KPIconName.Clock -> Path().apply {
+        KPIconName.Clock ->
+            Path().apply {
                 addOval(androidx.compose.ui.geometry.Rect(3f * scale, 3f * scale, 21f * scale, 21f * scale))
-                moveTo(12f * scale, 7f * scale); lineTo(12f * scale, 12f * scale); lineTo(15f * scale, 14f * scale)
+                moveTo(12f * scale, 7f * scale)
+                lineTo(12f * scale, 12f * scale)
+                lineTo(15f * scale, 14f * scale)
             }
-            KPIconName.Share -> Path().apply {
+        KPIconName.Share ->
+            Path().apply {
                 addOval(androidx.compose.ui.geometry.Rect(15f * scale, 2f * scale, 21f * scale, 8f * scale))
                 addOval(androidx.compose.ui.geometry.Rect(3f * scale, 9f * scale, 9f * scale, 15f * scale))
                 addOval(androidx.compose.ui.geometry.Rect(15f * scale, 16f * scale, 21f * scale, 22f * scale))
-                moveTo(8.6f * scale, 10.5f * scale); lineTo(15.4f * scale, 6.5f * scale)
-                moveTo(8.6f * scale, 13.5f * scale); lineTo(15.4f * scale, 17.5f * scale)
+                moveTo(8.6f * scale, 10.5f * scale)
+                lineTo(15.4f * scale, 6.5f * scale)
+                moveTo(8.6f * scale, 13.5f * scale)
+                lineTo(15.4f * scale, 17.5f * scale)
             }
-            KPIconName.More -> Path().apply {
+        KPIconName.More ->
+            Path().apply {
                 addOval(androidx.compose.ui.geometry.Rect(3.5f * scale, 10.5f * scale, 6.5f * scale, 13.5f * scale))
                 addOval(androidx.compose.ui.geometry.Rect(10.5f * scale, 10.5f * scale, 13.5f * scale, 13.5f * scale))
                 addOval(androidx.compose.ui.geometry.Rect(17.5f * scale, 10.5f * scale, 20.5f * scale, 13.5f * scale))
             }
-            KPIconName.ChevronRight -> Path().apply {
-                moveTo(9f * scale, 6f * scale); lineTo(15f * scale, 12f * scale); lineTo(9f * scale, 18f * scale)
+        KPIconName.ChevronRight ->
+            Path().apply {
+                moveTo(9f * scale, 6f * scale)
+                lineTo(15f * scale, 12f * scale)
+                lineTo(9f * scale, 18f * scale)
             }
-            KPIconName.ChevronDown -> Path().apply {
-                moveTo(6f * scale, 9f * scale); lineTo(12f * scale, 15f * scale); lineTo(18f * scale, 9f * scale)
+        KPIconName.ChevronDown ->
+            Path().apply {
+                moveTo(6f * scale, 9f * scale)
+                lineTo(12f * scale, 15f * scale)
+                lineTo(18f * scale, 9f * scale)
             }
-            KPIconName.Radar -> Path().apply {
+        KPIconName.Radar ->
+            Path().apply {
                 addOval(androidx.compose.ui.geometry.Rect(3f * scale, 3f * scale, 21f * scale, 21f * scale))
                 addOval(androidx.compose.ui.geometry.Rect(7f * scale, 7f * scale, 17f * scale, 17f * scale))
                 addOval(androidx.compose.ui.geometry.Rect(10.5f * scale, 10.5f * scale, 13.5f * scale, 13.5f * scale))
             }
-            KPIconName.Trash -> Path().apply {
-                moveTo(4f * scale, 7f * scale); lineTo(20f * scale, 7f * scale)
-                moveTo(9f * scale, 7f * scale); lineTo(9f * scale, 4f * scale); lineTo(15f * scale, 4f * scale); lineTo(15f * scale, 7f * scale)
-                moveTo(6f * scale, 7f * scale); lineTo(7f * scale, 20f * scale); lineTo(17f * scale, 20f * scale); lineTo(18f * scale, 7f * scale)
-                moveTo(10f * scale, 11f * scale); lineTo(10f * scale, 17f * scale)
-                moveTo(14f * scale, 11f * scale); lineTo(14f * scale, 17f * scale)
+        KPIconName.Trash ->
+            Path().apply {
+                moveTo(4f * scale, 7f * scale)
+                lineTo(20f * scale, 7f * scale)
+                moveTo(9f * scale, 7f * scale)
+                lineTo(9f * scale, 4f * scale)
+                lineTo(15f * scale, 4f * scale)
+                lineTo(15f * scale, 7f * scale)
+                moveTo(6f * scale, 7f * scale)
+                lineTo(7f * scale, 20f * scale)
+                lineTo(17f * scale, 20f * scale)
+                lineTo(18f * scale, 7f * scale)
+                moveTo(10f * scale, 11f * scale)
+                lineTo(10f * scale, 17f * scale)
+                moveTo(14f * scale, 11f * scale)
+                lineTo(14f * scale, 17f * scale)
             }
-            KPIconName.SkipForward -> Path().apply {
+        KPIconName.SkipForward ->
+            Path().apply {
                 // Circular arrow with "+" suggestion: ‹arc› + arrowhead on top
                 addArc(
                     androidx.compose.ui.geometry.Rect(4f * scale, 4f * scale, 20f * scale, 20f * scale),
                     startAngleDegrees = -60f,
                     sweepAngleDegrees = 300f,
                 )
-                moveTo(15f * scale, 2.5f * scale); lineTo(18f * scale, 5.5f * scale); lineTo(14.5f * scale, 7.5f * scale)
+                moveTo(15f * scale, 2.5f * scale)
+                lineTo(18f * scale, 5.5f * scale)
+                lineTo(14.5f * scale, 7.5f * scale)
             }
-            KPIconName.SkipBack -> Path().apply {
+        KPIconName.SkipBack ->
+            Path().apply {
                 addArc(
                     androidx.compose.ui.geometry.Rect(4f * scale, 4f * scale, 20f * scale, 20f * scale),
                     startAngleDegrees = 240f,
                     sweepAngleDegrees = -300f,
                 )
-                moveTo(9f * scale, 2.5f * scale); lineTo(6f * scale, 5.5f * scale); lineTo(9.5f * scale, 7.5f * scale)
+                moveTo(9f * scale, 2.5f * scale)
+                lineTo(6f * scale, 5.5f * scale)
+                lineTo(9.5f * scale, 7.5f * scale)
             }
-            KPIconName.PrevTrack -> Path().apply {
+        KPIconName.PrevTrack ->
+            Path().apply {
                 // Vertical bar on the left + triangle pointing left
                 addRect(androidx.compose.ui.geometry.Rect(5f * scale, 5f * scale, 8f * scale, 19f * scale))
-                moveTo(20f * scale, 5f * scale); lineTo(10f * scale, 12f * scale); lineTo(20f * scale, 19f * scale); close()
+                moveTo(20f * scale, 5f * scale)
+                lineTo(10f * scale, 12f * scale)
+                lineTo(20f * scale, 19f * scale)
+                close()
             }
-            KPIconName.NextTrack -> Path().apply {
+        KPIconName.NextTrack ->
+            Path().apply {
                 // Triangle pointing right + vertical bar on the right
-                moveTo(4f * scale, 5f * scale); lineTo(14f * scale, 12f * scale); lineTo(4f * scale, 19f * scale); close()
+                moveTo(4f * scale, 5f * scale)
+                lineTo(14f * scale, 12f * scale)
+                lineTo(4f * scale, 19f * scale)
+                close()
                 addRect(androidx.compose.ui.geometry.Rect(16f * scale, 5f * scale, 19f * scale, 19f * scale))
             }
-            KPIconName.Moon -> Path().apply {
+        KPIconName.Moon ->
+            Path().apply {
                 // Crescent moon via two overlapping arcs
                 moveTo(18f * scale, 14.5f * scale)
                 cubicTo(
-                    15.5f * scale, 16f * scale,
-                    11.5f * scale, 15.5f * scale,
-                    9.5f * scale, 13.5f * scale,
+                    15.5f * scale,
+                    16f * scale,
+                    11.5f * scale,
+                    15.5f * scale,
+                    9.5f * scale,
+                    13.5f * scale,
                 )
                 cubicTo(
-                    7f * scale, 11f * scale,
-                    7.5f * scale, 7f * scale,
-                    10f * scale, 5f * scale,
+                    7f * scale,
+                    11f * scale,
+                    7.5f * scale,
+                    7f * scale,
+                    10f * scale,
+                    5f * scale,
                 )
                 cubicTo(
-                    6f * scale, 6f * scale,
-                    4f * scale, 10f * scale,
-                    5f * scale, 14f * scale,
+                    6f * scale,
+                    6f * scale,
+                    4f * scale,
+                    10f * scale,
+                    5f * scale,
+                    14f * scale,
                 )
                 cubicTo(
-                    6f * scale, 18f * scale,
-                    11f * scale, 20f * scale,
-                    15f * scale, 19f * scale,
+                    6f * scale,
+                    18f * scale,
+                    11f * scale,
+                    20f * scale,
+                    15f * scale,
+                    19f * scale,
                 )
                 cubicTo(
-                    16.5f * scale, 18.5f * scale,
-                    17.5f * scale, 16.8f * scale,
-                    18f * scale, 14.5f * scale,
+                    16.5f * scale,
+                    18.5f * scale,
+                    17.5f * scale,
+                    16.8f * scale,
+                    18f * scale,
+                    14.5f * scale,
                 )
                 close()
             }
-            KPIconName.SpeedUp -> Path().apply {
+        KPIconName.SpeedUp ->
+            Path().apply {
                 // Lightning bolt
-                moveTo(13f * scale, 3f * scale); lineTo(5f * scale, 13f * scale); lineTo(11f * scale, 13f * scale)
-                lineTo(10f * scale, 21f * scale); lineTo(19f * scale, 10f * scale); lineTo(13f * scale, 10f * scale); close()
+                moveTo(13f * scale, 3f * scale)
+                lineTo(5f * scale, 13f * scale)
+                lineTo(11f * scale, 13f * scale)
+                lineTo(10f * scale, 21f * scale)
+                lineTo(19f * scale, 10f * scale)
+                lineTo(13f * scale, 10f * scale)
+                close()
             }
-        KPIconName.Pencil -> Path().apply {
-            // Tip at bottom-left, shaft diagonal to top-right, eraser/cap at top
-            moveTo(4f * scale, 20f * scale); lineTo(8f * scale, 19f * scale)
-            lineTo(20f * scale, 7f * scale); lineTo(17f * scale, 4f * scale)
-            lineTo(5f * scale, 16f * scale); close()
-            moveTo(14f * scale, 7f * scale); lineTo(17f * scale, 10f * scale)
-        }
+        KPIconName.Pencil ->
+            Path().apply {
+                // Tip at bottom-left, shaft diagonal to top-right, eraser/cap at top
+                moveTo(4f * scale, 20f * scale)
+                lineTo(8f * scale, 19f * scale)
+                lineTo(20f * scale, 7f * scale)
+                lineTo(17f * scale, 4f * scale)
+                lineTo(5f * scale, 16f * scale)
+                close()
+                moveTo(14f * scale, 7f * scale)
+                lineTo(17f * scale, 10f * scale)
+            }
     }
 }

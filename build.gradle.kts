@@ -7,3 +7,9 @@ plugins {
     alias(libs.plugins.sqldelight) apply false
     alias(libs.plugins.buildkonfig) apply false
 }
+
+tasks.register<Exec>("installGitHooks") {
+    description = "Point git at scripts/git-hooks/ so pre-commit runs ktlintFormat + detekt."
+    group = "git hooks"
+    commandLine("git", "config", "core.hooksPath", "scripts/git-hooks")
+}

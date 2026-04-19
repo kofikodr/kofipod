@@ -31,12 +31,13 @@ fun plusJakartaSans(): FontFamily {
 }
 
 @Composable
-fun jetBrainsMono(): FontFamily = FontFamily(
-    Font(Res.font.jetbrains_mono_regular, FontWeight.Normal),
-    Font(Res.font.jetbrains_mono_medium, FontWeight.Medium),
-    Font(Res.font.jetbrains_mono_semibold, FontWeight.SemiBold),
-    Font(Res.font.jetbrains_mono_bold, FontWeight.Bold),
-)
+fun jetBrainsMono(): FontFamily =
+    FontFamily(
+        Font(Res.font.jetbrains_mono_regular, FontWeight.Normal),
+        Font(Res.font.jetbrains_mono_medium, FontWeight.Medium),
+        Font(Res.font.jetbrains_mono_semibold, FontWeight.SemiBold),
+        Font(Res.font.jetbrains_mono_bold, FontWeight.Bold),
+    )
 
 @Composable
 fun kofipodTypography(): Typography {

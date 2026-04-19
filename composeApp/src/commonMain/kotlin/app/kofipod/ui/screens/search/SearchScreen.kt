@@ -81,18 +81,21 @@ fun SearchScreen(
         Spacer(Modifier.height(16.dp))
 
         when {
-            state.loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                CircularProgressIndicator(color = c.pink)
-            }
-            state.error != null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                Text(state.error!!, color = c.danger)
-            }
-            state.results.isEmpty() && state.query.isNotBlank() -> Box(
-                Modifier.fillMaxSize(),
-                Alignment.Center,
-            ) {
-                Text("No results", color = c.textMute)
-            }
+            state.loading ->
+                Box(Modifier.fillMaxSize(), Alignment.Center) {
+                    CircularProgressIndicator(color = c.pink)
+                }
+            state.error != null ->
+                Box(Modifier.fillMaxSize(), Alignment.Center) {
+                    Text(state.error!!, color = c.danger)
+                }
+            state.results.isEmpty() && state.query.isNotBlank() ->
+                Box(
+                    Modifier.fillMaxSize(),
+                    Alignment.Center,
+                ) {
+                    Text("No results", color = c.textMute)
+                }
             state.results.isEmpty() -> SearchEmptyState(onPickTopic = viewModel::setQuery)
             else -> {
                 ResultsCaption(count = state.results.size)
@@ -164,11 +167,12 @@ private fun SearchBar(
                 value = value,
                 onValueChange = onValueChange,
                 singleLine = true,
-                textStyle = TextStyle(
-                    color = c.text,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                ),
+                textStyle =
+                    TextStyle(
+                        color = c.text,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                    ),
                 cursorBrush = androidx.compose.ui.graphics.SolidColor(c.pink),
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -190,16 +194,20 @@ private fun SearchBar(
 }
 
 @Composable
-private fun TabRow(current: SearchTab, onSelect: (SearchTab) -> Unit) {
+private fun TabRow(
+    current: SearchTab,
+    onSelect: (SearchTab) -> Unit,
+) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         SearchTab.entries.forEach { tab ->
             val selected = tab == current
             KPChip(
-                label = when (tab) {
-                    SearchTab.All -> "All"
-                    SearchTab.Title -> "By title"
-                    SearchTab.Person -> "By person"
-                },
+                label =
+                    when (tab) {
+                        SearchTab.All -> "All"
+                        SearchTab.Title -> "By title"
+                        SearchTab.Person -> "By person"
+                    },
                 selected = selected,
                 tone = if (selected) KPChipTone.Neutral else KPChipTone.Outline,
                 onClick = { onSelect(tab) },
@@ -341,16 +349,18 @@ private fun SearchEmptyState(onPickTopic: (String) -> Unit) {
     val r = LocalKofipodRadii.current
     val topics = listOf("Tech", "Comedy", "News", "Design")
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 40.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 40.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            modifier = Modifier
-                .size(120.dp)
-                .clip(RoundedCornerShape(r.pill))
-                .background(c.purpleTint),
+            modifier =
+                Modifier
+                    .size(120.dp)
+                    .clip(RoundedCornerShape(r.pill))
+                    .background(c.purpleTint),
             contentAlignment = Alignment.Center,
         ) {
             KPIcon(
@@ -395,12 +405,13 @@ private fun SearchEmptyState(onPickTopic: (String) -> Unit) {
             ) {
                 topics.forEach { label ->
                     Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(r.pill))
-                            .background(c.surface)
-                            .border(1.dp, c.border, RoundedCornerShape(r.pill))
-                            .clickable { onPickTopic(label) }
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        modifier =
+                            Modifier
+                                .clip(RoundedCornerShape(r.pill))
+                                .background(c.surface)
+                                .border(1.dp, c.border, RoundedCornerShape(r.pill))
+                                .clickable { onPickTopic(label) }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(

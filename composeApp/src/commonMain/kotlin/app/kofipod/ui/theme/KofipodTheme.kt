@@ -19,37 +19,39 @@ fun KofipodTheme(
     mode: KofipodThemeMode = KofipodThemeMode.System,
     content: @Composable () -> Unit,
 ) {
-    val isDark = when (mode) {
-        KofipodThemeMode.System -> isSystemInDarkTheme()
-        KofipodThemeMode.Light -> false
-        KofipodThemeMode.Dark -> true
-    }
+    val isDark =
+        when (mode) {
+            KofipodThemeMode.System -> isSystemInDarkTheme()
+            KofipodThemeMode.Light -> false
+            KofipodThemeMode.Dark -> true
+        }
     val colors = if (isDark) DarkKofipodColors else LightKofipodColors
-    val materialScheme = if (isDark) {
-        darkColorScheme(
-            primary = colors.purple,
-            onPrimary = colors.text,
-            secondary = colors.pink,
-            onSecondary = colors.text,
-            background = colors.bg,
-            onBackground = colors.text,
-            surface = colors.surface,
-            onSurface = colors.text,
-            error = colors.danger,
-        )
-    } else {
-        lightColorScheme(
-            primary = colors.purple,
-            onPrimary = colors.surface,
-            secondary = colors.pink,
-            onSecondary = colors.surface,
-            background = colors.bg,
-            onBackground = colors.text,
-            surface = colors.surface,
-            onSurface = colors.text,
-            error = colors.danger,
-        )
-    }
+    val materialScheme =
+        if (isDark) {
+            darkColorScheme(
+                primary = colors.purple,
+                onPrimary = colors.text,
+                secondary = colors.pink,
+                onSecondary = colors.text,
+                background = colors.bg,
+                onBackground = colors.text,
+                surface = colors.surface,
+                onSurface = colors.text,
+                error = colors.danger,
+            )
+        } else {
+            lightColorScheme(
+                primary = colors.purple,
+                onPrimary = colors.surface,
+                secondary = colors.pink,
+                onSecondary = colors.surface,
+                background = colors.bg,
+                onBackground = colors.text,
+                surface = colors.surface,
+                onSurface = colors.text,
+                error = colors.danger,
+            )
+        }
     SystemBarAppearance(isDark = isDark, barColor = colors.bg)
     CompositionLocalProvider(
         LocalKofipodColors provides colors,

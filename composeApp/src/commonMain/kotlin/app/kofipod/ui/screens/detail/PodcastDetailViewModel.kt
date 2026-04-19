@@ -73,7 +73,6 @@ class PodcastDetailViewModel(
     private val sharer: Sharer,
     private val recentlyViewed: RecentlyViewedRepository,
 ) : ViewModel() {
-
     private val remoteSummary = MutableStateFlow<PodcastSummary?>(null)
     private val remoteEpisodes = MutableStateFlow<List<EpisodePreview>>(emptyList())
     private val loading = MutableStateFlow(false)
@@ -83,67 +82,82 @@ class PodcastDetailViewModel(
     private val error = MutableStateFlow<String?>(null)
 
     private data class StoredBundle(val podcast: Podcast?, val episodes: List<Episode>, val lists: List<PodcastList>)
+
     private data class RemoteBundle(
         val summary: PodcastSummary?,
         val episodes: List<EpisodePreview>,
         val limit: Int,
         val downloads: List<Download>,
     )
+
     private data class UiFlags(val loading: Boolean, val loadingMore: Boolean, val displayLimit: Int, val error: String?)
 
-    val state: StateFlow<DetailUiState> = combine(
-        combine(library.podcastFlow(podcastId), episodes.episodesFlow(podcastId), library.listsFlow(), ::StoredBundle),
-        combine(remoteSummary, remoteEpisodes, remoteLimit, downloads.all(), ::RemoteBundle),
-        combine(loading, loadingMore, displayLimit, error, ::UiFlags),
-    ) { stored, remote, flags ->
-        val storedSummary = stored.podcast?.toSummary()
-        val merged = when {
-            storedSummary != null && remote.summary != null -> storedSummary.copy(
-                category = remote.summary.category.ifBlank { storedSummary.category },
-                episodeCount = if (remote.summary.episodeCount > 0) remote.summary.episodeCount else storedSummary.episodeCount,
+    val state: StateFlow<DetailUiState> =
+        combine(
+            combine(library.podcastFlow(podcastId), episodes.episodesFlow(podcastId), library.listsFlow(), ::StoredBundle),
+            combine(remoteSummary, remoteEpisodes, remoteLimit, downloads.all(), ::RemoteBundle),
+            combine(loading, loadingMore, displayLimit, error, ::UiFlags),
+        ) { stored, remote, flags ->
+            val storedSummary = stored.podcast?.toSummary()
+            val merged =
+                when {
+                    storedSummary != null && remote.summary != null ->
+                        storedSummary.copy(
+                            category = remote.summary.category.ifBlank { storedSummary.category },
+                            episodeCount = if (remote.summary.episodeCount > 0) remote.summary.episodeCount else storedSummary.episodeCount,
+                        )
+                    storedSummary != null -> storedSummary
+                    else -> remote.summary
+                }
+            val summary =
+                if ((merged?.episodeCount ?: 0) == 0 && stored.episodes.isNotEmpty()) {
+                    merged?.copy(episodeCount = stored.episodes.size)
+                } else {
+                    merged
+                }
+            DetailUiState(
+                summary = summary,
+                inLibrary = stored.podcast != null,
+                listId = stored.podcast?.listId,
+                autoDownload = stored.podcast?.autoDownloadEnabledBool() ?: false,
+                notifyNewEpisodes = stored.podcast?.notifyNewEpisodesEnabledBool() ?: true,
+                storedEpisodes = stored.episodes,
+                remoteEpisodes = remote.episodes,
+                downloadStates = remote.downloads.associate { it.episodeId to it.state },
+                lists = stored.lists,
+                loading = flags.loading,
+                loadingMore = flags.loadingMore,
+                episodeDisplayLimit = flags.displayLimit,
+                remoteHasMore = remote.episodes.size >= remote.limit,
+                error = flags.error,
             )
-            storedSummary != null -> storedSummary
-            else -> remote.summary
-        }
-        val summary = if ((merged?.episodeCount ?: 0) == 0 && stored.episodes.isNotEmpty()) {
-            merged?.copy(episodeCount = stored.episodes.size)
-        } else merged
-        DetailUiState(
-            summary = summary,
-            inLibrary = stored.podcast != null,
-            listId = stored.podcast?.listId,
-            autoDownload = stored.podcast?.autoDownloadEnabledBool() ?: false,
-            notifyNewEpisodes = stored.podcast?.notifyNewEpisodesEnabledBool() ?: true,
-            storedEpisodes = stored.episodes,
-            remoteEpisodes = remote.episodes,
-            downloadStates = remote.downloads.associate { it.episodeId to it.state },
-            lists = stored.lists,
-            loading = flags.loading,
-            loadingMore = flags.loadingMore,
-            episodeDisplayLimit = flags.displayLimit,
-            remoteHasMore = remote.episodes.size >= remote.limit,
-            error = flags.error,
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DetailUiState())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DetailUiState())
 
-    val playingEpisodeId: StateFlow<String?> = player.state
-        .map { it.episodeId }
-        .distinctUntilChanged()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val playingEpisodeId: StateFlow<String?> =
+        player.state
+            .map { it.episodeId }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    val activePlayback: StateFlow<ActivePlayback> = player.state
-        .map {
-            ActivePlayback(
-                isPlaying = it.isPlaying,
-                progress = if (it.durationMs > 0L) {
-                    (it.positionMs.toFloat() / it.durationMs.toFloat()).coerceIn(0f, 1f)
-                } else 0f,
-            )
-        }
-        .distinctUntilChanged()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ActivePlayback())
+    val activePlayback: StateFlow<ActivePlayback> =
+        player.state
+            .map {
+                ActivePlayback(
+                    isPlaying = it.isPlaying,
+                    progress =
+                        if (it.durationMs > 0L) {
+                            (it.positionMs.toFloat() / it.durationMs.toFloat()).coerceIn(0f, 1f)
+                        } else {
+                            0f
+                        },
+                )
+            }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ActivePlayback())
 
-    init { loadRemote(loadMore = false) }
+    init {
+        loadRemote(loadMore = false)
+    }
 
     fun loadMoreEpisodes() {
         if (loadingMore.value) return
@@ -204,19 +218,22 @@ class PodcastDetailViewModel(
         }
         val summary = current.summary ?: return
         val stored = current.storedEpisodes.firstOrNull { it.id == episodeId }
+
         data class PlayFields(val title: String, val url: String, val episodeNumber: Int?)
-        val fields = when {
-            stored != null && stored.enclosureUrl.isNotBlank() -> PlayFields(
-                stored.title,
-                stored.enclosureUrl,
-                stored.episodeNumber?.toInt(),
-            )
-            else -> {
-                val remote = current.remoteEpisodes.firstOrNull { it.id == episodeId } ?: return
-                if (remote.enclosureUrl.isBlank()) return
-                PlayFields(remote.title, remote.enclosureUrl, remote.episodeNumber)
+        val fields =
+            when {
+                stored != null && stored.enclosureUrl.isNotBlank() ->
+                    PlayFields(
+                        stored.title,
+                        stored.enclosureUrl,
+                        stored.episodeNumber?.toInt(),
+                    )
+                else -> {
+                    val remote = current.remoteEpisodes.firstOrNull { it.id == episodeId } ?: return
+                    if (remote.enclosureUrl.isBlank()) return
+                    PlayFields(remote.title, remote.enclosureUrl, remote.episodeNumber)
+                }
             }
-        }
         val startMs = playback.positionFor(episodeId)
         player.play(
             PlayableEpisode(
@@ -266,12 +283,14 @@ class PodcastDetailViewModel(
     fun shareEpisode(episodeId: String) {
         val summary = state.value.summary ?: return
         val stored = state.value.storedEpisodes.firstOrNull { it.id == episodeId }
-        val title = stored?.title
-            ?: state.value.remoteEpisodes.firstOrNull { it.id == episodeId }?.title
-            ?: return
-        val url = stored?.enclosureUrl?.takeIf { it.isNotBlank() }
-            ?: state.value.remoteEpisodes.firstOrNull { it.id == episodeId }?.enclosureUrl
-            ?: summary.feedUrl
+        val title =
+            stored?.title
+                ?: state.value.remoteEpisodes.firstOrNull { it.id == episodeId }?.title
+                ?: return
+        val url =
+            stored?.enclosureUrl?.takeIf { it.isNotBlank() }
+                ?: state.value.remoteEpisodes.firstOrNull { it.id == episodeId }?.enclosureUrl
+                ?: summary.feedUrl
         sharer.shareText(
             title = title,
             text = "$title — ${summary.title}\n$url",
@@ -287,10 +306,11 @@ class PodcastDetailViewModel(
     }
 }
 
-private fun EpisodeFeed.toPreview(): EpisodePreview = EpisodePreview(
-    id = id.toString(),
-    title = title,
-    durationMinutes = (duration ?: 0) / 60,
-    enclosureUrl = enclosureUrl,
-    episodeNumber = episode,
-)
+private fun EpisodeFeed.toPreview(): EpisodePreview =
+    EpisodePreview(
+        id = id.toString(),
+        title = title,
+        durationMinutes = (duration ?: 0) / 60,
+        enclosureUrl = enclosureUrl,
+        episodeNumber = episode,
+    )

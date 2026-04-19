@@ -5,5 +5,6 @@ actual class AuthService {
     actual suspend fun signIn(serverClientId: String): SignInResult {
         throw SignInError.NotConfigured
     }
+
     actual suspend fun signOut() {}
 }

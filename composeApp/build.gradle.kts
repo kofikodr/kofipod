@@ -12,6 +12,29 @@ plugins {
     alias(libs.plugins.sqldelight)
     alias(libs.plugins.buildkonfig)
     alias(libs.plugins.paparazzi)
+    alias(libs.plugins.ktlint)
+    alias(libs.plugins.detekt)
+}
+
+ktlint {
+    filter {
+        exclude { it.file.absolutePath.contains("${layout.buildDirectory.get()}") }
+        exclude { it.file.name.endsWith(".kts") && it.file.name != "build.gradle.kts" }
+    }
+}
+
+detekt {
+    buildUponDefaultConfig = false
+    config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
+    source.setFrom(
+        files(
+            "src/commonMain/kotlin",
+            "src/androidMain/kotlin",
+            "src/iosMain/kotlin",
+            "src/commonTest/kotlin",
+            "src/test/kotlin",
+        ),
+    )
 }
 
 kotlin {
@@ -35,7 +58,6 @@ kotlin {
                 implementation(compose.ui)
                 implementation(compose.components.resources)
                 implementation(libs.androidx.lifecycle.viewmodel)
-                implementation(libs.androidx.lifecycle.viewmodel.compose)
                 implementation(libs.androidx.navigation.compose)
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.content.negotiation)

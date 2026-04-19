@@ -11,12 +11,13 @@ import app.kofipod.share.Sharer
 import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
 
-val androidPlatformModule = module {
-    single { DatabaseFactory(androidContext()) }
-    single { KofipodPlayer(androidContext()) }
-    single { DownloadEngine(androidContext()) }
-    single { Scheduler(androidContext()) }
-    single { Notifier(androidContext()) }
-    single { AuthService(androidContext()) }
-    single { Sharer(androidContext()) }
-}
+val androidPlatformModule =
+    module {
+        single { DatabaseFactory(androidContext()) }
+        single { KofipodPlayer(androidContext()) }
+        single { DownloadEngine(androidContext()) }
+        single { Scheduler(androidContext()) }
+        single { Notifier(androidContext()) }
+        single { AuthService(androidContext()) }
+        single { Sharer(androidContext()) }
+    }

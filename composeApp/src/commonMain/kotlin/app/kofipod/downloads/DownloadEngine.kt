@@ -24,7 +24,10 @@ data class DownloadProgress(
 
 expect class DownloadEngine {
     val events: SharedFlow<DownloadProgress>
+
     fun enqueue(job: DownloadJob)
+
     fun cancel(episodeId: String)
+
     fun delete(episodeId: String)
 }

@@ -6,6 +6,7 @@ import io.ktor.client.engine.darwin.Darwin
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 
-actual fun buildHttpClient(): HttpClient = HttpClient(Darwin) {
-    install(ContentNegotiation) { json(kofipodJson) }
-}
+actual fun buildHttpClient(): HttpClient =
+    HttpClient(Darwin) {
+        install(ContentNegotiation) { json(kofipodJson) }
+    }

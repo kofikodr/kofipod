@@ -30,14 +30,24 @@ data class PlayerState(
 
 expect class KofipodPlayer {
     val state: StateFlow<PlayerState>
+
     fun play(episode: PlayableEpisode)
+
     fun pause()
+
     fun resume()
+
     fun seekTo(ms: Long)
+
     fun setSpeed(speed: Float)
+
     fun skipForward()
+
     fun skipBack()
+
     fun setSleepTimer(ms: Long?)
+
     fun stop()
+
     fun release()
 }

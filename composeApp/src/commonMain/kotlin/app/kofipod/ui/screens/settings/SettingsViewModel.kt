@@ -33,45 +33,48 @@ class SettingsViewModel(
     private val scheduler: Scheduler,
     private val auth: AuthService,
 ) : ViewModel() {
-
     private val transient = MutableStateFlow(TransientState())
 
-    val state: StateFlow<SettingsUiState> = combine(
+    val state: StateFlow<SettingsUiState> =
         combine(
-            repo.themeMode(),
-            repo.dailyCheckEnabled(),
-            repo.storageCapBytes(),
-            repo.skipForwardSeconds(),
-            repo.skipBackSeconds(),
-        ) { theme, daily, cap, fwd, back ->
-            CoreSettings(theme, daily, cap, fwd, back)
-        },
-        repo.backupEnabled(),
-        repo.googleEmail(),
-        transient,
-    ) { core, backupEnabled, email, t ->
-        SettingsUiState(
-            themeMode = core.theme,
-            dailyCheck = core.daily,
-            storageCapBytes = core.cap,
-            skipForward = core.fwd,
-            skipBack = core.back,
-            backupEnabled = backupEnabled,
-            googleEmail = email?.takeIf { it.isNotBlank() },
-            backupSigningIn = t.signingIn,
-            backupError = t.error,
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
+            combine(
+                repo.themeMode(),
+                repo.dailyCheckEnabled(),
+                repo.storageCapBytes(),
+                repo.skipForwardSeconds(),
+                repo.skipBackSeconds(),
+            ) { theme, daily, cap, fwd, back ->
+                CoreSettings(theme, daily, cap, fwd, back)
+            },
+            repo.backupEnabled(),
+            repo.googleEmail(),
+            transient,
+        ) { core, backupEnabled, email, t ->
+            SettingsUiState(
+                themeMode = core.theme,
+                dailyCheck = core.daily,
+                storageCapBytes = core.cap,
+                skipForward = core.fwd,
+                skipBack = core.back,
+                backupEnabled = backupEnabled,
+                googleEmail = email?.takeIf { it.isNotBlank() },
+                backupSigningIn = t.signingIn,
+                backupError = t.error,
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
     fun setTheme(mode: KofipodThemeMode) = viewModelScope.launch { repo.setThemeMode(mode) }
 
-    fun setDailyCheck(on: Boolean) = viewModelScope.launch {
-        repo.setDailyCheckEnabled(on)
-        if (on) scheduler.enable() else scheduler.disable()
-    }
+    fun setDailyCheck(on: Boolean) =
+        viewModelScope.launch {
+            repo.setDailyCheckEnabled(on)
+            if (on) scheduler.enable() else scheduler.disable()
+        }
 
     fun setCap(bytes: Long) = viewModelScope.launch { repo.setStorageCapBytes(bytes) }
+
     fun setSkipForward(sec: Int) = viewModelScope.launch { repo.setSkipForward(sec) }
+
     fun setSkipBack(sec: Int) = viewModelScope.launch { repo.setSkipBack(sec) }
 
     fun setBackupEnabled(on: Boolean) {
@@ -93,14 +96,16 @@ class SettingsViewModel(
                 repo.setBackupEnabled(true)
                 transient.value = TransientState()
             }.onFailure { e ->
-                transient.value = TransientState(
-                    error = when (e) {
-                        is SignInError.NotConfigured ->
-                            "Backup needs GOOGLE_SERVER_CLIENT_ID in local.properties to be set."
-                        is SignInError.Cancelled -> "Sign-in cancelled."
-                        else -> e.message ?: "Sign-in failed."
-                    },
-                )
+                transient.value =
+                    TransientState(
+                        error =
+                            when (e) {
+                                is SignInError.NotConfigured ->
+                                    "Backup needs GOOGLE_SERVER_CLIENT_ID in local.properties to be set."
+                                is SignInError.Cancelled -> "Sign-in cancelled."
+                                else -> e.message ?: "Sign-in failed."
+                            },
+                    )
             }
         }
     }

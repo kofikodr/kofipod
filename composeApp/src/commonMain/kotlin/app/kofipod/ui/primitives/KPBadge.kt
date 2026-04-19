@@ -14,16 +14,20 @@ import androidx.compose.ui.unit.sp
 import app.kofipod.ui.theme.LocalKofipodColors
 
 @Composable
-fun KPBadge(label: String, modifier: Modifier = Modifier) {
+fun KPBadge(
+    label: String,
+    modifier: Modifier = Modifier,
+) {
     val c = LocalKofipodColors.current
     Text(
         text = label.uppercase(),
         color = c.pink,
         fontWeight = FontWeight.Bold,
         fontSize = 10.sp,
-        modifier = modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(c.pinkSoft)
-            .padding(horizontal = 8.dp, vertical = 3.dp),
+        modifier =
+            modifier
+                .clip(RoundedCornerShape(999.dp))
+                .background(c.pinkSoft)
+                .padding(horizontal = 8.dp, vertical = 3.dp),
     )
 }

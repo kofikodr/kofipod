@@ -11,7 +11,12 @@ import kotlinx.coroutines.flow.Flow
 
 interface EpisodeSource {
     fun episodesFlow(podcastId: String): Flow<List<Episode>>
-    suspend fun refresh(podcastId: String, feedId: Long, nowMillis: Long): RefreshResult
+
+    suspend fun refresh(
+        podcastId: String,
+        feedId: Long,
+        nowMillis: Long,
+    ): RefreshResult
 }
 
 data class RefreshResult(val inserted: Int, val totalRemote: Int)
@@ -20,11 +25,14 @@ class EpisodesRepository(
     private val db: KofipodDatabase,
     private val api: PodcastIndexApi,
 ) : EpisodeSource {
-
     override fun episodesFlow(podcastId: String): Flow<List<Episode>> =
         db.episodeQueries.selectByPodcast(podcastId).asFlow().mapToList(Dispatchers.Default)
 
-    override suspend fun refresh(podcastId: String, feedId: Long, nowMillis: Long): RefreshResult {
+    override suspend fun refresh(
+        podcastId: String,
+        feedId: Long,
+        nowMillis: Long,
+    ): RefreshResult {
         val existingGuids = db.episodeQueries.selectGuidsByPodcast(podcastId).executeAsList().toSet()
         val remote = api.episodesByFeedId(feedId)
         var inserted = 0

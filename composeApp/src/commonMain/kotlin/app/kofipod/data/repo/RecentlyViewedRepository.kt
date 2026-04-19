@@ -11,14 +11,16 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 class RecentlyViewedRepository(private val db: KofipodDatabase) {
-
     fun recentExcludingSavedFlow(maxRows: Long = DEFAULT_MAX_ROWS): Flow<List<PodcastSummary>> =
         db.recentPodcastViewQueries.selectExcludingSaved(maxRows)
             .asFlow()
             .mapToList(Dispatchers.Default)
             .map { rows -> rows.map { it.toSummary() } }
 
-    fun recordView(summary: PodcastSummary, viewedAt: Long) {
+    fun recordView(
+        summary: PodcastSummary,
+        viewedAt: Long,
+    ) {
         db.recentPodcastViewQueries.upsert(
             id = summary.id,
             title = summary.title,
@@ -39,14 +41,15 @@ class RecentlyViewedRepository(private val db: KofipodDatabase) {
     }
 }
 
-private fun RecentPodcastView.toSummary(): PodcastSummary = PodcastSummary(
-    id = id,
-    feedId = id.toLongOrNull() ?: 0L,
-    title = title,
-    author = author,
-    description = description,
-    artworkUrl = artworkUrl,
-    feedUrl = feedUrl,
-    category = category,
-    episodeCount = episodeCount.toInt(),
-)
+private fun RecentPodcastView.toSummary(): PodcastSummary =
+    PodcastSummary(
+        id = id,
+        feedId = id.toLongOrNull() ?: 0L,
+        title = title,
+        author = author,
+        description = description,
+        artworkUrl = artworkUrl,
+        feedUrl = feedUrl,
+        category = category,
+        episodeCount = episodeCount.toInt(),
+    )

@@ -26,7 +26,6 @@ private const val EXTRA_PODCAST_ID = "kofipod.podcastId"
 private const val EXTRA_EPISODE_NUMBER = "kofipod.episodeNumber"
 
 actual class KofipodPlayer(private val context: Context) {
-
     private val _state = MutableStateFlow(PlayerState())
     actual val state: StateFlow<PlayerState> = _state.asStateFlow()
 
@@ -43,23 +42,28 @@ actual class KofipodPlayer(private val context: Context) {
     }
 
     private fun connect() {
-        val token = SessionToken(
-            context,
-            ComponentName(context, KofipodPlaybackService::class.java),
-        )
+        val token =
+            SessionToken(
+                context,
+                ComponentName(context, KofipodPlaybackService::class.java),
+            )
         val future = MediaController.Builder(context, token).buildAsync()
         future.addListener(
             {
                 val c = future.get()
                 controller = c
-                c.addListener(object : Player.Listener {
-                    override fun onIsPlayingChanged(isPlaying: Boolean) = pushState()
-                    override fun onMediaItemTransition(
-                        mediaItem: MediaItem?,
-                        reason: Int,
-                    ) = pushState()
-                    override fun onPlaybackStateChanged(playbackState: Int) = pushState()
-                })
+                c.addListener(
+                    object : Player.Listener {
+                        override fun onIsPlayingChanged(isPlaying: Boolean) = pushState()
+
+                        override fun onMediaItemTransition(
+                            mediaItem: MediaItem?,
+                            reason: Int,
+                        ) = pushState()
+
+                        override fun onPlaybackStateChanged(playbackState: Int) = pushState()
+                    },
+                )
                 startTicker()
                 pendingEpisode?.let { doPlay(c, it) }
                 pendingEpisode = null
@@ -71,55 +75,63 @@ actual class KofipodPlayer(private val context: Context) {
 
     private fun startTicker() {
         tickJob?.cancel()
-        tickJob = scope.launch {
-            while (true) {
-                delay(500)
-                pushState()
+        tickJob =
+            scope.launch {
+                while (true) {
+                    delay(500)
+                    pushState()
+                }
             }
-        }
     }
 
     private fun pushState() {
         val c = controller ?: return
         val meta = c.currentMediaItem?.mediaMetadata
         val extras = meta?.extras
-        val remainingSleep = sleepExpiresAt?.let {
-            (it - System.currentTimeMillis()).coerceAtLeast(0L)
-        }
-        _state.value = PlayerState(
-            episodeId = c.currentMediaItem?.mediaId,
-            podcastId = extras?.getString(EXTRA_PODCAST_ID).orEmpty(),
-            title = meta?.title?.toString().orEmpty(),
-            podcastTitle = meta?.artist?.toString().orEmpty(),
-            artworkUrl = meta?.artworkUri?.toString().orEmpty(),
-            episodeNumber = extras?.getInt(EXTRA_EPISODE_NUMBER, -1)?.takeIf { it > 0 },
-            isPlaying = c.isPlaying,
-            positionMs = c.currentPosition.coerceAtLeast(0),
-            durationMs = c.duration.coerceAtLeast(0),
-            speed = c.playbackParameters.speed,
-            sleepRemainingMs = remainingSleep,
-        )
+        val remainingSleep =
+            sleepExpiresAt?.let {
+                (it - System.currentTimeMillis()).coerceAtLeast(0L)
+            }
+        _state.value =
+            PlayerState(
+                episodeId = c.currentMediaItem?.mediaId,
+                podcastId = extras?.getString(EXTRA_PODCAST_ID).orEmpty(),
+                title = meta?.title?.toString().orEmpty(),
+                podcastTitle = meta?.artist?.toString().orEmpty(),
+                artworkUrl = meta?.artworkUri?.toString().orEmpty(),
+                episodeNumber = extras?.getInt(EXTRA_EPISODE_NUMBER, -1)?.takeIf { it > 0 },
+                isPlaying = c.isPlaying,
+                positionMs = c.currentPosition.coerceAtLeast(0),
+                durationMs = c.duration.coerceAtLeast(0),
+                speed = c.playbackParameters.speed,
+                sleepRemainingMs = remainingSleep,
+            )
     }
 
-    private fun doPlay(c: MediaController, episode: PlayableEpisode) {
-        val extras = Bundle().apply {
-            if (episode.podcastId.isNotBlank()) putString(EXTRA_PODCAST_ID, episode.podcastId)
-            episode.episodeNumber?.let { putInt(EXTRA_EPISODE_NUMBER, it) }
-        }
-        val item = MediaItem.Builder()
-            .setMediaId(episode.episodeId)
-            .setUri(episode.sourceUrl)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(episode.title)
-                    .setArtist(episode.podcastTitle)
-                    .setArtworkUri(
-                        if (episode.artworkUrl.isNotBlank()) Uri.parse(episode.artworkUrl) else null,
-                    )
-                    .setExtras(extras)
-                    .build(),
-            )
-            .build()
+    private fun doPlay(
+        c: MediaController,
+        episode: PlayableEpisode,
+    ) {
+        val extras =
+            Bundle().apply {
+                if (episode.podcastId.isNotBlank()) putString(EXTRA_PODCAST_ID, episode.podcastId)
+                episode.episodeNumber?.let { putInt(EXTRA_EPISODE_NUMBER, it) }
+            }
+        val item =
+            MediaItem.Builder()
+                .setMediaId(episode.episodeId)
+                .setUri(episode.sourceUrl)
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(episode.title)
+                        .setArtist(episode.podcastTitle)
+                        .setArtworkUri(
+                            if (episode.artworkUrl.isNotBlank()) Uri.parse(episode.artworkUrl) else null,
+                        )
+                        .setExtras(extras)
+                        .build(),
+                )
+                .build()
         c.setMediaItem(item, episode.startPositionMs)
         c.prepare()
         c.play()
@@ -130,13 +142,26 @@ actual class KofipodPlayer(private val context: Context) {
         if (c != null) doPlay(c, episode) else pendingEpisode = episode
     }
 
-    actual fun pause() { controller?.pause() }
-    actual fun resume() { controller?.play() }
-    actual fun seekTo(ms: Long) { controller?.seekTo(ms) }
-    actual fun setSpeed(speed: Float) { controller?.setPlaybackSpeed(speed) }
+    actual fun pause() {
+        controller?.pause()
+    }
+
+    actual fun resume() {
+        controller?.play()
+    }
+
+    actual fun seekTo(ms: Long) {
+        controller?.seekTo(ms)
+    }
+
+    actual fun setSpeed(speed: Float) {
+        controller?.setPlaybackSpeed(speed)
+    }
+
     actual fun skipForward() {
         controller?.let { it.seekTo(it.currentPosition + 30_000) }
     }
+
     actual fun skipBack() {
         controller?.let { it.seekTo((it.currentPosition - 10_000).coerceAtLeast(0)) }
     }
@@ -150,16 +175,19 @@ actual class KofipodPlayer(private val context: Context) {
             return
         }
         sleepExpiresAt = System.currentTimeMillis() + ms
-        sleepJob = scope.launch {
-            delay(ms)
-            controller?.pause()
-            sleepExpiresAt = null
-            pushState()
-        }
+        sleepJob =
+            scope.launch {
+                delay(ms)
+                controller?.pause()
+                sleepExpiresAt = null
+                pushState()
+            }
         pushState()
     }
 
-    actual fun stop() { controller?.stop() }
+    actual fun stop() {
+        controller?.stop()
+    }
 
     actual fun release() {
         tickJob?.cancel()

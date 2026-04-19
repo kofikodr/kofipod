@@ -29,17 +29,19 @@ fun KPButton(
 ) {
     val colors = LocalKofipodColors.current
     val radii = LocalKofipodRadii.current
-    val (bg, fg) = when (style) {
-        KPButtonStyle.PrimaryPink -> colors.pink to Color.White
-        KPButtonStyle.SecondaryPurple -> colors.purple to Color.White
-        KPButtonStyle.Outline -> colors.surface to colors.text
-    }
+    val (bg, fg) =
+        when (style) {
+            KPButtonStyle.PrimaryPink -> colors.pink to Color.White
+            KPButtonStyle.SecondaryPurple -> colors.purple to Color.White
+            KPButtonStyle.Outline -> colors.surface to colors.text
+        }
     Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(radii.pill))
-            .background(bg)
-            .clickable { onClick() }
-            .padding(horizontal = 24.dp, vertical = 14.dp),
+        modifier =
+            modifier
+                .clip(RoundedCornerShape(radii.pill))
+                .background(bg)
+                .clickable { onClick() }
+                .padding(horizontal = 24.dp, vertical = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(label, color = fg, fontWeight = FontWeight.Bold, fontSize = 15.sp)

@@ -29,13 +29,14 @@ fun LoadMoreRow(
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
     Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(r.pill))
-            .background(c.purpleTint)
-            .clickable(enabled = !loading) { onClick() }
-            .padding(vertical = 14.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .clip(RoundedCornerShape(r.pill))
+                .background(c.purpleTint)
+                .clickable(enabled = !loading) { onClick() }
+                .padding(vertical = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         if (loading) {

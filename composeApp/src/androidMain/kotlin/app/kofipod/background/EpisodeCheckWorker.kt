@@ -19,52 +19,52 @@ class EpisodeCheckWorker(
     context: Context,
     params: WorkerParameters,
 ) : CoroutineWorker(context, params), KoinComponent {
-
     private val library: LibraryRepository by inject()
     private val episodes: EpisodesRepository by inject()
     private val settings: SettingsRepository by inject()
     private val downloads: DownloadRepository by inject()
     private val notifier: Notifier by inject()
 
-    override suspend fun doWork(): Result = runCatching {
-        val cap = settings.storageCapBytes().first()
-        var totalNew = 0
-        var showsWithNew = 0
-        var notifyNew = 0
-        var notifyShows = 0
-        val now = System.currentTimeMillis()
+    override suspend fun doWork(): Result =
+        runCatching {
+            val cap = settings.storageCapBytes().first()
+            var totalNew = 0
+            var showsWithNew = 0
+            var notifyNew = 0
+            var notifyShows = 0
+            val now = System.currentTimeMillis()
 
-        for (podcast in library.podcastsFlow().first()) {
-            val feedId = podcast.id.toLongOrNull() ?: continue
-            val result = episodes.refresh(podcast.id, feedId, now)
-            if (result.inserted > 0) {
-                totalNew += result.inserted
-                showsWithNew++
-                if (podcast.notifyNewEpisodesEnabledBool()) {
-                    notifyNew += result.inserted
-                    notifyShows++
-                }
-                if (podcast.autoDownloadEnabledBool()) {
-                    episodes.episodesFlow(podcast.id).first()
-                        .take(result.inserted)
-                        .forEach { ep ->
-                            downloads.enqueue(
-                                episodeId = ep.id,
-                                url = ep.enclosureUrl,
-                                fileName = "${ep.id}.mp3",
-                                source = DownloadJob.Source.Auto,
-                            )
-                        }
+            for (podcast in library.podcastsFlow().first()) {
+                val feedId = podcast.id.toLongOrNull() ?: continue
+                val result = episodes.refresh(podcast.id, feedId, now)
+                if (result.inserted > 0) {
+                    totalNew += result.inserted
+                    showsWithNew++
+                    if (podcast.notifyNewEpisodesEnabledBool()) {
+                        notifyNew += result.inserted
+                        notifyShows++
+                    }
+                    if (podcast.autoDownloadEnabledBool()) {
+                        episodes.episodesFlow(podcast.id).first()
+                            .take(result.inserted)
+                            .forEach { ep ->
+                                downloads.enqueue(
+                                    episodeId = ep.id,
+                                    url = ep.enclosureUrl,
+                                    fileName = "${ep.id}.mp3",
+                                    source = DownloadJob.Source.Auto,
+                                )
+                            }
+                    }
                 }
             }
-        }
 
-        downloads.evictUntilUnderCap(cap)
-        SchedulerRunLog.append(
-            settings,
-            SchedulerRun(at = now, inserted = totalNew, shows = showsWithNew),
-        )
-        if (notifyNew > 0) notifier.postNewEpisodes(notifyNew, notifyShows)
-        Result.success()
-    }.getOrElse { Result.retry() }
+            downloads.evictUntilUnderCap(cap)
+            SchedulerRunLog.append(
+                settings,
+                SchedulerRun(at = now, inserted = totalNew, shows = showsWithNew),
+            )
+            if (notifyNew > 0) notifier.postNewEpisodes(notifyNew, notifyShows)
+            Result.success()
+        }.getOrElse { Result.retry() }
 }

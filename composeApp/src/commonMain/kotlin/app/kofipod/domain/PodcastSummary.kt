@@ -16,24 +16,26 @@ data class PodcastSummary(
     val episodeCount: Int = 0,
 )
 
-fun PodcastFeed.toSummary(): PodcastSummary = PodcastSummary(
-    id = id.toString(),
-    feedId = id,
-    title = title,
-    author = author,
-    description = description,
-    artworkUrl = artwork.ifBlank { image },
-    feedUrl = url,
-    category = categories?.firstOrNull()?.label.orEmpty(),
-    episodeCount = episodeCount,
-)
+fun PodcastFeed.toSummary(): PodcastSummary =
+    PodcastSummary(
+        id = id.toString(),
+        feedId = id,
+        title = title,
+        author = author,
+        description = description,
+        artworkUrl = artwork.ifBlank { image },
+        feedUrl = url,
+        category = categories?.firstOrNull()?.label.orEmpty(),
+        episodeCount = episodeCount,
+    )
 
-fun Podcast.toSummary(): PodcastSummary = PodcastSummary(
-    id = id,
-    feedId = id.toLongOrNull() ?: 0L,
-    title = title,
-    author = author,
-    description = description,
-    artworkUrl = artworkUrl,
-    feedUrl = feedUrl,
-)
+fun Podcast.toSummary(): PodcastSummary =
+    PodcastSummary(
+        id = id,
+        feedId = id.toLongOrNull() ?: 0L,
+        title = title,
+        author = author,
+        description = description,
+        artworkUrl = artworkUrl,
+        feedUrl = feedUrl,
+    )

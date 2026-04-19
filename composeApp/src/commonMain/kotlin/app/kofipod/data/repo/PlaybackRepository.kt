@@ -4,7 +4,6 @@ package app.kofipod.data.repo
 import app.kofipod.db.KofipodDatabase
 
 class PlaybackRepository(private val db: KofipodDatabase) {
-
     fun save(
         episodeId: String,
         positionMs: Long,
@@ -28,7 +27,11 @@ class PlaybackRepository(private val db: KofipodDatabase) {
             .executeAsOneOrNull()
             ?.positionMs ?: 0L
 
-    fun markCompleted(episodeId: String, nowMillis: Long, currentDurationMs: Long = 0L) {
+    fun markCompleted(
+        episodeId: String,
+        nowMillis: Long,
+        currentDurationMs: Long = 0L,
+    ) {
         val existing = db.playbackStateQueries.selectByEpisode(episodeId).executeAsOneOrNull()
         val dur = existing?.durationMs?.takeIf { it > 0 } ?: currentDurationMs
         db.playbackStateQueries.upsert(

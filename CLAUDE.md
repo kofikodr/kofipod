@@ -18,6 +18,8 @@ All commands use the wrapper (`./gradlew`). Gradle is installed via SDKMAN (`~/.
 - Paparazzi snapshot verify: `./gradlew :composeApp:verifyPaparazziDebug`
 - Paparazzi record/update baselines: `./gradlew :composeApp:recordPaparazziDebug`
 - iOS compile (frameworks only, from Mac): `./gradlew :composeApp:compileKotlinIosSimulatorArm64`
+- Lint / format: `./gradlew :composeApp:ktlintFormat :composeApp:detekt`
+- Install pre-commit hook (one-time per clone): `./gradlew installGitHooks` — points `core.hooksPath` at `scripts/git-hooks/`, so `scripts/git-hooks/pre-commit` runs `ktlintFormat` + `detekt` on every commit with staged `.kt`/`.kts` files.
 
 Android SDK lives at `~/Library/Android/sdk/`; `adb`/`emulator` are at `~/Library/Android/sdk/platform-tools/adb` and `~/Library/Android/sdk/emulator/emulator` (not on PATH). Target AVD for verification: `Pixel_9a`.
 
@@ -63,6 +65,19 @@ SQLDelight database name: `KofipodDatabase`, package `app.kofipod.db`. Schema fi
 ### Navigation
 
 `Route` sealed class (qualified-name keyed); `NavHost` start destination is `Route.Splash`. Splash delays 1500ms then routes based on `SettingsRepository.onboardedNow()` (a sync probe — do not use in hot paths). Bottom nav order: Library / Search / Downloads / Settings. Onboarding is skippable; sign-in is opt-in behind the Settings "Back up to Google Drive" switch.
+
+### Lint & static analysis
+
+- **ktlint** (via `org.jlleitschuh.gradle.ktlint`) formats Kotlin sources. Config lives in `.editorconfig` — notably, `@Composable`/`@Preview`/`@Test` functions may use PascalCase, `androidx.compose.foundation.layout.*` is an allowed wildcard, and the `filename` rule is off to accommodate the `.ios.kt` / `.android.kt` suffix convention.
+- **detekt** (via `io.gitlab.arturbosch.detekt`) runs a narrow ruleset — only `style>ForbiddenImport` is enabled. Config: `config/detekt/detekt.yml`. The rule is scoped to `**/commonMain/**` and blocks imports that would break iOS compile: `java.*`, `javax.*`, `kotlin.jvm.*`, `androidx.lifecycle.viewmodel.compose.*`, `androidx.media3.*`, `androidx.work.*`, `androidx.credentials.*`, `com.google.android.*`. Put Android-only imports in `androidMain` instead. When adding a new Android-only artifact, consider adding it to the forbidden list too.
+- Pre-commit hook (`scripts/git-hooks/pre-commit`) runs `ktlintFormat` + `detekt` on every commit that touches `.kt`/`.kts`. Files are re-staged after format so auto-fixes land in the commit. Known caveat: if a Kotlin file has both staged and unstaged edits, ktlint's format may pull the unstaged portion into the commit — stage cleanly first.
+
+### iOS compile must stay green
+
+Android is the priority, but all three iOS targets must keep compiling. `./gradlew :composeApp:compileKotlinIosSimulatorArm64` is the quickest check and should pass before any commit that touches `commonMain`, `iosMain`, or `build.gradle.kts`. Two failure modes to watch for:
+
+- **Android-only deps in `commonMain`.** Everything in `commonMain` must resolve for every target. `androidx.*` artifacts without KMP klibs (e.g. `lifecycle-viewmodel-compose`, Media3, WorkManager, Credentials) belong in `androidMain`. AndroidX Lifecycle 2.8+ does publish KMP for `lifecycle-viewmodel`/`lifecycle-runtime`, but most AndroidX is still Android-only — when in doubt, put it in `androidMain`.
+- **JVM-only APIs in `commonMain`.** No `java.*`, no `System.currentTimeMillis()`, no `java.io.File`. Use `kotlinx.datetime.Clock.System.now().toEpochMilliseconds()` for timestamps (already the convention across VMs) and `expect`/`actual` for anything platform-specific.
 
 ### Performance-sensitive invariants
 

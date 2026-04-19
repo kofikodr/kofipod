@@ -26,7 +26,6 @@ data class SearchUiState(
 )
 
 class SearchViewModel(private val repo: SearchSource) : ViewModel() {
-
     private val _state = MutableStateFlow(SearchUiState())
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
 
@@ -59,35 +58,39 @@ class SearchViewModel(private val repo: SearchSource) : ViewModel() {
             _state.value = s.copy(results = emptyList(), loading = false, loadingMore = false, hasMore = false, error = null)
             return
         }
-        searchJob = viewModelScope.launch {
-            if (!loadMore) delay(DEBOUNCE_MS)
-            _state.value = _state.value.copy(
-                loading = !loadMore,
-                loadingMore = loadMore,
-                error = null,
-            )
-            val limit = currentLimit
-            runCatching {
-                when (s.tab) {
-                    SearchTab.All -> repo.searchAll(s.query, limit)
-                    SearchTab.Title -> repo.searchByTitle(s.query, limit)
-                    SearchTab.Person -> repo.searchByPerson(s.query, limit)
+        searchJob =
+            viewModelScope.launch {
+                if (!loadMore) delay(DEBOUNCE_MS)
+                _state.value =
+                    _state.value.copy(
+                        loading = !loadMore,
+                        loadingMore = loadMore,
+                        error = null,
+                    )
+                val limit = currentLimit
+                runCatching {
+                    when (s.tab) {
+                        SearchTab.All -> repo.searchAll(s.query, limit)
+                        SearchTab.Title -> repo.searchByTitle(s.query, limit)
+                        SearchTab.Person -> repo.searchByPerson(s.query, limit)
+                    }
+                }.onSuccess { results ->
+                    _state.value =
+                        _state.value.copy(
+                            results = results,
+                            loading = false,
+                            loadingMore = false,
+                            hasMore = results.size >= limit,
+                        )
+                }.onFailure { e ->
+                    _state.value =
+                        _state.value.copy(
+                            loading = false,
+                            loadingMore = false,
+                            error = e.message ?: "Search failed",
+                        )
                 }
-            }.onSuccess { results ->
-                _state.value = _state.value.copy(
-                    results = results,
-                    loading = false,
-                    loadingMore = false,
-                    hasMore = results.size >= limit,
-                )
-            }.onFailure { e ->
-                _state.value = _state.value.copy(
-                    loading = false,
-                    loadingMore = false,
-                    error = e.message ?: "Search failed",
-                )
             }
-        }
     }
 
     companion object {

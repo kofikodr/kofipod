@@ -40,35 +40,36 @@ class PlayerViewModel(
     private val settings: SettingsRepository,
     private val sharer: Sharer,
 ) : ViewModel() {
-
     private val toast = MutableStateFlow<String?>(null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    private val episodesForCurrent: StateFlow<List<Episode>> = player.state
-        .map { it.podcastId }
-        .distinctUntilChanged()
-        .flatMapLatest { pid ->
-            if (pid.isBlank()) flowOf(emptyList()) else episodes.episodesFlow(pid)
-        }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    private val episodesForCurrent: StateFlow<List<Episode>> =
+        player.state
+            .map { it.podcastId }
+            .distinctUntilChanged()
+            .flatMapLatest { pid ->
+                if (pid.isBlank()) flowOf(emptyList()) else episodes.episodesFlow(pid)
+            }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    val state: StateFlow<PlayerUiState> = combine(
-        player.state,
-        episodesForCurrent,
-        settings.skipForwardSeconds(),
-        settings.skipBackSeconds(),
-        toast,
-    ) { p, eps, fwd, back, t ->
-        val idx = eps.indexOfFirst { it.id == p.episodeId }
-        PlayerUiState(
-            player = p,
-            hasPrev = idx > 0,
-            hasNext = idx in 0 until eps.lastIndex,
-            skipForwardSec = fwd,
-            skipBackSec = back,
-            toast = t,
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerUiState())
+    val state: StateFlow<PlayerUiState> =
+        combine(
+            player.state,
+            episodesForCurrent,
+            settings.skipForwardSeconds(),
+            settings.skipBackSeconds(),
+            toast,
+        ) { p, eps, fwd, back, t ->
+            val idx = eps.indexOfFirst { it.id == p.episodeId }
+            PlayerUiState(
+                player = p,
+                hasPrev = idx > 0,
+                hasNext = idx in 0 until eps.lastIndex,
+                skipForwardSec = fwd,
+                skipBackSec = back,
+                toast = t,
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerUiState())
 
     fun togglePlayPause() {
         val p = state.value.player
@@ -80,9 +81,10 @@ class PlayerViewModel(
     fun skipForward() {
         val sec = state.value.skipForwardSec
         val cur = state.value.player.positionMs
-        val target = (cur + sec * 1000L).coerceAtMost(
-            state.value.player.durationMs.takeIf { it > 0 } ?: (cur + sec * 1000L),
-        )
+        val target =
+            (cur + sec * 1000L).coerceAtMost(
+                state.value.player.durationMs.takeIf { it > 0 } ?: (cur + sec * 1000L),
+            )
         player.seekTo(target)
     }
 
@@ -93,6 +95,7 @@ class PlayerViewModel(
     }
 
     fun prev() = step(-1)
+
     fun next() = step(1)
 
     private fun step(direction: Int) {
@@ -126,7 +129,7 @@ class PlayerViewModel(
     fun setSleepTimer(minutes: Int?) {
         val ms = minutes?.let { it * 60_000L }
         player.setSleepTimer(ms)
-        if (minutes != null) flashToast("Sleep timer: ${minutes} min")
+        if (minutes != null) flashToast("Sleep timer: $minutes min")
     }
 
     fun share() {
@@ -161,7 +164,7 @@ class PlayerViewModel(
     }
 
     companion object {
-        private val SPEED_STEPS = listOf(0.8f, 1.0f, 1.1f, 1.2f)
+        private val SPEED_STEPS = listOf(0.8f, 1.0f, 1.1f, 1.2f, 1.5f, 2.0f)
         private const val SPEED_EPSILON = 0.05f
     }
 }

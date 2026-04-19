@@ -61,9 +61,10 @@ fun SchedulerInfoScreen(
     ) {
         // Top bar
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -120,9 +121,9 @@ fun SchedulerInfoScreen(
     }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Hero gradient card                                                        */
-/* -------------------------------------------------------------------------- */
+// --------------------------------------------------------------------------
+// Hero gradient card
+// --------------------------------------------------------------------------
 
 @Composable
 private fun HeroCard() {
@@ -191,20 +192,24 @@ private fun HeroCard() {
     }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Status card                                                               */
-/* -------------------------------------------------------------------------- */
+// --------------------------------------------------------------------------
+// Status card
+// --------------------------------------------------------------------------
 
 @Composable
-private fun StatusCard(enabled: Boolean, lastRun: SchedulerRun?) {
+private fun StatusCard(
+    enabled: Boolean,
+    lastRun: SchedulerRun?,
+) {
     val c = LocalKofipodColors.current
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(c.surface)
-            .border(1.dp, c.border, RoundedCornerShape(14.dp))
-            .padding(horizontal = 14.dp, vertical = 14.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(c.surface)
+                .border(1.dp, c.border, RoundedCornerShape(14.dp))
+                .padding(horizontal = 14.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -237,19 +242,23 @@ private fun StatusCard(enabled: Boolean, lastRun: SchedulerRun?) {
             // Keep the switch interactive-looking but make it a no-op. STUB:
             // wire through to scheduler + SettingsRepository when VM exposes it.
             onCheckedChange = {},
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = c.pink,
-                checkedBorderColor = c.pink,
-                uncheckedThumbColor = Color.White,
-                uncheckedTrackColor = c.purpleTint,
-                uncheckedBorderColor = c.border,
-            ),
+            colors =
+                SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = c.pink,
+                    checkedBorderColor = c.pink,
+                    uncheckedThumbColor = Color.White,
+                    uncheckedTrackColor = c.purpleTint,
+                    uncheckedBorderColor = c.border,
+                ),
         )
     }
 }
 
-private fun buildStatusSubtitle(run: SchedulerRun?, enabled: Boolean): String {
+private fun buildStatusSubtitle(
+    run: SchedulerRun?,
+    enabled: Boolean,
+): String {
     // Design calls for "LAST RUN 07:12 · NEXT ~06:00 TOMORROW" — VM doesn't expose
     // nextEta, so we derive a best-effort string. When there's no run yet, we
     // show a pre-run message instead of a fake time.
@@ -274,20 +283,25 @@ private fun formatTimeOfDay(epochMs: Long): String {
     return "${hh.toString().padStart(2, '0')}:${mm.toString().padStart(2, '0')}"
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Numbered card                                                             */
-/* -------------------------------------------------------------------------- */
+// --------------------------------------------------------------------------
+// Numbered card
+// --------------------------------------------------------------------------
 
 @Composable
-private fun NumberedCard(number: String, title: String, body: String) {
+private fun NumberedCard(
+    number: String,
+    title: String,
+    body: String,
+) {
     val c = LocalKofipodColors.current
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(c.surface)
-            .border(1.dp, c.border, RoundedCornerShape(14.dp))
-            .padding(14.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(c.surface)
+                .border(1.dp, c.border, RoundedCornerShape(14.dp))
+                .padding(14.dp),
         verticalAlignment = Alignment.Top,
     ) {
         Box(
@@ -323,21 +337,22 @@ private fun NumberedCard(number: String, title: String, body: String) {
     }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Last 7 runs bar chart                                                     */
-/* -------------------------------------------------------------------------- */
+// --------------------------------------------------------------------------
+// Last 7 runs bar chart
+// --------------------------------------------------------------------------
 
 @Composable
 private fun LastRunsChart(runs: List<SchedulerRun>) {
     val c = LocalKofipodColors.current
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(c.surface)
-            .border(1.dp, c.border, RoundedCornerShape(14.dp))
-            .padding(horizontal = 14.dp, vertical = 16.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(c.surface)
+                .border(1.dp, c.border, RoundedCornerShape(14.dp))
+                .padding(horizontal = 14.dp, vertical = 16.dp),
     ) {
         BarChart(
             runs = runs,
@@ -366,10 +381,11 @@ private fun BarChart(
     val slots = 7
     // Newest run is the pink highlight; list is oldest-first.
     val highlightIndex = (runs.size - 1).coerceAtLeast(0)
-    val values: List<Int> = List(slots) { i ->
-        val offset = slots - runs.size
-        if (i < offset) 0 else runs[i - offset].inserted
-    }
+    val values: List<Int> =
+        List(slots) { i ->
+            val offset = slots - runs.size
+            if (i < offset) 0 else runs[i - offset].inserted
+        }
     val maxValue = (values.maxOrNull() ?: 0).coerceAtLeast(1)
 
     Column(Modifier.fillMaxWidth()) {
@@ -390,13 +406,15 @@ private fun BarChart(
                 val barH = (normalized * h).coerceAtLeast(if (v == 0) 4.dp.toPx() else minBarPx)
                 val x = i * (barWidth + gap)
                 val y = h - barH
-                val highlighted = (i == slots - 1) && runs.isNotEmpty() &&
-                    highlightIndex == runs.size - 1
-                val color = when {
-                    v == 0 -> track
-                    highlighted -> pink
-                    else -> purple
-                }
+                val highlighted =
+                    (i == slots - 1) && runs.isNotEmpty() &&
+                        highlightIndex == runs.size - 1
+                val color =
+                    when {
+                        v == 0 -> track
+                        highlighted -> pink
+                        else -> purple
+                    }
                 drawRoundRect(
                     color = color,
                     topLeft = Offset(x, y),
@@ -424,5 +442,4 @@ private fun BarChart(
     }
 }
 
-private fun weekdayLabels(): List<String> =
-    listOf("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
+private fun weekdayLabels(): List<String> = listOf("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")

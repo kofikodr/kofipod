@@ -60,15 +60,19 @@ fun DownloadsScreen(viewModel: DownloadsViewModel = koinViewModel()) {
     val usedBytes: Long = state.completed.sumOf { it.totalBytes.coerceAtLeast(0L) }
     val capGb: Double = DEFAULT_CAP_GB
     val capBytes: Long = (capGb * BYTES_PER_GB).toLong()
-    val fraction: Float = if (capBytes > 0) {
-        (usedBytes.toDouble() / capBytes.toDouble()).toFloat().coerceIn(0f, 1f)
-    } else 0f
+    val fraction: Float =
+        if (capBytes > 0) {
+            (usedBytes.toDouble() / capBytes.toDouble()).toFloat().coerceIn(0f, 1f)
+        } else {
+            0f
+        }
 
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(c.bg)
-            .padding(horizontal = 20.dp),
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(c.bg)
+                .padding(horizontal = 20.dp),
     ) {
         item {
             Spacer(Modifier.height(20.dp))
@@ -98,9 +102,10 @@ fun DownloadsScreen(viewModel: DownloadsViewModel = koinViewModel()) {
                             color = c.pink,
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.sp,
-                            modifier = Modifier.clickable {
-                                state.downloading.forEach { viewModel.cancel(it.episodeId) }
-                            },
+                            modifier =
+                                Modifier.clickable {
+                                    state.downloading.forEach { viewModel.cancel(it.episodeId) }
+                                },
                         )
                     },
                 )
@@ -184,12 +189,13 @@ private fun AutoDownloadCapCard(
 ) {
     val c = LocalKofipodColors.current
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(c.surface)
-            .border(BorderStroke(1.dp, c.border), RoundedCornerShape(20.dp))
-            .padding(horizontal = 18.dp, vertical = 18.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(c.surface)
+                .border(BorderStroke(1.dp, c.border), RoundedCornerShape(20.dp))
+                .padding(horizontal = 18.dp, vertical = 18.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ProgressRing(
@@ -224,7 +230,10 @@ private fun AutoDownloadCapCard(
 }
 
 @Composable
-private fun ProgressRing(fraction: Float, usedLabel: String) {
+private fun ProgressRing(
+    fraction: Float,
+    usedLabel: String,
+) {
     val c = LocalKofipodColors.current
     val ringSize = 72.dp
     val strokeDp = 8.dp
@@ -253,11 +262,12 @@ private fun ProgressRing(fraction: Float, usedLabel: String) {
             if (sweep > 0f) {
                 // Gradient stroke purple -> pink along a linear axis; linearGradient
                 // is available everywhere and reads well over a partial arc.
-                val brush = Brush.linearGradient(
-                    colors = listOf(c.purple, c.pink),
-                    start = Offset(0f, 0f),
-                    end = Offset(size.width, size.height),
-                )
+                val brush =
+                    Brush.linearGradient(
+                        colors = listOf(c.purple, c.pink),
+                        start = Offset(0f, 0f),
+                        end = Offset(size.width, size.height),
+                    )
                 drawArc(
                     brush = brush,
                     startAngle = -90f,
@@ -292,15 +302,22 @@ private fun ProgressRing(fraction: Float, usedLabel: String) {
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun InProgressRow(d: DownloadRow, onCancel: () -> Unit) {
+private fun InProgressRow(
+    d: DownloadRow,
+    onCancel: () -> Unit,
+) {
     val c = LocalKofipodColors.current
-    val progress: Float = if (d.totalBytes > 0) {
-        (d.downloadedBytes.toFloat() / d.totalBytes.toFloat()).coerceIn(0f, 1f)
-    } else 0f
+    val progress: Float =
+        if (d.totalBytes > 0) {
+            (d.downloadedBytes.toFloat() / d.totalBytes.toFloat()).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 10.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             KofipodArtwork(
@@ -330,10 +347,11 @@ private fun InProgressRow(d: DownloadRow, onCancel: () -> Unit) {
             }
             Spacer(Modifier.size(8.dp))
             Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .clickable(onClick = onCancel),
+                modifier =
+                    Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onCancel),
                 contentAlignment = Alignment.Center,
             ) {
                 KPIcon(
@@ -368,9 +386,10 @@ private fun InProgressRow(d: DownloadRow, onCancel: () -> Unit) {
 private fun QueuedRow(d: DownloadRow) {
     val c = LocalKofipodColors.current
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 10.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         KofipodArtwork(
@@ -391,7 +410,9 @@ private fun QueuedRow(d: DownloadRow) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${d.podcastTitle ?: "\u2014"} \u00B7 ${d.source.uppercase()} \u00B7 ${formatMb(d.totalBytes.coerceAtLeast(d.downloadedBytes))}",
+                text = "${d.podcastTitle ?: "\u2014"} \u00B7 ${d.source.uppercase()} \u00B7 ${formatMb(
+                    d.totalBytes.coerceAtLeast(d.downloadedBytes),
+                )}",
                 color = c.textMute,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
@@ -409,12 +430,16 @@ private fun QueuedRow(d: DownloadRow) {
 }
 
 @Composable
-private fun CompletedRow(d: DownloadRow, onDelete: () -> Unit) {
+private fun CompletedRow(
+    d: DownloadRow,
+    onDelete: () -> Unit,
+) {
     val c = LocalKofipodColors.current
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 10.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         KofipodArtwork(
@@ -445,11 +470,12 @@ private fun CompletedRow(d: DownloadRow, onDelete: () -> Unit) {
         }
         Spacer(Modifier.size(8.dp))
         Box(
-            modifier = Modifier
-                .size(32.dp)
-                .clip(CircleShape)
-                .border(BorderStroke(1.dp, c.border), CircleShape)
-                .clickable(onClick = onDelete),
+            modifier =
+                Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .border(BorderStroke(1.dp, c.border), CircleShape)
+                    .clickable(onClick = onDelete),
             contentAlignment = Alignment.Center,
         ) {
             KPIcon(
@@ -470,23 +496,25 @@ private fun GradientProgressBar(progress: Float) {
     val c = LocalKofipodColors.current
     val clamped = progress.coerceIn(0f, 1f)
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(4.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(c.purpleTint),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(c.purpleTint),
     ) {
         if (clamped > 0f) {
             Box(
-                modifier = Modifier
-                    .fillMaxWidth(clamped)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(
-                        Brush.horizontalGradient(
-                            colors = listOf(c.purple, c.pink),
+                modifier =
+                    Modifier
+                        .fillMaxWidth(clamped)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = listOf(c.purple, c.pink),
+                            ),
                         ),
-                    ),
             )
         }
     }
@@ -509,7 +537,10 @@ private fun formatMb(bytes: Long): String {
     return "${trimNumber(mb, decimals = 0)} MB"
 }
 
-private fun trimNumber(value: Double, decimals: Int): String {
+private fun trimNumber(
+    value: Double,
+    decimals: Int,
+): String {
     val rounded = roundTo(value, decimals)
     if (decimals <= 0) return rounded.toLong().toString()
     val whole = rounded.toLong()
@@ -519,7 +550,10 @@ private fun trimNumber(value: Double, decimals: Int): String {
     return if (fracStr.isEmpty()) whole.toString() else "$whole.$fracStr"
 }
 
-private fun roundTo(value: Double, decimals: Int): Double {
+private fun roundTo(
+    value: Double,
+    decimals: Int,
+): Double {
     val factor = pow10(decimals).toDouble()
     val scaled = value * factor
     val rounded = if (scaled >= 0) (scaled + 0.5).toLong() else -((-scaled) + 0.5).toLong()
@@ -550,11 +584,11 @@ private fun etaLabel(d: DownloadRow): String {
 
 private fun completedCaption(d: DownloadRow): String {
     val size = formatMb(d.totalBytes.coerceAtLeast(d.downloadedBytes))
-    val age = when {
-        d.completedAt != null -> "DONE"
-        d.state == "Failed" -> "FAILED"
-        else -> d.state.uppercase()
-    }
+    val age =
+        when {
+            d.completedAt != null -> "DONE"
+            d.state == "Failed" -> "FAILED"
+            else -> d.state.uppercase()
+        }
     return "$age \u00B7 $size"
 }
-

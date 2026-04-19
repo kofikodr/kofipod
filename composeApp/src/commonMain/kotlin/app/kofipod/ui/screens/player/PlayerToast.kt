@@ -20,7 +20,10 @@ import app.kofipod.ui.theme.LocalKofipodColors
 import kotlinx.coroutines.delay
 
 @Composable
-internal fun PlayerToast(text: String, onDone: () -> Unit) {
+internal fun PlayerToast(
+    text: String,
+    onDone: () -> Unit,
+) {
     val c = LocalKofipodColors.current
     LaunchedEffect(text) {
         delay(1600)

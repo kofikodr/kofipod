@@ -7,6 +7,5 @@ import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import app.kofipod.db.KofipodDatabase
 
 actual class DatabaseFactory(private val context: Context) {
-    actual fun createDriver(): SqlDriver =
-        AndroidSqliteDriver(KofipodDatabase.Schema, context, "kofipod.db")
+    actual fun createDriver(): SqlDriver = AndroidSqliteDriver(KofipodDatabase.Schema, context, "kofipod.db")
 }

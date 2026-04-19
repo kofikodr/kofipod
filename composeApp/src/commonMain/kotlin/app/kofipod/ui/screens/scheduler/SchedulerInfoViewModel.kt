@@ -15,12 +15,12 @@ data class SchedulerInfoUiState(
 )
 
 class SchedulerInfoViewModel(private val settings: SettingsRepository) : ViewModel() {
-
-    private val _state = MutableStateFlow(
-        SchedulerInfoUiState(
-            runs = SchedulerRunLog.read(settings),
-            dailyEnabled = settings.getMetaNow(SettingsRepository.KEY_DAILY_CHECK)?.toBoolean() ?: true,
-        ),
-    )
+    private val _state =
+        MutableStateFlow(
+            SchedulerInfoUiState(
+                runs = SchedulerRunLog.read(settings),
+                dailyEnabled = settings.getMetaNow(SettingsRepository.KEY_DAILY_CHECK)?.toBoolean() ?: true,
+            ),
+        )
     val state: StateFlow<SchedulerInfoUiState> = _state.asStateFlow()
 }

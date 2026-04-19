@@ -36,7 +36,6 @@ class LibraryDetailViewModel(
     private val search: SearchSource,
     private val recentlyViewed: RecentlyViewedRepository,
 ) : ViewModel() {
-
     private val searchQuery = MutableStateFlow("")
     private val searchResults = MutableStateFlow<List<PodcastSummary>>(emptyList())
     private val searching = MutableStateFlow(false)
@@ -44,25 +43,26 @@ class LibraryDetailViewModel(
 
     private var searchJob: Job? = null
 
-    val state: StateFlow<LibraryDetailUiState> = combine(
-        combine(repo.listsFlow(), repo.podcastsInList(listId), ::Pair),
-        combine(searchQuery, searchResults, searching, searchError, ::SearchBundle),
-        recentlyViewed.recentExcludingSavedFlow(),
-    ) { (lists, podcasts), s, recent ->
-        val resolved = listId?.let { id -> lists.firstOrNull { it.id == id } }
-        val gone = listId != null && resolved == null
-        LibraryDetailUiState(
-            listId = listId,
-            listName = resolved?.name ?: if (listId == null) "Unfiled" else "",
-            podcasts = podcasts,
-            gone = gone,
-            searchQuery = s.query,
-            searchResults = s.results,
-            searching = s.loading,
-            searchError = s.error,
-            recentlyViewed = recent,
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryDetailUiState(listId = listId))
+    val state: StateFlow<LibraryDetailUiState> =
+        combine(
+            combine(repo.listsFlow(), repo.podcastsInList(listId), ::Pair),
+            combine(searchQuery, searchResults, searching, searchError, ::SearchBundle),
+            recentlyViewed.recentExcludingSavedFlow(),
+        ) { (lists, podcasts), s, recent ->
+            val resolved = listId?.let { id -> lists.firstOrNull { it.id == id } }
+            val gone = listId != null && resolved == null
+            LibraryDetailUiState(
+                listId = listId,
+                listName = resolved?.name ?: if (listId == null) "Unfiled" else "",
+                podcasts = podcasts,
+                gone = gone,
+                searchQuery = s.query,
+                searchResults = s.results,
+                searching = s.loading,
+                searchError = s.error,
+                recentlyViewed = recent,
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryDetailUiState(listId = listId))
 
     fun deletePodcast(podcastId: String) = repo.deletePodcast(podcastId)
 
@@ -98,20 +98,21 @@ class LibraryDetailViewModel(
             searchError.value = null
             return
         }
-        searchJob = viewModelScope.launch {
-            delay(DEBOUNCE_MS)
-            searching.value = true
-            searchError.value = null
-            runCatching { search.searchAll(query) }
-                .onSuccess {
-                    searchResults.value = it
-                    searching.value = false
-                }
-                .onFailure {
-                    searchError.value = it.message ?: "Search failed"
-                    searching.value = false
-                }
-        }
+        searchJob =
+            viewModelScope.launch {
+                delay(DEBOUNCE_MS)
+                searching.value = true
+                searchError.value = null
+                runCatching { search.searchAll(query) }
+                    .onSuccess {
+                        searchResults.value = it
+                        searching.value = false
+                    }
+                    .onFailure {
+                        searchError.value = it.message ?: "Search failed"
+                        searching.value = false
+                    }
+            }
     }
 
     private data class SearchBundle(

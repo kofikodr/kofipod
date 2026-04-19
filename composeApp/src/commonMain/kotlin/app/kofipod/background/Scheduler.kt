@@ -3,5 +3,6 @@ package app.kofipod.background
 
 expect class Scheduler {
     fun enable()
+
     fun disable()
 }

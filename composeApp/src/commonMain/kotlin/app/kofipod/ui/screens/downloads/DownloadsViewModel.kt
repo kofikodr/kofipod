@@ -18,18 +18,19 @@ data class DownloadsUiState(
 )
 
 class DownloadsViewModel(private val repo: DownloadRepository) : ViewModel() {
-
-    val state: StateFlow<DownloadsUiState> = repo.allWithMeta()
-        .map { all ->
-            DownloadsUiState(
-                downloading = all.filter { it.state == "Downloading" },
-                queued = all.filter { it.state == "Queued" || it.state == "Paused" },
-                completed = all.filter { it.state == "Completed" },
-                failed = all.filter { it.state == "Failed" },
-            )
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DownloadsUiState())
+    val state: StateFlow<DownloadsUiState> =
+        repo.allWithMeta()
+            .map { all ->
+                DownloadsUiState(
+                    downloading = all.filter { it.state == "Downloading" },
+                    queued = all.filter { it.state == "Queued" || it.state == "Paused" },
+                    completed = all.filter { it.state == "Completed" },
+                    failed = all.filter { it.state == "Failed" },
+                )
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DownloadsUiState())
 
     fun cancel(episodeId: String) = repo.cancel(episodeId)
+
     fun delete(episodeId: String) = repo.delete(episodeId)
 }

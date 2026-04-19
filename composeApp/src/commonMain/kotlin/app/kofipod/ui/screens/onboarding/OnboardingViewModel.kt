@@ -21,7 +21,6 @@ class OnboardingViewModel(
     private val settings: SettingsRepository,
     private val auth: AuthService,
 ) : ViewModel() {
-
     private val _state = MutableStateFlow(OnboardingUiState())
     val state: StateFlow<OnboardingUiState> = _state.asStateFlow()
 
@@ -37,12 +36,13 @@ class OnboardingViewModel(
                     onDone()
                 }
                 .onFailure { e ->
-                    val message = when (e) {
-                        is SignInError.NotConfigured -> "Sign-in not configured yet. Tap Skip to use locally."
-                        is SignInError.Cancelled -> null
-                        is SignInError.Failed -> e.message
-                        else -> e.message ?: "Sign-in failed"
-                    }
+                    val message =
+                        when (e) {
+                            is SignInError.NotConfigured -> "Sign-in not configured yet. Tap Skip to use locally."
+                            is SignInError.Cancelled -> null
+                            is SignInError.Failed -> e.message
+                            else -> e.message ?: "Sign-in failed"
+                        }
                     _state.value = _state.value.copy(signingIn = false, error = message)
                 }
         }

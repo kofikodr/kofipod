@@ -191,12 +191,13 @@ private fun HeaderIconButton(
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
     Box(
-        modifier = Modifier
-            .size(40.dp)
-            .clip(RoundedCornerShape(r.pill))
-            .background(c.surface)
-            .border(1.dp, c.border, RoundedCornerShape(r.pill))
-            .clickable(onClick = onClick),
+        modifier =
+            Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(r.pill))
+                .background(c.surface)
+                .border(1.dp, c.border, RoundedCornerShape(r.pill))
+                .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         // Name is read by accessibility via contentDescription on the box semantics;
@@ -260,11 +261,12 @@ private fun EmptyFolderAdder(
                     value = searchQuery,
                     onValueChange = onSearchChange,
                     singleLine = true,
-                    textStyle = TextStyle(
-                        color = c.text,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                    ),
+                    textStyle =
+                        TextStyle(
+                            color = c.text,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                        ),
                     cursorBrush = SolidColor(c.pink),
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -313,24 +315,27 @@ private fun EmptyFolderAdder(
         Spacer(Modifier.height(16.dp))
 
         when {
-            searching -> Row(
-                Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                CircularProgressIndicator(color = c.pink)
-            }
-            searchError != null -> Text(
-                searchError,
-                color = c.danger,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(vertical = 8.dp),
-            )
-            searchQuery.isNotBlank() && searchResults.isEmpty() -> Text(
-                "No results",
-                color = c.textMute,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(vertical = 8.dp),
-            )
+            searching ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    CircularProgressIndicator(color = c.pink)
+                }
+            searchError != null ->
+                Text(
+                    searchError,
+                    color = c.danger,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+            searchQuery.isNotBlank() && searchResults.isEmpty() ->
+                Text(
+                    "No results",
+                    color = c.textMute,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
             searchQuery.isNotBlank() -> {
                 SectionCaption("SEARCH RESULTS")
                 Spacer(Modifier.height(8.dp))
@@ -353,12 +358,13 @@ private fun EmptyFolderAdder(
                     )
                 }
             }
-            else -> Text(
-                "Open a podcast from Search to see it here.",
-                color = c.textMute,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(vertical = 8.dp),
-            )
+            else ->
+                Text(
+                    "Open a podcast from Search to see it here.",
+                    color = c.textMute,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
         }
     }
 }
@@ -487,8 +493,11 @@ private fun RenameListDialog(
                     label = "Save",
                     onClick = {
                         val trimmed = name.trim()
-                        if (trimmed.isNotBlank() && trimmed != initialName) onRename(trimmed)
-                        else onDismiss()
+                        if (trimmed.isNotBlank() && trimmed != initialName) {
+                            onRename(trimmed)
+                        } else {
+                            onDismiss()
+                        }
                     },
                 )
             }

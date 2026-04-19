@@ -32,22 +32,24 @@ import org.junit.Rule
 import org.junit.Test
 
 class TokensSnapshots {
-
     @get:Rule
-    val paparazzi = Paparazzi(
-        deviceConfig = DeviceConfig.PIXEL_5,
-        theme = "android:Theme.Material.Light.NoActionBar",
-    )
+    val paparazzi =
+        Paparazzi(
+            deviceConfig = DeviceConfig.PIXEL_5,
+            theme = "android:Theme.Material.Light.NoActionBar",
+        )
 
     @Test
-    fun tokens_light() = paparazzi.snapshot {
-        KofipodTheme(KofipodThemeMode.Light) { Palette() }
-    }
+    fun tokens_light() =
+        paparazzi.snapshot {
+            KofipodTheme(KofipodThemeMode.Light) { Palette() }
+        }
 
     @Test
-    fun tokens_dark() = paparazzi.snapshot {
-        KofipodTheme(KofipodThemeMode.Dark) { Palette() }
-    }
+    fun tokens_dark() =
+        paparazzi.snapshot {
+            KofipodTheme(KofipodThemeMode.Dark) { Palette() }
+        }
 }
 
 @Composable
@@ -69,20 +71,21 @@ private fun Palette() {
 
 @Composable
 private fun SwatchGrid(c: KofipodColors) {
-    val entries: List<Pair<String, Color>> = listOf(
-        "purple" to c.purple,
-        "purpleDeep" to c.purpleDeep,
-        "purpleSoft" to c.purpleSoft,
-        "purpleTint" to c.purpleTint,
-        "pink" to c.pink,
-        "pinkSoft" to c.pinkSoft,
-        "success" to c.success,
-        "warn" to c.warn,
-        "danger" to c.danger,
-        "border" to c.border,
-        "surface" to c.surface,
-        "surfaceAlt" to c.surfaceAlt,
-    )
+    val entries: List<Pair<String, Color>> =
+        listOf(
+            "purple" to c.purple,
+            "purpleDeep" to c.purpleDeep,
+            "purpleSoft" to c.purpleSoft,
+            "purpleTint" to c.purpleTint,
+            "pink" to c.pink,
+            "pinkSoft" to c.pinkSoft,
+            "success" to c.success,
+            "warn" to c.warn,
+            "danger" to c.danger,
+            "border" to c.border,
+            "surface" to c.surface,
+            "surfaceAlt" to c.surfaceAlt,
+        )
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         entries.chunked(3).forEach { row ->
             Row(
@@ -96,7 +99,10 @@ private fun SwatchGrid(c: KofipodColors) {
 }
 
 @Composable
-private fun Swatch(name: String, color: Color) {
+private fun Swatch(
+    name: String,
+    color: Color,
+) {
     val c = LocalKofipodColors.current
     Column(Modifier.width(116.dp)) {
         Box(

@@ -20,6 +20,8 @@ buildkonfig = "0.15.2"
 paparazzi = "1.3.5"
 junit = "4.13.2"
 podcastindex = "0.4.0"
+ktlintGradle = "12.1.2"
+detekt = "1.23.8"
 
 [libraries]
 compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
@@ -62,3 +64,5 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 sqldelight = { id = "app.cash.sqldelight", version.ref = "sqldelight" }
 buildkonfig = { id = "com.codingfeline.buildkonfig", version.ref = "buildkonfig" }
 paparazzi = { id = "app.cash.paparazzi", version.ref = "paparazzi" }
+ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintGradle" }
+detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }

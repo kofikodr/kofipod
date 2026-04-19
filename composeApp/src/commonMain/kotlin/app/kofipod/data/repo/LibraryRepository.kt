@@ -12,23 +12,22 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 
 class LibraryRepository(private val db: KofipodDatabase) {
+    fun listsFlow(): Flow<List<PodcastList>> = db.podcastListQueries.selectAll().asFlow().mapToList(Dispatchers.Default)
 
-    fun listsFlow(): Flow<List<PodcastList>> =
-        db.podcastListQueries.selectAll().asFlow().mapToList(Dispatchers.Default)
-
-    fun podcastsFlow(): Flow<List<Podcast>> =
-        db.podcastQueries.selectAll().asFlow().mapToList(Dispatchers.Default)
+    fun podcastsFlow(): Flow<List<Podcast>> = db.podcastQueries.selectAll().asFlow().mapToList(Dispatchers.Default)
 
     fun podcastsInList(listId: String?): Flow<List<Podcast>> =
         db.podcastQueries.selectByList(listId).asFlow().mapToList(Dispatchers.Default)
 
-    fun podcastFlow(id: String): Flow<Podcast?> =
-        db.podcastQueries.selectById(id).asFlow().mapToOneOrNull(Dispatchers.Default)
+    fun podcastFlow(id: String): Flow<Podcast?> = db.podcastQueries.selectById(id).asFlow().mapToOneOrNull(Dispatchers.Default)
 
-    fun podcastNow(id: String): Podcast? =
-        db.podcastQueries.selectById(id).executeAsOneOrNull()
+    fun podcastNow(id: String): Podcast? = db.podcastQueries.selectById(id).executeAsOneOrNull()
 
-    fun savePodcast(summary: PodcastSummary, listId: String?, now: Long) {
+    fun savePodcast(
+        summary: PodcastSummary,
+        listId: String?,
+        now: Long,
+    ) {
         db.podcastQueries.insert(
             id = summary.id,
             title = summary.title,
@@ -44,25 +43,41 @@ class LibraryRepository(private val db: KofipodDatabase) {
         )
     }
 
-    fun createList(id: String, name: String, position: Int, now: Long) {
+    fun createList(
+        id: String,
+        name: String,
+        position: Int,
+        now: Long,
+    ) {
         db.podcastListQueries.insert(id, name, position.toLong(), now)
     }
 
-    fun renameList(id: String, name: String) = db.podcastListQueries.rename(name, id)
+    fun renameList(
+        id: String,
+        name: String,
+    ) = db.podcastListQueries.rename(name, id)
 
     fun deleteList(id: String) = db.podcastListQueries.delete(id)
 
-    fun movePodcastToList(podcastId: String, listId: String?) =
-        db.podcastQueries.moveToList(listId, podcastId)
+    fun movePodcastToList(
+        podcastId: String,
+        listId: String?,
+    ) = db.podcastQueries.moveToList(listId, podcastId)
 
-    fun setAutoDownload(podcastId: String, enabled: Boolean) =
-        db.podcastQueries.setAutoDownload(if (enabled) 1 else 0, podcastId)
+    fun setAutoDownload(
+        podcastId: String,
+        enabled: Boolean,
+    ) = db.podcastQueries.setAutoDownload(if (enabled) 1 else 0, podcastId)
 
-    fun setNotifyNewEpisodes(podcastId: String, enabled: Boolean) =
-        db.podcastQueries.setNotifyNewEpisodes(if (enabled) 1 else 0, podcastId)
+    fun setNotifyNewEpisodes(
+        podcastId: String,
+        enabled: Boolean,
+    ) = db.podcastQueries.setNotifyNewEpisodes(if (enabled) 1 else 0, podcastId)
 
-    fun setLastChecked(podcastId: String, atMillis: Long) =
-        db.podcastQueries.setLastChecked(atMillis, podcastId)
+    fun setLastChecked(
+        podcastId: String,
+        atMillis: Long,
+    ) = db.podcastQueries.setLastChecked(atMillis, podcastId)
 
     fun deletePodcast(podcastId: String) = db.podcastQueries.delete(podcastId)
 }

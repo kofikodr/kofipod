@@ -8,24 +8,25 @@ import kotlinx.coroutines.flow.SharedFlow
 import java.io.File
 
 actual class DownloadEngine(private val context: Context) {
-
     actual val events: SharedFlow<DownloadProgress> = DownloadBroadcaster.events
 
     actual fun enqueue(job: DownloadJob) {
-        val intent = Intent(context, DownloadService::class.java).apply {
-            action = DownloadService.ACTION_ENQUEUE
-            putExtra(DownloadService.EXTRA_EPISODE_ID, job.episodeId)
-            putExtra(DownloadService.EXTRA_URL, job.url)
-            putExtra(DownloadService.EXTRA_FILENAME, job.targetFileName)
-        }
+        val intent =
+            Intent(context, DownloadService::class.java).apply {
+                action = DownloadService.ACTION_ENQUEUE
+                putExtra(DownloadService.EXTRA_EPISODE_ID, job.episodeId)
+                putExtra(DownloadService.EXTRA_URL, job.url)
+                putExtra(DownloadService.EXTRA_FILENAME, job.targetFileName)
+            }
         startService(intent)
     }
 
     actual fun cancel(episodeId: String) {
-        val intent = Intent(context, DownloadService::class.java).apply {
-            action = DownloadService.ACTION_CANCEL
-            putExtra(DownloadService.EXTRA_EPISODE_ID, episodeId)
-        }
+        val intent =
+            Intent(context, DownloadService::class.java).apply {
+                action = DownloadService.ACTION_CANCEL
+                putExtra(DownloadService.EXTRA_EPISODE_ID, episodeId)
+            }
         startService(intent)
     }
 

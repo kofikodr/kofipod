@@ -75,22 +75,25 @@ fun LibraryScreen(
     val podcasts: List<Podcast> = state.groups.flatMap { it.podcasts }
     val unfiledCount = podcasts.count { it.listId == null }
 
-    val activeListId: String? = lists
-        .firstOrNull { l -> podcasts.any { it.listId == l.id } }
-        ?.id
-        ?: lists.firstOrNull()?.id
+    val activeListId: String? =
+        lists
+            .firstOrNull { l -> podcasts.any { it.listId == l.id } }
+            ?.id
+            ?: lists.firstOrNull()?.id
 
-    val recent: List<Podcast> = podcasts
-        .sortedByDescending { it.addedAt }
-        .take(3)
+    val recent: List<Podcast> =
+        podcasts
+            .sortedByDescending { it.addedAt }
+            .take(3)
 
     // Tile slot descriptor: either a real list, an unfiled bucket, or the "New list" CTA.
     // Lets the grid iterate uniformly without special-casing indices inline.
-    val tiles: List<Tile> = buildList {
-        lists.forEach { add(Tile.OfList(it)) }
-        if (unfiledCount > 0) add(Tile.Unfiled(unfiledCount))
-        add(Tile.NewList)
-    }
+    val tiles: List<Tile> =
+        buildList {
+            lists.forEach { add(Tile.OfList(it)) }
+            if (unfiledCount > 0) add(Tile.Unfiled(unfiledCount))
+            add(Tile.NewList)
+        }
 
     LazyColumn(
         Modifier.fillMaxSize().background(c.bg),
@@ -197,7 +200,9 @@ fun LibraryScreen(
 
 private sealed interface Tile {
     data class OfList(val list: PodcastList) : Tile
+
     data class Unfiled(val count: Int) : Tile
+
     data object NewList : Tile
 }
 
@@ -253,11 +258,12 @@ private fun TileSlot(
                 onLongClick = { onLongPressList(tile.list) },
             )
         }
-        is Tile.Unfiled -> UnfiledTile(
-            modifier = modifier,
-            podcastCount = tile.count,
-            onClick = { onOpenList(null) },
-        )
+        is Tile.Unfiled ->
+            UnfiledTile(
+                modifier = modifier,
+                podcastCount = tile.count,
+                onClick = { onOpenList(null) },
+            )
         Tile.NewList -> NewListTile(modifier = modifier, onClick = onCreateList)
         null -> Box(modifier = modifier.aspectRatio(1f)) // balances odd-count rows
     }
@@ -371,7 +377,10 @@ private fun UnfiledTile(
 }
 
 @Composable
-private fun NewListTile(modifier: Modifier, onClick: () -> Unit) {
+private fun NewListTile(
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
 
@@ -407,25 +416,28 @@ private fun Modifier.dashedBorder(
     strokeWidth: androidx.compose.ui.unit.Dp = 1.5.dp,
     dashLength: androidx.compose.ui.unit.Dp = 6.dp,
     gapLength: androidx.compose.ui.unit.Dp = 5.dp,
-): Modifier = this.drawBehind {
-    val strokePx = strokeWidth.toPx()
-    val radiusPx = cornerRadius.toPx()
-    val stroke = Stroke(
-        width = strokePx,
-        pathEffect = PathEffect.dashPathEffect(
-            floatArrayOf(dashLength.toPx(), gapLength.toPx()),
-            0f,
-        ),
-    )
-    val inset = strokePx / 2f
-    drawRoundRect(
-        color = color,
-        topLeft = Offset(inset, inset),
-        size = Size(size.width - strokePx, size.height - strokePx),
-        cornerRadius = CornerRadius(radiusPx, radiusPx),
-        style = stroke,
-    )
-}
+): Modifier =
+    this.drawBehind {
+        val strokePx = strokeWidth.toPx()
+        val radiusPx = cornerRadius.toPx()
+        val stroke =
+            Stroke(
+                width = strokePx,
+                pathEffect =
+                    PathEffect.dashPathEffect(
+                        floatArrayOf(dashLength.toPx(), gapLength.toPx()),
+                        0f,
+                    ),
+            )
+        val inset = strokePx / 2f
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(inset, inset),
+            size = Size(size.width - strokePx, size.height - strokePx),
+            cornerRadius = CornerRadius(radiusPx, radiusPx),
+            style = stroke,
+        )
+    }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -508,16 +520,18 @@ private fun LibraryEmptyState(onCreateList: () -> Unit) {
     val r = LocalKofipodRadii.current
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 60.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 60.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            modifier = Modifier
-                .size(120.dp)
-                .clip(CircleShape)
-                .background(c.purpleTint),
+            modifier =
+                Modifier
+                    .size(120.dp)
+                    .clip(CircleShape)
+                    .background(c.purpleTint),
             contentAlignment = Alignment.Center,
         ) {
             KPIcon(
@@ -546,13 +560,14 @@ private fun LibraryEmptyState(onCreateList: () -> Unit) {
         )
         Spacer(Modifier.height(24.dp))
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 32.dp)
-                .clip(RoundedCornerShape(r.pill))
-                .background(c.pink)
-                .clickable { onCreateList() }
-                .padding(vertical = 14.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp)
+                    .clip(RoundedCornerShape(r.pill))
+                    .background(c.pink)
+                    .clickable { onCreateList() }
+                    .padding(vertical = 14.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -575,7 +590,10 @@ private fun LibraryEmptyState(onCreateList: () -> Unit) {
 }
 
 @Composable
-private fun NewListDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
+private fun NewListDialog(
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit,
+) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
     var name by remember { mutableStateOf("") }

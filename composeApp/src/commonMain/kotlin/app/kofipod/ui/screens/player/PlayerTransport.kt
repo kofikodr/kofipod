@@ -98,7 +98,10 @@ private fun PlayerIconButton(
 }
 
 @Composable
-private fun SkipButton(label: String, onClick: () -> Unit) {
+private fun SkipButton(
+    label: String,
+    onClick: () -> Unit,
+) {
     val c = LocalKofipodColors.current
     Box(
         Modifier

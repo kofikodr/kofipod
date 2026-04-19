@@ -19,24 +19,25 @@ data class LibraryUiState(
 )
 
 class LibraryViewModel(private val repo: LibraryRepository) : ViewModel() {
-
-    val state: StateFlow<LibraryUiState> = combine(
-        repo.listsFlow(),
-        repo.podcastsFlow(),
-    ) { lists, podcasts ->
-        val byList = podcasts.groupBy { it.listId }
-        val named = lists.map { l -> LibraryGroup(l, byList[l.id].orEmpty()) }
-        val unfiled = byList[null].orEmpty()
-        val groups = if (unfiled.isEmpty()) named else named + LibraryGroup(null, unfiled)
-        LibraryUiState(groups)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryUiState())
+    val state: StateFlow<LibraryUiState> =
+        combine(
+            repo.listsFlow(),
+            repo.podcastsFlow(),
+        ) { lists, podcasts ->
+            val byList = podcasts.groupBy { it.listId }
+            val named = lists.map { l -> LibraryGroup(l, byList[l.id].orEmpty()) }
+            val unfiled = byList[null].orEmpty()
+            val groups = if (unfiled.isEmpty()) named else named + LibraryGroup(null, unfiled)
+            LibraryUiState(groups)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryUiState())
 
     fun createList(name: String) {
         if (name.isBlank()) return
-        val id = name.lowercase()
-            .replace(Regex("[^a-z0-9]+"), "-")
-            .trim('-')
-            .ifBlank { "list-${Clock.System.now().toEpochMilliseconds()}" }
+        val id =
+            name.lowercase()
+                .replace(Regex("[^a-z0-9]+"), "-")
+                .trim('-')
+                .ifBlank { "list-${Clock.System.now().toEpochMilliseconds()}" }
         val position = state.value.groups.count { it.list != null }
         repo.createList(id, name.trim(), position, Clock.System.now().toEpochMilliseconds())
     }

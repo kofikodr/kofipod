@@ -8,5 +8,4 @@ expect class DatabaseFactory {
     fun createDriver(): SqlDriver
 }
 
-fun buildDatabase(factory: DatabaseFactory): KofipodDatabase =
-    KofipodDatabase(factory.createDriver())
+fun buildDatabase(factory: DatabaseFactory): KofipodDatabase = KofipodDatabase(factory.createDriver())

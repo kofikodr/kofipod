@@ -2,5 +2,8 @@
 package app.kofipod.share
 
 expect class Sharer {
-    fun shareText(title: String, text: String)
+    fun shareText(
+        title: String,
+        text: String,
+    )
 }

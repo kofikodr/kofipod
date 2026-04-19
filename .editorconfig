@@ -1,0 +1,22 @@
+root = true
+
+[*]
+end_of_line = lf
+insert_final_newline = true
+charset = utf-8
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+
+[*.{kt,kts}]
+# Compose + test functions use PascalCase; keep ktlint from flagging them.
+ktlint_function_naming_ignore_when_annotated_with = Composable, Preview, Test
+# expect/actual files use the `.ios.kt` / `.android.kt` suffix convention.
+ktlint_standard_filename = disabled
+# Allow long single-line lambdas/strings; we rely on review judgement.
+max_line_length = 140
+# Compose layout composables are often imported in bulk; keep wildcard for them.
+ij_kotlin_packages_to_use_import_on_demand = androidx.compose.foundation.layout
+
+[*.md]
+trim_trailing_whitespace = false

@@ -37,13 +37,14 @@ fun SettingRow(
 ) {
     val c = LocalKofipodColors.current
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(c.surface)
-            .border(1.dp, c.border, RoundedCornerShape(14.dp))
-            .let { if (onClick != null) it.clickable { onClick() } else it }
-            .padding(14.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(c.surface)
+                .border(1.dp, c.border, RoundedCornerShape(14.dp))
+                .let { if (onClick != null) it.clickable { onClick() } else it }
+                .padding(14.dp),
         verticalAlignment = if (subtitle != null) Alignment.Top else Alignment.CenterVertically,
     ) {
         Box(

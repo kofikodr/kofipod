@@ -22,10 +22,11 @@ fun KPCard(
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
     Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(r.md))
-            .background(c.surface)
-            .border(BorderStroke(1.dp, c.border), RoundedCornerShape(r.md))
-            .padding(16.dp),
+        modifier =
+            modifier
+                .clip(RoundedCornerShape(r.md))
+                .background(c.surface)
+                .border(BorderStroke(1.dp, c.border), RoundedCornerShape(r.md))
+                .padding(16.dp),
     ) { content() }
 }

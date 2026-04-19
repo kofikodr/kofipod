@@ -2,7 +2,10 @@
 package app.kofipod.share
 
 actual class Sharer {
-    actual fun shareText(title: String, text: String) {
+    actual fun shareText(
+        title: String,
+        text: String,
+    ) {
         // TODO: present UIActivityViewController with [title, text]
     }
 }

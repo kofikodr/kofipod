@@ -10,14 +10,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 class SettingsRepository(private val db: KofipodDatabase) {
+    private fun metaFlow(key: String): Flow<String?> = db.syncMetaQueries.get(key).asFlow().mapToOneOrNull(Dispatchers.Default)
 
-    private fun metaFlow(key: String): Flow<String?> =
-        db.syncMetaQueries.get(key).asFlow().mapToOneOrNull(Dispatchers.Default)
+    fun put(
+        key: String,
+        value: String,
+    ) = db.syncMetaQueries.put(key, value)
 
-    fun put(key: String, value: String) = db.syncMetaQueries.put(key, value)
-
-    fun storageCapBytes(): Flow<Long> =
-        metaFlow(KEY_STORAGE_CAP).map { it?.toLongOrNull() ?: DEFAULT_CAP_BYTES }
+    fun storageCapBytes(): Flow<Long> = metaFlow(KEY_STORAGE_CAP).map { it?.toLongOrNull() ?: DEFAULT_CAP_BYTES }
 
     fun setStorageCapBytes(bytes: Long) = put(KEY_STORAGE_CAP, bytes.toString())
 
@@ -29,34 +29,33 @@ class SettingsRepository(private val db: KofipodDatabase) {
 
     fun setThemeMode(mode: KofipodThemeMode) = put(KEY_THEME, mode.name)
 
-    fun dailyCheckEnabled(): Flow<Boolean> =
-        metaFlow(KEY_DAILY_CHECK).map { it?.toBoolean() ?: true }
+    fun dailyCheckEnabled(): Flow<Boolean> = metaFlow(KEY_DAILY_CHECK).map { it?.toBoolean() ?: true }
 
     fun setDailyCheckEnabled(enabled: Boolean) = put(KEY_DAILY_CHECK, enabled.toString())
 
-    fun skipForwardSeconds(): Flow<Int> =
-        metaFlow(KEY_SKIP_FWD).map { it?.toIntOrNull() ?: 30 }
+    fun skipForwardSeconds(): Flow<Int> = metaFlow(KEY_SKIP_FWD).map { it?.toIntOrNull() ?: 30 }
 
-    fun skipBackSeconds(): Flow<Int> =
-        metaFlow(KEY_SKIP_BACK).map { it?.toIntOrNull() ?: 10 }
+    fun skipBackSeconds(): Flow<Int> = metaFlow(KEY_SKIP_BACK).map { it?.toIntOrNull() ?: 10 }
 
     fun setSkipForward(sec: Int) = put(KEY_SKIP_FWD, sec.toString())
+
     fun setSkipBack(sec: Int) = put(KEY_SKIP_BACK, sec.toString())
 
-    fun backupEnabled(): Flow<Boolean> =
-        metaFlow(KEY_BACKUP_ENABLED).map { it?.toBoolean() ?: false }
+    fun backupEnabled(): Flow<Boolean> = metaFlow(KEY_BACKUP_ENABLED).map { it?.toBoolean() ?: false }
 
     fun setBackupEnabled(enabled: Boolean) = put(KEY_BACKUP_ENABLED, enabled.toString())
 
     fun googleEmail(): Flow<String?> = metaFlow(KEY_GOOGLE_EMAIL)
 
     fun setGoogleEmail(email: String?) {
-        if (email == null) db.syncMetaQueries.put(KEY_GOOGLE_EMAIL, "")
-        else put(KEY_GOOGLE_EMAIL, email)
+        if (email == null) {
+            db.syncMetaQueries.put(KEY_GOOGLE_EMAIL, "")
+        } else {
+            put(KEY_GOOGLE_EMAIL, email)
+        }
     }
 
-    fun getMetaNow(key: String): String? =
-        db.syncMetaQueries.get(key).executeAsOneOrNull()
+    fun getMetaNow(key: String): String? = db.syncMetaQueries.get(key).executeAsOneOrNull()
 
     fun onboardedNow(): Boolean = getMetaNow(KEY_ONBOARDED)?.toBoolean() ?: false
 

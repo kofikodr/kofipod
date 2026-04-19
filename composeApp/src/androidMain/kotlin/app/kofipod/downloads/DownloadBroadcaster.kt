@@ -8,6 +8,12 @@ import kotlinx.coroutines.flow.asSharedFlow
 object DownloadBroadcaster {
     private val _events = MutableSharedFlow<DownloadProgress>(extraBufferCapacity = 64)
     val events: SharedFlow<DownloadProgress> = _events.asSharedFlow()
-    suspend fun emit(p: DownloadProgress) { _events.emit(p) }
-    fun tryEmit(p: DownloadProgress) { _events.tryEmit(p) }
+
+    suspend fun emit(p: DownloadProgress) {
+        _events.emit(p)
+    }
+
+    fun tryEmit(p: DownloadProgress) {
+        _events.tryEmit(p)
+    }
 }

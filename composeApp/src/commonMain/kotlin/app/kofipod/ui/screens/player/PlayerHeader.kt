@@ -69,7 +69,10 @@ internal fun PlayerHeader(
     }
 }
 
-private fun buildKicker(episodeNumber: Int?, durationMs: Long): String {
+private fun buildKicker(
+    episodeNumber: Int?,
+    durationMs: Long,
+): String {
     val parts = mutableListOf<String>()
     if (episodeNumber != null) parts += "EP · $episodeNumber"
     if (durationMs > 0) parts += "${durationMs / 60_000} MIN"

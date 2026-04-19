@@ -1,0 +1,30 @@
+#!/usr/bin/env sh
+# Pre-commit hook: ktlintFormat + detekt on staged Kotlin changes.
+# Installed via `./gradlew installGitHooks` (sets core.hooksPath).
+#
+# Known limitation: if a file has both staged and unstaged edits, ktlintFormat
+# may reformat the working-tree (staged+unstaged) version and the re-stage
+# below will pull the unstaged portion into the commit. Stage cleanly or
+# stash your unstaged work first.
+set -eu
+
+STAGED_KT=$(git diff --cached --name-only --diff-filter=ACMR -- '*.kt' '*.kts')
+if [ -z "$STAGED_KT" ]; then
+  exit 0
+fi
+
+FILE_COUNT=$(printf '%s\n' "$STAGED_KT" | wc -l | tr -d ' ')
+printf '[pre-commit] ktlintFormat + detekt on %s staged Kotlin file(s)...\n' "$FILE_COUNT"
+
+if ! ./gradlew --quiet :composeApp:ktlintFormat :composeApp:detekt; then
+  printf '[pre-commit] FAILED. Fix issues, then re-stage and retry.\n'
+  printf '             Iterate locally with: ./gradlew :composeApp:ktlintFormat :composeApp:detekt\n'
+  exit 1
+fi
+
+# Re-stage originally-staged files so ktlint auto-fixes land in this commit.
+printf '%s\n' "$STAGED_KT" | while IFS= read -r f; do
+  [ -n "$f" ] && [ -f "$f" ] && git add -- "$f"
+done
+
+exit 0

@@ -10,18 +10,18 @@ import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
 actual class Scheduler(private val context: Context) {
-
     actual fun enable() {
-        val req = PeriodicWorkRequestBuilder<EpisodeCheckWorker>(24, TimeUnit.HOURS)
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.UNMETERED)
-                    .setRequiresCharging(true)
-                    .setRequiresBatteryNotLow(true)
-                    .build(),
-            )
-            .addTag(TAG)
-            .build()
+        val req =
+            PeriodicWorkRequestBuilder<EpisodeCheckWorker>(24, TimeUnit.HOURS)
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.UNMETERED)
+                        .setRequiresCharging(true)
+                        .setRequiresBatteryNotLow(true)
+                        .build(),
+                )
+                .addTag(TAG)
+                .build()
         WorkManager.getInstance(context)
             .enqueueUniquePeriodicWork(UNIQUE_NAME, ExistingPeriodicWorkPolicy.UPDATE, req)
     }

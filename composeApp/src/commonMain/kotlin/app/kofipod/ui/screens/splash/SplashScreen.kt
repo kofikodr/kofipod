@@ -106,10 +106,11 @@ fun SplashScreen(
             fontFamily = FontFamily.Monospace,
             letterSpacing = 1.sp,
             textAlign = TextAlign.Center,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(bottom = 32.dp),
+            modifier =
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(bottom = 32.dp),
         )
     }
 }

@@ -10,7 +10,10 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 @Composable
-actual fun SystemBarAppearance(isDark: Boolean, barColor: Color) {
+actual fun SystemBarAppearance(
+    isDark: Boolean,
+    barColor: Color,
+) {
     val view = LocalView.current
     if (view.isInEditMode) return
     SideEffect {
