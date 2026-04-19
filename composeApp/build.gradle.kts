@@ -128,6 +128,7 @@ android {
         targetSdk = 35
         versionCode = appVersionCode
         versionName = appVersionName
+        manifestPlaceholders["appLabel"] = "Kofipod"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -153,6 +154,12 @@ android {
         }
     }
     buildTypes {
+        debug {
+            // Distinct package so debug installs coexist with a production release on the same device.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            manifestPlaceholders["appLabel"] = "Kofipoddbg"
+        }
         release {
             isMinifyEnabled = false
             // TODO(release): enable R8 with proguard-rules.pro after sideload-verifying a minified build
