@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.kofipod.config.AppInfo
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.primitives.SectionLabel
 import app.kofipod.ui.primitives.SettingRow
@@ -140,7 +141,7 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(16.dp))
         Text(
-            "Kofipod · v0.1",
+            "Kofipod · v${AppInfo.versionName}",
             color = c.textMute,
             fontSize = 11.sp,
         )
