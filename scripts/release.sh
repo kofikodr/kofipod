@@ -4,7 +4,7 @@
 # Kofipod release orchestrator.
 #
 # Usage:
-#   ./scripts/release.sh [patch|minor|major] [--no-git]
+#   ./scripts/release.sh [patch|minor|major] [--no-git] [--publish]
 #
 # Steps:
 #   1. Verify clean working tree (skipped with --no-git).
@@ -13,6 +13,8 @@
 #   4. Build signed release APK + AAB.
 #   5. Copy artifacts to dist/, print SHA-256 of each.
 #   6. Commit version.properties and tag v<VERSION_NAME> (skipped with --no-git).
+#   7. With --publish: push commit + tag, then create a GitHub release with
+#      auto-generated notes and attach the signed APK.
 
 set -euo pipefail
 
@@ -21,13 +23,25 @@ ROOT="$(pwd)"
 
 BUMP_TYPE="patch"
 NO_GIT=0
+PUBLISH=0
 for arg in "$@"; do
     case "$arg" in
         patch|minor|major) BUMP_TYPE="$arg" ;;
         --no-git) NO_GIT=1 ;;
+        --publish) PUBLISH=1 ;;
         *) echo "unknown arg: $arg" >&2; exit 2 ;;
     esac
 done
+
+if [ "$PUBLISH" = "1" ] && [ "$NO_GIT" = "1" ]; then
+    echo "--publish and --no-git cannot be combined (publish requires a tag)." >&2
+    exit 2
+fi
+
+if [ "$PUBLISH" = "1" ] && ! command -v gh >/dev/null 2>&1; then
+    echo "--publish requires the GitHub CLI ('gh'). Install via 'brew install gh'." >&2
+    exit 2
+fi
 
 red()   { printf '\033[31m%s\033[0m\n' "$*"; }
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -88,7 +102,24 @@ if [ "$NO_GIT" = "0" ]; then
     git commit -m "chore: release v${VERSION_NAME} (${VERSION_CODE})"
     git tag "v${VERSION_NAME}"
     green "Committed and tagged v${VERSION_NAME}."
-    blue "Next: git push && git push --tags"
+    if [ "$PUBLISH" = "0" ]; then
+        blue "Next: git push && git push --tags"
+    fi
 else
     blue "Skipped git commit + tag (--no-git)."
+fi
+
+# 7. publish to GitHub
+if [ "$PUBLISH" = "1" ]; then
+    BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    blue "Pushing ${BRANCH} and tag v${VERSION_NAME}..."
+    git push origin "$BRANCH"
+    git push origin "v${VERSION_NAME}"
+
+    blue "Creating GitHub release v${VERSION_NAME}..."
+    gh release create "v${VERSION_NAME}" \
+        --title "v${VERSION_NAME}" \
+        --generate-notes \
+        "$APK_DST"
+    green "Published v${VERSION_NAME} to GitHub."
 fi
