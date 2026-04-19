@@ -97,7 +97,6 @@ fun SettingsScreen(
         SettingRow(
             icon = KPIconName.Radar,
             title = "Daily check for new episodes",
-            subtitle = "Checks ~once a day when on Wi-Fi. Battery-aware — may shift by a few hours.",
             trailing = {
                 PinkSwitch(
                     checked = state.dailyCheck,
@@ -111,12 +110,10 @@ fun SettingsScreen(
             icon = KPIconName.Radar,
             title = "Wi-Fi only",
             trailing = {
-                // There is no wifiOnly state in SettingsViewModel today; mirror dailyCheck per
-                // the design intent (the switch is purely presentational until the VM exposes
-                // wifiOnly). Left as a STUB: wire to viewModel.setWifiOnly when added.
                 PinkSwitch(
-                    checked = state.dailyCheck,
-                    onCheckedChange = viewModel::setDailyCheck,
+                    checked = state.wifiOnly,
+                    onCheckedChange = viewModel::setWifiOnly,
+                    enabled = state.dailyCheck,
                     testTag = "wifiOnlySwitch",
                 )
             },

@@ -10,12 +10,14 @@ import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
 actual class Scheduler(private val context: Context) {
-    actual fun enable() {
+    actual fun enable(wifiOnly: Boolean) {
         val req =
             PeriodicWorkRequestBuilder<EpisodeCheckWorker>(24, TimeUnit.HOURS)
                 .setConstraints(
                     Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.UNMETERED)
+                        .setRequiredNetworkType(
+                            if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED,
+                        )
                         .setRequiresCharging(true)
                         .setRequiresBatteryNotLow(true)
                         .build(),

@@ -33,6 +33,12 @@ class SettingsRepository(private val db: KofipodDatabase) {
 
     fun setDailyCheckEnabled(enabled: Boolean) = put(KEY_DAILY_CHECK, enabled.toString())
 
+    fun wifiOnly(): Flow<Boolean> = metaFlow(KEY_WIFI_ONLY).map { it?.toBoolean() ?: true }
+
+    fun setWifiOnly(enabled: Boolean) = put(KEY_WIFI_ONLY, enabled.toString())
+
+    fun wifiOnlyNow(): Boolean = getMetaNow(KEY_WIFI_ONLY)?.toBoolean() ?: true
+
     fun skipForwardSeconds(): Flow<Int> = metaFlow(KEY_SKIP_FWD).map { it?.toIntOrNull() ?: 30 }
 
     fun skipBackSeconds(): Flow<Int> = metaFlow(KEY_SKIP_BACK).map { it?.toIntOrNull() ?: 10 }
@@ -48,6 +54,7 @@ class SettingsRepository(private val db: KofipodDatabase) {
         const val KEY_STORAGE_CAP = "storage_cap_bytes"
         const val KEY_THEME = "theme_mode"
         const val KEY_DAILY_CHECK = "daily_check_enabled"
+        const val KEY_WIFI_ONLY = "daily_check_wifi_only"
         const val KEY_SKIP_FWD = "skip_forward_sec"
         const val KEY_SKIP_BACK = "skip_back_sec"
         const val KEY_SCHEDULER_RUNS = "scheduler_runs"
