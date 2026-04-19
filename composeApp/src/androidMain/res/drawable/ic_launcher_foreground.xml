@@ -1,28 +1,67 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Inset to keep art inside the 66dp safe zone of adaptive icons (icon is drawn on 108x108 canvas;
-         system masks to 66dp circle on some launchers). Center at (54,54), base radius 21. -->
-    <!-- Pink disc -->
+    <!-- Bubbly triangle as 3 cubic Beziers between edge midpoints.
+         Virtual vertices V1(25.5,17) V2(80,54) V3(25.5,91); α=0.7 vertex bias → pointier cubics.
+         Midpoints M12(52.75,35.5) M23(52.75,72.5) M31(25.5,54). G1 continuous at each junction.
+         Triangle bbox x[25.5, 67.06] y[28.73, 79.27].
+         Waves centered at (68,54) → composition centered on (54,54). -->
+
+    <!-- Purple play triangle -->
     <path
-        android:pathData="M54,54 m-21,0 a21,21 0 1,0 42,0 a21,21 0 1,0 -42,0 Z"
-        android:fillColor="#FF2E9A" />
-    <!-- White ring inside the pink disc (alpha 0.45) -->
+        android:fillColor="#4B1E9E"
+        android:pathData="M52.75,35.5
+                          C71.825,48.45 71.825,59.55 52.75,72.5
+                          C33.675,85.45 25.5,79.9 25.5,54
+                          C25.5,28.1 33.675,22.55 52.75,35.5 Z" />
+
+    <!-- Left eye -->
     <path
-        android:pathData="M54,54 m-17,0 a17,17 0 1,0 34,0 a17,17 0 1,0 -34,0 Z"
         android:strokeColor="#FFFFFF"
-        android:strokeAlpha="0.45"
-        android:strokeWidth="1.8"
-        android:fillColor="#00000000" />
-    <!-- White inner disc -->
+        android:strokeWidth="2.8"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M34,50 Q37.5,47 41,50" />
+
+    <!-- Right eye -->
     <path
-        android:pathData="M54,54 m-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0 Z"
-        android:fillColor="#FFFFFF" />
-    <!-- Purple center dot -->
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.8"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M47,50 Q50.5,47 54,50" />
+
+    <!-- Pink smile -->
     <path
-        android:pathData="M54,54 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0 Z"
-        android:fillColor="#4B1E9E" />
+        android:strokeColor="#FF2E9A"
+        android:strokeWidth="4.4"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M36.5,56 Q44,62 51.5,56" />
+
+    <!-- Sound waves -->
+    <path
+        android:strokeColor="#FF2E9A"
+        android:strokeWidth="3.0"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M70.5,49.67 A5,5 0 0,1 70.5,58.33" />
+
+    <path
+        android:strokeColor="#FF2E9A"
+        android:strokeWidth="3.0"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M72.5,46.21 A9,9 0 0,1 72.5,61.79" />
+
+    <path
+        android:strokeColor="#FF2E9A"
+        android:strokeWidth="3.0"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M74.5,42.74 A13,13 0 0,1 74.5,65.26" />
 </vector>

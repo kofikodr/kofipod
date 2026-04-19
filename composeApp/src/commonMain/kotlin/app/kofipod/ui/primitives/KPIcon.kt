@@ -116,20 +116,18 @@ private fun buildKPIconPath(
             }
         KPIconName.Settings ->
             Path().apply {
-                addOval(androidx.compose.ui.geometry.Rect(9f * scale, 9f * scale, 15f * scale, 15f * scale))
-                val cx = 12f * scale
-                val cy = 12f * scale
-                val r1 = 4f * scale
-                val r2 = 9f * scale
-                for (i in 0 until 8) {
-                    val a = (i * 45.0) * kotlin.math.PI / 180.0
-                    val x1 = (cx + r1 * kotlin.math.cos(a)).toFloat()
-                    val y1 = (cy + r1 * kotlin.math.sin(a)).toFloat()
-                    val x2 = (cx + r2 * kotlin.math.cos(a)).toFloat()
-                    val y2 = (cy + r2 * kotlin.math.sin(a)).toFloat()
-                    moveTo(x1, y1)
-                    lineTo(x2, y2)
-                }
+                // Three horizontal slider tracks with offset handles.
+                moveTo(3f * scale, 6f * scale)
+                lineTo(21f * scale, 6f * scale)
+                addOval(androidx.compose.ui.geometry.Rect(14f * scale, 4f * scale, 18f * scale, 8f * scale))
+
+                moveTo(3f * scale, 12f * scale)
+                lineTo(21f * scale, 12f * scale)
+                addOval(androidx.compose.ui.geometry.Rect(7f * scale, 10f * scale, 11f * scale, 14f * scale))
+
+                moveTo(3f * scale, 18f * scale)
+                lineTo(21f * scale, 18f * scale)
+                addOval(androidx.compose.ui.geometry.Rect(12f * scale, 16f * scale, 16f * scale, 20f * scale))
             }
         KPIconName.Play ->
             Path().apply {

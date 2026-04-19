@@ -4,8 +4,6 @@ package app.kofipod.ui.nav
 import kotlinx.serialization.Serializable
 
 sealed interface Route {
-    @Serializable data object Splash : Route
-
     @Serializable data object Onboarding : Route
 
     @Serializable data object Search : Route
@@ -17,6 +15,8 @@ sealed interface Route {
     @Serializable data object Settings : Route
 
     @Serializable data object SchedulerInfo : Route
+
+    @Serializable data object StarterPack : Route
 
     @Serializable data class PodcastDetail(val podcastId: String) : Route
 

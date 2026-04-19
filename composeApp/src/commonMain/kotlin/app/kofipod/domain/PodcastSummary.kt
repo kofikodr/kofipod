@@ -3,6 +3,7 @@ package app.kofipod.domain
 
 import app.kofipod.db.Podcast
 import com.mr3y.podcastindex.model.PodcastFeed
+import com.mr3y.podcastindex.model.TrendingFeed
 
 data class PodcastSummary(
     val id: String,
@@ -27,6 +28,19 @@ fun PodcastFeed.toSummary(): PodcastSummary =
         feedUrl = url,
         category = categories?.firstOrNull()?.label.orEmpty(),
         episodeCount = episodeCount,
+    )
+
+fun TrendingFeed.toSummary(): PodcastSummary =
+    PodcastSummary(
+        id = id.toString(),
+        feedId = id,
+        title = title,
+        author = author,
+        description = description,
+        artworkUrl = artwork.ifBlank { image },
+        feedUrl = url,
+        category = categories?.firstOrNull()?.label.orEmpty(),
+        episodeCount = 0,
     )
 
 fun Podcast.toSummary(): PodcastSummary =

@@ -31,6 +31,9 @@ class PodcastIndexApi(private val client: PodcastIndexClient) {
         client.search.forEpisodesByPerson(name = person, limit = limit)
             .items
 
+    suspend fun trending(limit: Int = DEFAULT_LIMIT): List<com.mr3y.podcastindex.model.TrendingFeed> =
+        client.misc.getTrending(limit = limit).feeds
+
     suspend fun podcastByFeedId(feedId: Long): PodcastFeed = client.podcasts.byFeedId(id = feedId).feed
 
     suspend fun episodesByFeedId(

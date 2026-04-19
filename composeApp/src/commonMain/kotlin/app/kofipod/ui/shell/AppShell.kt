@@ -52,15 +52,13 @@ fun AppShell() {
                     Route.Player,
                     navOptions {
                         launchSingleTop = true
-                        popUpTo(Route.Splash) { inclusive = true }
+                        popUpTo(nav.graph.findStartDestination().id) { inclusive = false }
                     },
                 )
             }
         }
     }
-    val hideChrome =
-        currentRoute == Route.Onboarding::class.qualifiedName ||
-            currentRoute == Route.Splash::class.qualifiedName
+    val hideChrome = currentRoute == Route.Onboarding::class.qualifiedName
     val onPlayerScreen = currentRoute == Route.Player::class.qualifiedName
     Scaffold(
         containerColor = LocalKofipodColors.current.bg,

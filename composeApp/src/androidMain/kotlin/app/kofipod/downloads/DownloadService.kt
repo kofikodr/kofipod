@@ -160,7 +160,7 @@ class DownloadService : Service() {
     private fun startForegroundIfNeeded() {
         val notif =
             NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.stat_sys_download)
+                .setSmallIcon(app.kofipod.R.drawable.ic_notification)
                 .setContentTitle("Downloading episodes")
                 .setOngoing(true)
                 .build()

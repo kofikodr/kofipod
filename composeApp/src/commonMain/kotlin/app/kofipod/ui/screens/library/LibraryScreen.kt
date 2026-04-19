@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.ui.screens.library
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -33,17 +36,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -62,12 +67,15 @@ import org.koin.compose.viewmodel.koinViewModel
 fun LibraryScreen(
     onOpenPodcast: (String) -> Unit,
     onOpenList: (String?) -> Unit,
+    onOpenSearch: () -> Unit,
+    onOpenStarterPack: () -> Unit,
     viewModel: LibraryViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
     val c = LocalKofipodColors.current
 
     var newListOpen by remember { mutableStateOf(false) }
+    var opmlInfoOpen by remember { mutableStateOf(false) }
     var pendingDeletePodcast by remember { mutableStateOf<Podcast?>(null) }
     var pendingDeleteList by remember { mutableStateOf<PodcastList?>(null) }
 
@@ -99,10 +107,22 @@ fun LibraryScreen(
         Modifier.fillMaxSize().background(c.bg),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 24.dp),
     ) {
-        item { LibraryHeader() }
+        item {
+            LibraryHeader(
+                backupEnabled = state.backupEnabled,
+                googleEmail = state.googleEmail,
+            )
+        }
 
         if (lists.isEmpty() && podcasts.isEmpty()) {
-            item { LibraryEmptyState(onCreateList = { newListOpen = true }) }
+            item {
+                LibraryEmptyState(
+                    onFindPodcast = onOpenSearch,
+                    onCreateList = { newListOpen = true },
+                    onOpenStarterPack = onOpenStarterPack,
+                    onImportOpml = { opmlInfoOpen = true },
+                )
+            }
         } else {
             item { SectionLabel(title = "Your lists", topSpacing = 18.dp) }
 
@@ -171,6 +191,10 @@ fun LibraryScreen(
         )
     }
 
+    if (opmlInfoOpen) {
+        OpmlComingSoonDialog(onDismiss = { opmlInfoOpen = false })
+    }
+
     pendingDeletePodcast?.let { p ->
         ConfirmDialog(
             title = "Remove from library?",
@@ -207,8 +231,19 @@ private sealed interface Tile {
 }
 
 @Composable
-private fun LibraryHeader() {
+private fun LibraryHeader(
+    backupEnabled: Boolean,
+    googleEmail: String?,
+) {
     val c = LocalKofipodColors.current
+    val signedIn = backupEnabled && !googleEmail.isNullOrBlank()
+    val dotColor = if (signedIn) c.success else c.textMute
+    val statusText =
+        if (signedIn) {
+            "Signed in as ${googleEmail!!.substringBefore('@')}@ · Drive ready"
+        } else {
+            "Local only · Sign in for Drive backup"
+        }
     Column(Modifier.fillMaxWidth()) {
         Text(
             "Library",
@@ -222,11 +257,11 @@ private fun LibraryHeader() {
                 Modifier
                     .size(8.dp)
                     .clip(CircleShape)
-                    .background(c.success),
+                    .background(dotColor),
             )
             Spacer(Modifier.width(6.dp))
             Text(
-                "Synced recently · Drive",
+                statusText,
                 color = c.textMute,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
@@ -515,77 +550,349 @@ private fun placeholderEpisodeCount(p: Podcast): Int {
 }
 
 @Composable
-private fun LibraryEmptyState(onCreateList: () -> Unit) {
+private fun LibraryEmptyState(
+    onFindPodcast: () -> Unit,
+    onCreateList: () -> Unit,
+    onOpenStarterPack: () -> Unit,
+    onImportOpml: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+    ) {
+        EmptyHeroCard(onFindPodcast = onFindPodcast, onCreateList = onCreateList)
+        SectionLabel(title = "Three ways to start", topSpacing = 22.dp)
+        StartActionRow(
+            icon = KPIconName.Search,
+            iconBg = EmptyStateIconBg.Pink,
+            title = "Search the Podcast Index",
+            subtitle = "Over 4M shows. Search by title or by person.",
+            onClick = onFindPodcast,
+        )
+        Spacer(Modifier.height(10.dp))
+        StartActionRow(
+            icon = KPIconName.Radar,
+            iconBg = EmptyStateIconBg.Purple,
+            title = "Try a starter pack",
+            subtitle = "A curated dozen across tech, history, science, and culture.",
+            onClick = onOpenStarterPack,
+        )
+        Spacer(Modifier.height(10.dp))
+        StartActionRow(
+            icon = KPIconName.Download,
+            iconBg = EmptyStateIconBg.Purple,
+            title = "Import from OPML",
+            subtitle = "Coming from another app? Drop an .opml export in.",
+            onClick = onImportOpml,
+        )
+    }
+}
+
+@Composable
+private fun EmptyHeroCard(
+    onFindPodcast: () -> Unit,
+    onCreateList: () -> Unit,
+) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
 
-    Column(
+    val heroGradient =
+        Brush.linearGradient(
+            colors =
+                listOf(
+                    c.purpleSoft,
+                    c.purple,
+                    c.purpleDeep,
+                ),
+            start = Offset(0f, 0f),
+            end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY),
+        )
+
+    Box(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .padding(top = 60.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+                .padding(top = 2.dp)
+                .clip(RoundedCornerShape(r.lg))
+                .background(heroGradient)
+                .drawBehind { drawHeroAmbience() },
+    ) {
+        HeroDecoration(
+            modifier =
+                Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 22.dp, top = 22.dp),
+        )
+        HeroSparkAndHalo(
+            modifier =
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = 22.dp, top = 22.dp),
+        )
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 22.dp)
+                    .padding(top = 88.dp, bottom = 22.dp),
+        ) {
+            val heroHeadline =
+                androidx.compose.ui.text.buildAnnotatedString {
+                    withStyle(androidx.compose.ui.text.SpanStyle(color = Color.White)) {
+                        append("A clean shelf.\nLet's fill it with ")
+                    }
+                    withStyle(androidx.compose.ui.text.SpanStyle(color = c.pink)) {
+                        append("good stuff.")
+                    }
+                }
+            Text(
+                heroHeadline,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 26.sp,
+                lineHeight = 30.sp,
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Organize podcasts into folders — one \"Walks,\" one \"Work,\" one for that weird documentary rabbit hole.",
+                color = Color.White.copy(alpha = 0.82f),
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(r.pill))
+                            .background(Color.White)
+                            .clickable { onFindPodcast() }
+                            .padding(vertical = 14.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        KPIcon(name = KPIconName.Search, color = c.purpleDeep, size = 16.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Find your first podcast",
+                            color = c.purpleDeep,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                        )
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
+                Box(
+                    modifier =
+                        Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.18f))
+                            .clickable { onCreateList() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    KPIcon(name = KPIconName.Plus, color = Color.White, size = 20.dp, strokeWidth = 2.4f)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Two overlapping folder tiles at the top-left of the hero — a translucent-white
+ * "back" tile offset up-and-left, and a pink front tile with the folder glyph.
+ */
+@Composable
+private fun HeroDecoration(modifier: Modifier = Modifier) {
+    val c = LocalKofipodColors.current
+    val r = LocalKofipodRadii.current
+    Box(
+        modifier = modifier.size(width = 96.dp, height = 72.dp),
     ) {
         Box(
             modifier =
                 Modifier
-                    .size(120.dp)
-                    .clip(CircleShape)
-                    .background(c.purpleTint),
-            contentAlignment = Alignment.Center,
-        ) {
-            KPIcon(
-                name = KPIconName.Folder,
-                color = c.purple,
-                size = 44.dp,
-                strokeWidth = 2.0f,
-            )
-        }
-        Spacer(Modifier.height(20.dp))
-        Text(
-            "Your shelf is empty",
-            color = c.text,
-            fontWeight = FontWeight.ExtraBold,
-            fontSize = 22.sp,
-            textAlign = TextAlign.Center,
+                    .size(54.dp)
+                    .align(Alignment.TopStart)
+                    .rotate(-10f)
+                    .clip(RoundedCornerShape(r.md))
+                    .background(Color.White.copy(alpha = 0.24f)),
         )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Create a list to start collecting. You can also search for a podcast and save it.",
-            color = c.textSoft,
-            fontSize = 14.sp,
-            lineHeight = 20.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 24.dp),
-        )
-        Spacer(Modifier.height(24.dp))
         Box(
             modifier =
                 Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 32.dp)
-                    .clip(RoundedCornerShape(r.pill))
-                    .background(c.pink)
-                    .clickable { onCreateList() }
-                    .padding(vertical = 14.dp),
+                    .size(52.dp)
+                    .align(Alignment.TopStart)
+                    .offset(x = 30.dp, y = 14.dp)
+                    .clip(RoundedCornerShape(r.md))
+                    .background(c.pink),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                "Create a list",
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
+            KPIcon(name = KPIconName.Folder, color = Color.White, size = 28.dp, strokeWidth = 2.2f)
+        }
+    }
+}
+
+/**
+ * Top-right ornament: a radial halo glow behind a sparkle + a tiny "+" dot.
+ * The halo uses the hero's own purpleSoft so it reads as lift, not contrast.
+ */
+@Composable
+private fun HeroSparkAndHalo(modifier: Modifier = Modifier) {
+    Box(modifier = modifier.size(64.dp)) {
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val cx = size.width * 0.62f
+            val cy = size.height * 0.42f
+            drawCircle(
+                brush =
+                    Brush.radialGradient(
+                        colors =
+                            listOf(
+                                Color.White.copy(alpha = 0.45f),
+                                Color.White.copy(alpha = 0.12f),
+                                Color.Transparent,
+                            ),
+                        center = Offset(cx, cy),
+                        radius = size.minDimension * 0.55f,
+                    ),
+                radius = size.minDimension * 0.55f,
+                center = Offset(cx, cy),
             )
         }
-        Spacer(Modifier.height(10.dp))
         Text(
-            "TIP · Lists back up to Drive when signed in",
-            color = c.textMute,
-            fontSize = 11.sp,
-            fontFamily = FontFamily.Monospace,
-            letterSpacing = 1.sp,
-            textAlign = TextAlign.Center,
+            "✦",
+            color = Color.White,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.align(Alignment.TopEnd).offset(x = (-4).dp, y = 2.dp),
         )
+        Text(
+            "+",
+            color = Color.White.copy(alpha = 0.8f),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.align(Alignment.BottomStart).offset(x = 6.dp, y = (-6).dp),
+        )
+    }
+}
+
+/**
+ * Bottom-right concentric ring decoration drawn into the card gradient.
+ * Uses the card's own bottom-right as the center, so only a quarter of each
+ * ring is visible — matches the "sound-wave / radar" motif in the mock.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHeroAmbience() {
+    val cx = size.width * 0.95f
+    val cy = size.height * 0.92f
+    val base = size.minDimension * 0.18f
+    val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.4f.dp.toPx())
+    listOf(1.0f, 1.7f, 2.4f, 3.1f).forEachIndexed { i, scale ->
+        drawCircle(
+            color = Color.White.copy(alpha = 0.22f - i * 0.04f),
+            radius = base * scale,
+            center = Offset(cx, cy),
+            style = stroke,
+        )
+    }
+}
+
+private enum class EmptyStateIconBg { Pink, Purple }
+
+@Composable
+private fun StartActionRow(
+    icon: KPIconName,
+    iconBg: EmptyStateIconBg,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    val r = LocalKofipodRadii.current
+    val (bg, fg) =
+        when (iconBg) {
+            EmptyStateIconBg.Pink -> c.pink to Color.White
+            EmptyStateIconBg.Purple -> c.purpleTint to c.purple
+        }
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(r.md))
+                .background(c.surface)
+                .border(1.dp, c.border, RoundedCornerShape(r.md))
+                .clickable { onClick() }
+                .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(bg),
+            contentAlignment = Alignment.Center,
+        ) {
+            KPIcon(name = icon, color = fg, size = 22.dp, strokeWidth = 2.0f)
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                color = c.text,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                subtitle,
+                color = c.textMute,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        KPIcon(name = KPIconName.ChevronRight, color = c.textMute, size = 18.dp)
+    }
+}
+
+@Composable
+private fun OpmlComingSoonDialog(onDismiss: () -> Unit) {
+    val c = LocalKofipodColors.current
+    val r = LocalKofipodRadii.current
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .clip(RoundedCornerShape(r.lg))
+                .background(c.surface)
+                .padding(20.dp),
+        ) {
+            Text(
+                "OPML import — coming soon",
+                color = c.text,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "We're working on importing subscriptions from an .opml file. For now, search and save each show, or try a starter pack.",
+                color = c.textSoft,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+            )
+            Spacer(Modifier.height(16.dp))
+            Row {
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "Got it",
+                    color = c.purple,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable { onDismiss() }.padding(12.dp),
+                )
+            }
+        }
     }
 }
 

@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import app.kofipod.R
 
 actual class Notifier(private val context: Context) {
     init {
@@ -31,7 +32,7 @@ actual class Notifier(private val context: Context) {
         val text = "from $totalShows show" + if (totalShows == 1) "" else "s"
         val notif =
             NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_popup_sync)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle("$totalEpisodes new episodes")
                 .setContentText(text)
                 .setAutoCancel(true)
