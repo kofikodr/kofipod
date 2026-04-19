@@ -58,25 +58,22 @@ fun AppShell() {
             }
         }
     }
-    val hideChrome = currentRoute == Route.Onboarding::class.qualifiedName
     val onPlayerScreen = currentRoute == Route.Player::class.qualifiedName
     Scaffold(
         containerColor = LocalKofipodColors.current.bg,
         bottomBar = {
-            if (!hideChrome) {
-                Column {
-                    if (!onPlayerScreen) {
-                        MiniPlayer(
-                            onOpen = {
-                                nav.navigate(
-                                    Route.Player,
-                                    navOptions { launchSingleTop = true },
-                                )
-                            },
-                        )
-                    }
-                    BottomNav(nav)
+            Column {
+                if (!onPlayerScreen) {
+                    MiniPlayer(
+                        onOpen = {
+                            nav.navigate(
+                                Route.Player,
+                                navOptions { launchSingleTop = true },
+                            )
+                        },
+                    )
                 }
+                BottomNav(nav)
             }
         },
     ) { padding ->

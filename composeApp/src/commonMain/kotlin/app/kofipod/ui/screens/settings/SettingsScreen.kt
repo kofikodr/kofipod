@@ -83,9 +83,8 @@ fun SettingsScreen(
             icon = KPIconName.Folder,
             title = "Automatic backup",
             subtitle =
-                "Your library and playback positions back up to your Google account " +
-                    "(via Android Auto Backup). Restored automatically when you reinstall " +
-                    "or set up a new device. Audio downloads are not backed up.",
+                "App data is automatically backed up if it's enabled in your phone's " +
+                    "Settings → System → Backup. Audio downloads are not included.",
         )
 
         SectionLabel("Appearance", topSpacing = 22.dp)

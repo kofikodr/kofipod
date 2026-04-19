@@ -4,8 +4,6 @@ package app.kofipod.ui.nav
 import kotlinx.serialization.Serializable
 
 sealed interface Route {
-    @Serializable data object Onboarding : Route
-
     @Serializable data object Search : Route
 
     @Serializable data object Library : Route

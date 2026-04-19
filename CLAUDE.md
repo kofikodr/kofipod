@@ -50,7 +50,7 @@ There is no in-app sign-in, no OAuth client to maintain, and no `GOOGLE_SERVER_C
 
 ### Layered packages under `app.kofipod`
 
-- `ui/` — Compose screens (`ui/screens/{search,library,detail,downloads,settings,player,scheduler,splash,onboarding}`), shared `primitives/`, `theme/` (tokens + `KofipodTheme`), `nav/` (typed `Route` sealed class used with Navigation Compose), `shell/AppShell.kt` (bottom nav chrome; suppresses bar on Splash/Onboarding), `player/`, `permission/`.
+- `ui/` — Compose screens (`ui/screens/{search,library,detail,downloads,settings,player,scheduler}`), shared `primitives/`, `theme/` (tokens + `KofipodTheme`), `nav/` (typed `Route` sealed class used with Navigation Compose), `shell/AppShell.kt` (bottom nav chrome), `player/`, `permission/`.
 - `data/` — `api/` (Podcast Index wrapper via `podcastindex-sdk`), `db/` (SQLDelight `DatabaseFactory` expect/actual + `buildDatabase`), `net/buildHttpClient` (Ktor), `repo/` (repositories exposing Flows over DAOs and the API).
 - `di/CommonModule.kt` — single Koin module. Repositories are singletons; screens get `ViewModel`s via Koin `viewModel { ... }` factories. A named `"appScope"` CoroutineScope (SupervisorJob + Default) is used for process-lifetime collectors like `DownloadRepository`; reuse it rather than creating new ones.
 - `playback/` — `KofipodPlayer` expect class (Android actual wraps Media3 ExoPlayer; iOS nullary actual). Common code never constructs it, only resolves it via Koin.
@@ -69,7 +69,7 @@ SQLDelight database name: `KofipodDatabase`, package `app.kofipod.db`. Schema fi
 
 ### Navigation
 
-`Route` sealed class (qualified-name keyed); `NavHost` start destination is `Route.Splash`. Splash delays 1500ms then routes based on `SettingsRepository.onboardedNow()` (a sync probe — do not use in hot paths). Bottom nav order: Library / Search / Downloads / Settings. Onboarding is skippable; sign-in is opt-in behind the Settings "Back up to Google Drive" switch.
+`Route` sealed class (qualified-name keyed); `NavHost` start destination is `Route.Search`. Bottom nav order: Library / Search / Downloads / Settings. No onboarding or splash — first launch drops straight into the app.
 
 ### Lint & static analysis
 
