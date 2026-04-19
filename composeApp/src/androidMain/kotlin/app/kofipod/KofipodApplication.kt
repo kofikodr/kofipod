@@ -4,6 +4,7 @@ package app.kofipod
 import android.app.Application
 import app.kofipod.di.androidPlatformModule
 import app.kofipod.di.commonDataModule
+import app.kofipod.ui.theme.ThemeSystem
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.core.context.startKoin
@@ -11,6 +12,7 @@ import org.koin.core.context.startKoin
 class KofipodApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        ThemeSystem.applyPersistedToProcess(this)
         startKoin {
             androidLogger()
             androidContext(this@KofipodApplication)

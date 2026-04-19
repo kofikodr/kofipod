@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import app.kofipod.ui.nav.DeepLinks
+import app.kofipod.ui.theme.ThemeSystem
 
 const val EXTRA_OPEN_PLAYER = "app.kofipod.extra.OPEN_PLAYER"
 
@@ -16,6 +17,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         handleDeepLink(intent)
         setContent { App() }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        ThemeSystem.syncPendingMode(this)
     }
 
     override fun onNewIntent(intent: Intent) {
