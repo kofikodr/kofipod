@@ -24,7 +24,7 @@ import app.kofipod.ui.screens.settings.SettingsScreen
 
 @Composable
 fun KofipodNavHost(navController: NavHostController) {
-    NavHost(navController = navController, startDestination = Route.Search) {
+    NavHost(navController = navController, startDestination = Route.Library) {
         composable<Route.Search> {
             SearchScreen(onOpenPodcast = { id -> navController.navigate(Route.PodcastDetail(id)) })
         }
