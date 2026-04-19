@@ -4,6 +4,10 @@ package app.kofipod.di
 import app.kofipod.data.api.PodcastIndexApi
 import app.kofipod.data.db.DatabaseFactory
 import app.kofipod.data.db.buildDatabase
+import app.kofipod.data.backup.BackupRestorer
+import app.kofipod.data.backup.BackupService
+import app.kofipod.data.drive.DriveClient
+import app.kofipod.data.drive.DriveTokenProvider
 import app.kofipod.data.net.buildHttpClient
 import app.kofipod.data.repo.DownloadRepository
 import app.kofipod.data.repo.EpisodeSource
@@ -51,13 +55,20 @@ val commonDataModule = module {
             scope = get(org.koin.core.qualifier.named("appScope")),
         )
     }
+    single { DriveTokenProvider(auth = get(), settings = get(), http = get()) }
+    single {
+        val tokens: DriveTokenProvider = get()
+        DriveClient(http = get(), tokenProvider = { tokens.get() })
+    }
+    single { BackupService(db = get(), drive = get(), tokens = get(), settings = get()) }
+    single { BackupRestorer(db = get(), settings = get()) }
 
     viewModel { SearchViewModel(get()) }
     viewModel { LibraryViewModel(get()) }
     viewModel { (listId: String?) -> LibraryDetailViewModel(listId, get(), get(), get()) }
     viewModel { OnboardingViewModel(get(), get()) }
     viewModel { SplashViewModel(get()) }
-    viewModel { SettingsViewModel(get(), get(), get()) }
+    viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { DownloadsViewModel(get()) }
     viewModel { SchedulerInfoViewModel(get()) }
     viewModel { (podcastId: String) ->
