@@ -6,9 +6,5 @@ actual class AuthService {
         throw SignInError.NotConfigured
     }
 
-    actual suspend fun authorizeDrive(serverClientId: String): DriveAuth {
-        throw AuthorizationError.Failed("Drive authorization is not implemented on iOS yet.")
-    }
-
     actual suspend fun signOut() {}
 }

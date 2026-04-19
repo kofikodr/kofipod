@@ -4,7 +4,6 @@ package app.kofipod.ui.screens.onboarding
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.kofipod.auth.AuthService
-import app.kofipod.auth.AuthorizationError
 import app.kofipod.auth.SignInError
 import app.kofipod.config.BuildKonfig
 import app.kofipod.data.repo.SettingsRepository
@@ -28,15 +27,9 @@ class OnboardingViewModel(
     fun onContinueWithGoogle(onDone: () -> Unit) {
         _state.value = _state.value.copy(signingIn = true, error = null)
         viewModelScope.launch {
-            val clientId = BuildKonfig.GOOGLE_SERVER_CLIENT_ID
-            runCatching {
-                val who = auth.signIn(clientId)
-                val drive = auth.authorizeDrive(clientId)
-                who to drive
-            }
-                .onSuccess { (who, drive) ->
-                    settings.setGoogleEmail(who.email)
-                    settings.setDriveAccessToken(drive.accessToken)
+            runCatching { auth.signIn(BuildKonfig.GOOGLE_SERVER_CLIENT_ID) }
+                .onSuccess { result ->
+                    settings.setGoogleEmail(result.email)
                     settings.setBackupEnabled(true)
                     settings.setOnboarded(true)
                     _state.value = _state.value.copy(signingIn = false)
@@ -47,7 +40,6 @@ class OnboardingViewModel(
                         when (e) {
                             is SignInError.NotConfigured -> "Sign-in not configured yet. Tap Skip to use locally."
                             is SignInError.Cancelled -> null
-                            is AuthorizationError.Cancelled -> "Drive access was not granted."
                             is SignInError.Failed -> e.message
                             else -> e.message ?: "Sign-in failed"
                         }
