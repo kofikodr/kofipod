@@ -4,8 +4,10 @@ package app.kofipod.ui.screens.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.kofipod.data.api.PodcastIndexApi
+import app.kofipod.data.repo.CategoriesSource
 import app.kofipod.data.repo.SearchSource
 import app.kofipod.domain.PodcastSummary
+import com.mr3y.podcastindex.model.Category
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,10 +25,14 @@ data class SearchUiState(
     val loadingMore: Boolean = false,
     val hasMore: Boolean = false,
     val error: String? = null,
+    val popularCategories: List<Category> = emptyList(),
 )
 
-class SearchViewModel(private val repo: SearchSource) : ViewModel() {
-    private val _state = MutableStateFlow(SearchUiState())
+class SearchViewModel(
+    private val repo: SearchSource,
+    categories: CategoriesSource,
+) : ViewModel() {
+    private val _state = MutableStateFlow(SearchUiState(popularCategories = categories.popular()))
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
 
     private var searchJob: Job? = null

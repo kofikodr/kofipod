@@ -5,6 +5,8 @@ import app.kofipod.data.api.PodcastIndexApi
 import app.kofipod.data.db.DatabaseFactory
 import app.kofipod.data.db.buildDatabase
 import app.kofipod.data.net.buildHttpClient
+import app.kofipod.data.repo.CategoriesRepository
+import app.kofipod.data.repo.CategoriesSource
 import app.kofipod.data.repo.DiscoveryRepository
 import app.kofipod.data.repo.DiscoverySource
 import app.kofipod.data.repo.DownloadRepository
@@ -42,6 +44,8 @@ val commonDataModule =
         single<SearchSource> { get<SearchRepository>() }
         single { DiscoveryRepository(get()) }
         single<DiscoverySource> { get<DiscoveryRepository>() }
+        single { CategoriesRepository() }
+        single<CategoriesSource> { get<CategoriesRepository>() }
         single { EpisodesRepository(get(), get()) }
         single<EpisodeSource> { get<EpisodesRepository>() }
         single { SettingsRepository(get()) }
@@ -57,7 +61,7 @@ val commonDataModule =
             )
         }
 
-        viewModel { SearchViewModel(get()) }
+        viewModel { SearchViewModel(get(), get()) }
         viewModel { LibraryViewModel(get(), get()) }
         viewModel { StarterPackViewModel(get()) }
         viewModel { (listId: String?) -> LibraryDetailViewModel(listId, get(), get(), get()) }
