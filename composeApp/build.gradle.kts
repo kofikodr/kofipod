@@ -88,9 +88,6 @@ kotlin {
                 implementation(libs.androidx.media3.exoplayer)
                 implementation(libs.androidx.media3.session)
                 implementation(libs.androidx.work.runtime)
-                implementation(libs.androidx.credentials)
-                implementation(libs.androidx.credentials.play.services.auth)
-                implementation(libs.google.identity)
                 implementation(libs.koin.android)
             }
         }
@@ -186,7 +183,6 @@ buildkonfig {
         buildConfigField(STRING, "PODCAST_INDEX_KEY", readSecret("PODCAST_INDEX_KEY"))
         buildConfigField(STRING, "PODCAST_INDEX_SECRET", readSecret("PODCAST_INDEX_SECRET"))
         buildConfigField(STRING, "USER_AGENT", "Kofipod/$appVersionName (github.com/ebernie/kofipod)")
-        buildConfigField(STRING, "GOOGLE_SERVER_CLIENT_ID", readSecret("GOOGLE_SERVER_CLIENT_ID"))
     }
 }
 

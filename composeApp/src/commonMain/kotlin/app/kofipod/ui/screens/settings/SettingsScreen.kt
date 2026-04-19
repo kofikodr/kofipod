@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Switch
@@ -79,45 +78,14 @@ fun SettingsScreen(
             fontWeight = FontWeight.ExtraBold,
             fontSize = 32.sp,
         )
-        Spacer(Modifier.height(16.dp))
-
-        AccountHeroCard(
-            signedIn = state.backupEnabled && state.googleEmail != null,
-            email = state.googleEmail,
-            signingIn = state.backupSigningIn,
-            onEnableBackup = { viewModel.setBackupEnabled(true) },
-        )
-
-        state.backupError?.let { err ->
-            Spacer(Modifier.height(8.dp))
-            Text(
-                err,
-                color = c.danger,
-                fontSize = 12.sp,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { viewModel.clearBackupError() },
-            )
-        }
-
-        SectionLabel("Backup", topSpacing = 20.dp)
+        SectionLabel("Backup", topSpacing = 22.dp)
         SettingRow(
             icon = KPIconName.Folder,
-            title = "Google Drive sync",
-            subtitle = if (state.backupEnabled) "On · appDataFolder" else "Off · tap the card above to enable",
-        )
-        Spacer(Modifier.height(8.dp))
-        SettingRow(
-            icon = KPIconName.Check,
-            title = "What gets backed up",
-            subtitle = "Library, lists, playback positions. No audio files.",
-        )
-        Spacer(Modifier.height(8.dp))
-        SettingRow(
-            icon = KPIconName.Clock,
-            title = "Last backup",
-            subtitle = if (state.backupEnabled) "07:12 · today" else "Never",
+            title = "Automatic backup",
+            subtitle =
+                "Your library and playback positions back up to your Google account " +
+                    "(via Android Auto Backup). Restored automatically when you reinstall " +
+                    "or set up a new device. Audio downloads are not backed up.",
         )
 
         SectionLabel("Appearance", topSpacing = 22.dp)
@@ -227,158 +195,6 @@ private fun ThemeModeSelector(
             }
         }
     }
-}
-
-// --------------------------------------------------------------------------
-// Hero card
-// --------------------------------------------------------------------------
-
-@Composable
-private fun AccountHeroCard(
-    signedIn: Boolean,
-    email: String?,
-    signingIn: Boolean,
-    onEnableBackup: () -> Unit,
-) {
-    val c = LocalKofipodColors.current
-
-    if (!signedIn) {
-        // Honors the locked-in decision: sign-in is OPT-IN. Until the user signs in,
-        // show an unobtrusive SettingRow instead of a hero card.
-        SettingRow(
-            icon = KPIconName.Folder,
-            title = "Back up to Google Drive",
-            subtitle =
-                when {
-                    signingIn -> "Signing in…"
-                    else -> "Off — your library stays on this device"
-                },
-            trailing = {
-                PinkSwitch(
-                    checked = false,
-                    onCheckedChange = { if (it) onEnableBackup() },
-                    enabled = !signingIn,
-                    testTag = "backupSwitch",
-                )
-            },
-        )
-        return
-    }
-
-    val gradient =
-        Brush.linearGradient(
-            colors = listOf(c.purpleDeep, c.purpleSoft),
-        )
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(gradient),
-    ) {
-        // Decorative circle motif on the right — low-contrast overlay for depth.
-        Canvas(Modifier.fillMaxSize()) {
-            val r = size.height * 0.9f
-            drawCircle(
-                color = Color.White.copy(alpha = 0.06f),
-                radius = r,
-                center = Offset(size.width - r * 0.3f, size.height * 0.5f),
-            )
-            drawCircle(
-                color = Color.White.copy(alpha = 0.05f),
-                radius = r * 0.55f,
-                center = Offset(size.width - r * 0.1f, size.height * 1.1f),
-            )
-        }
-
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // Avatar
-            val initials = initialsFromEmail(email ?: "")
-            Box(
-                Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.18f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    initials,
-                    color = Color.White,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 16.sp,
-                )
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    displayNameFromEmail(email ?: ""),
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    email ?: "",
-                    color = Color.White.copy(alpha = 0.72f),
-                    fontSize = 12.5.sp,
-                )
-            }
-        }
-
-        // Floating pill — top-right.
-        Row(
-            modifier =
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 12.dp, end = 12.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(Color.Black.copy(alpha = 0.22f))
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(c.success),
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                "Drive synced",
-                color = Color.White,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 11.sp,
-            )
-        }
-    }
-}
-
-private fun initialsFromEmail(email: String): String {
-    if (email.isBlank()) return "?"
-    val local = email.substringBefore('@')
-    val parts = local.split('.', '_', '-').filter { it.isNotBlank() }
-    return when {
-        parts.size >= 2 -> (
-            parts[0].first().uppercaseChar().toString() +
-                parts[1].first().uppercaseChar()
-        )
-        local.length >= 2 -> local.take(2).uppercase()
-        local.isNotEmpty() -> local.take(1).uppercase()
-        else -> "?"
-    }
-}
-
-private fun displayNameFromEmail(email: String): String {
-    val local = email.substringBefore('@')
-    if (local.isBlank()) return "Account"
-    return local.split('.', '_', '-')
-        .filter { it.isNotBlank() }
-        .joinToString(" ") { it.replaceFirstChar { ch -> ch.uppercaseChar() } }
 }
 
 // --------------------------------------------------------------------------

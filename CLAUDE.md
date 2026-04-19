@@ -25,20 +25,25 @@ Android SDK lives at `~/Library/Android/sdk/`; `adb`/`emulator` are at `~/Librar
 
 ## Secrets / BuildKonfig
 
-`composeApp/build.gradle.kts` reads four values through `readSecret()` (local.properties → env var → empty) and exposes them via `app.kofipod.config.BuildKonfig`:
+`composeApp/build.gradle.kts` reads three values through `readSecret()` (local.properties → env var → empty) and exposes them via `app.kofipod.config.BuildKonfig`:
 
 - `PODCAST_INDEX_KEY`, `PODCAST_INDEX_SECRET` — required for Podcast Index API calls.
 - `USER_AGENT` — hardcoded default.
-- `GOOGLE_SERVER_CLIENT_ID` — OAuth Web client ID for Credential Manager sign-in; when empty, sign-in surfaces `SignInError.NotConfigured` and the UI hint says "Add GOOGLE_SERVER_CLIENT_ID to local.properties".
 
 Copy `local.properties.template` and `keystore.properties.template` before first build. `local.properties`, `keystore.properties`, `*.jks`, and `keystore/` are gitignored.
+
+## Backup
+
+User data (SQLDelight DB + SharedPreferences) backs up via Android Auto Backup, which uploads silently to the user's Google account, doesn't count against Drive quota, and survives full device wipes / new-device setup. Configured by `composeApp/src/androidMain/res/xml/backup_rules.xml` (API 31+) and `backup_rules_legacy.xml` (API 23–30). Audio downloads under `files/downloads/` are intentionally excluded — they're large and re-fetchable.
+
+There is no in-app sign-in, no OAuth client to maintain, and no `GOOGLE_SERVER_CLIENT_ID`. Trade-off: no in-app "Back up now" button — backup runs on Google's schedule (charging + Wi-Fi + idle, roughly once per day).
 
 ## Architecture
 
 ### Source sets
 
 - `commonMain/kotlin/app/kofipod` — all shared logic and UI.
-- `androidMain` — Android actuals: `DatabaseFactory`, `KofipodPlayer` (Media3), download/foreground services, Credential Manager sign-in, notification permission composable.
+- `androidMain` — Android actuals: `DatabaseFactory`, `KofipodPlayer` (Media3), download/foreground services, notification permission composable.
 - `iosMain` — iOS actuals (some features stubbed as TODO; iOS is secondary).
 - `commonTest` — Compose UI tests.
 - `test` — Paparazzi JVM snapshot tests (Android-variant baselines live in `composeApp/src/test/snapshots/images/`).

@@ -17,7 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kofipod.ui.primitives.KPIcon
@@ -70,7 +69,8 @@ fun OnboardingScreen(
         }
         Spacer(Modifier.height(16.dp))
         Text(
-            "Search the open podcast index. Build your own lists. Sync privately to your Google Drive.",
+            "Search the open podcast index. Build your own lists. " +
+                "Backs up to your Google account automatically.",
             color = c.textSoft,
             fontSize = 14.sp,
             lineHeight = 20.sp,
@@ -78,49 +78,26 @@ fun OnboardingScreen(
         Spacer(Modifier.height(28.dp))
         FeatureRow(icon = KPIconName.Search, text = "Search by title or person")
         Spacer(Modifier.height(10.dp))
-        FeatureRow(icon = KPIconName.Folder, text = "Backed up to your private Drive folder")
+        FeatureRow(icon = KPIconName.Folder, text = "Library + playback positions backed up automatically")
         Spacer(Modifier.height(10.dp))
         FeatureRow(icon = KPIconName.Download, text = "On-demand & daily auto-downloads")
         Spacer(Modifier.height(36.dp))
 
-        // Primary: Continue with Google
         Box(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(r.pill))
                 .background(c.pink)
-                .clickable(enabled = !state.signingIn) { viewModel.onContinueWithGoogle(onDone = onFinished) }
+                .clickable { viewModel.onContinue(onFinished) }
                 .padding(vertical = 16.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                GIcon(size = 20.dp)
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    if (state.signingIn) "Signing in…" else "Continue with Google",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                )
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        // Secondary: Skip — use locally
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(r.pill))
-                .border(1.dp, c.border, RoundedCornerShape(r.pill))
-                .background(c.surface)
-                .clickable { viewModel.onSkip(onFinished) }
-                .padding(vertical = 16.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("Skip — use locally", color = c.text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-        }
-        if (state.error != null) {
-            Spacer(Modifier.height(10.dp))
-            Text(state.error!!, color = c.danger, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            Text(
+                "Get started",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+            )
         }
         Spacer(Modifier.height(40.dp))
     }
@@ -153,18 +130,5 @@ private fun FeatureRow(
         }
         Spacer(Modifier.width(12.dp))
         Text(text, color = c.text, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-    }
-}
-
-@Composable
-private fun GIcon(size: androidx.compose.ui.unit.Dp) {
-    Box(
-        Modifier
-            .size(size)
-            .clip(RoundedCornerShape(999.dp))
-            .background(Color.White),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text("G", color = Color(0xFF4285F4), fontWeight = FontWeight.Bold, fontSize = 12.sp)
     }
 }

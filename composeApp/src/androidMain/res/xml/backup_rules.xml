@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto Backup rules for Android 12+ (API 31+).
+
+  cloud-backup: what gets uploaded to the user's Google Drive backup
+  (transparent, free, doesn't count against Drive quota, ~25 MB cap per app).
+
+  device-transfer: what gets copied during direct device-to-device transfer
+  (cable / Quick Start). Same set as cloud — both restore the library.
+
+  Included: SQLDelight database (subscriptions, lists, episode metadata,
+  playback state, settings) and any SharedPreferences. Together this is
+  well under 1 MB.
+
+  Excluded: downloaded audio under files/downloads/. Not listed here so
+  Auto Backup excludes it by default — re-fetchable from the feed and
+  would blow the 25 MB cap on heavy libraries.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="database" path="." />
+        <include domain="sharedpref" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="database" path="." />
+        <include domain="sharedpref" path="." />
+    </device-transfer>
+</data-extraction-rules>

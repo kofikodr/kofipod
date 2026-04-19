@@ -107,12 +107,7 @@ fun LibraryScreen(
         Modifier.fillMaxSize().background(c.bg),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 24.dp),
     ) {
-        item {
-            LibraryHeader(
-                backupEnabled = state.backupEnabled,
-                googleEmail = state.googleEmail,
-            )
-        }
+        item { LibraryHeader() }
 
         if (lists.isEmpty() && podcasts.isEmpty()) {
             item {
@@ -231,43 +226,15 @@ private sealed interface Tile {
 }
 
 @Composable
-private fun LibraryHeader(
-    backupEnabled: Boolean,
-    googleEmail: String?,
-) {
+private fun LibraryHeader() {
     val c = LocalKofipodColors.current
-    val signedIn = backupEnabled && !googleEmail.isNullOrBlank()
-    val dotColor = if (signedIn) c.success else c.textMute
-    val statusText =
-        if (signedIn) {
-            "Signed in as ${googleEmail!!.substringBefore('@')}@ · Drive ready"
-        } else {
-            "Local only · Sign in for Drive backup"
-        }
-    Column(Modifier.fillMaxWidth()) {
-        Text(
-            "Library",
-            color = c.text,
-            fontWeight = FontWeight.ExtraBold,
-            fontSize = 32.sp,
-        )
-        Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(dotColor),
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                statusText,
-                color = c.textMute,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-            )
-        }
-    }
+    Text(
+        "Library",
+        color = c.text,
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 32.sp,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable
