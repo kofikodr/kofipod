@@ -144,6 +144,12 @@ fun SettingsScreen(
             color = c.textMute,
             fontSize = 11.sp,
         )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Podcast data powered by Podcast Index",
+            color = c.textMute,
+            fontSize = 11.sp,
+        )
     }
 }
 
