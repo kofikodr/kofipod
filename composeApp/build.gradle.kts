@@ -91,6 +91,7 @@ kotlin {
                 implementation(libs.androidx.credentials)
                 implementation(libs.androidx.credentials.play.services.auth)
                 implementation(libs.google.identity)
+                implementation(libs.play.services.auth)
                 implementation(libs.koin.android)
             }
         }

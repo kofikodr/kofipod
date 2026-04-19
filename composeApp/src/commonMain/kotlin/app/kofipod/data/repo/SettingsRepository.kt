@@ -55,6 +55,20 @@ class SettingsRepository(private val db: KofipodDatabase) {
         }
     }
 
+    fun getDriveAccessTokenNow(): String? = getMetaNow(KEY_DRIVE_ACCESS_TOKEN)?.takeIf { it.isNotBlank() }
+
+    fun setDriveAccessToken(token: String?) {
+        put(KEY_DRIVE_ACCESS_TOKEN, token.orEmpty())
+    }
+
+    fun lastBackupAt(): Flow<Long?> = metaFlow(KEY_LAST_BACKUP_AT).map { it?.toLongOrNull() }
+
+    fun setLastBackupAt(millis: Long) = put(KEY_LAST_BACKUP_AT, millis.toString())
+
+    fun getBackupVersionNow(): Long? = getMetaNow(KEY_BACKUP_VERSION)?.toLongOrNull()
+
+    fun setBackupVersion(version: Long) = put(KEY_BACKUP_VERSION, version.toString())
+
     fun getMetaNow(key: String): String? = db.syncMetaQueries.get(key).executeAsOneOrNull()
 
     fun onboardedNow(): Boolean = getMetaNow(KEY_ONBOARDED)?.toBoolean() ?: false
@@ -71,6 +85,9 @@ class SettingsRepository(private val db: KofipodDatabase) {
         const val KEY_SCHEDULER_RUNS = "scheduler_runs"
         const val KEY_BACKUP_ENABLED = "backup_enabled"
         const val KEY_GOOGLE_EMAIL = "google_email"
+        const val KEY_DRIVE_ACCESS_TOKEN = "drive_access_token"
+        const val KEY_LAST_BACKUP_AT = "last_backup_at_millis"
+        const val KEY_BACKUP_VERSION = "drive_backup_version"
         const val KEY_ONBOARDED = "onboarded"
     }
 }

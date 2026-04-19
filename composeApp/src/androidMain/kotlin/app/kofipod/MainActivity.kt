@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import app.kofipod.auth.AuthBridge
 import app.kofipod.ui.nav.DeepLinks
 
 const val EXTRA_OPEN_PLAYER = "app.kofipod.extra.OPEN_PLAYER"
@@ -14,6 +15,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        AuthBridge.attach(this)
         handleDeepLink(intent)
         setContent { App() }
     }
@@ -22,6 +24,11 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleDeepLink(intent)
+    }
+
+    override fun onDestroy() {
+        AuthBridge.detach(this)
+        super.onDestroy()
     }
 
     private fun handleDeepLink(intent: Intent?) {

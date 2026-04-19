@@ -45,12 +45,18 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.kofipod.ui.primitives.KPButton
+import app.kofipod.ui.primitives.KPButtonStyle
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.primitives.SectionLabel
 import app.kofipod.ui.primitives.SettingRow
 import app.kofipod.ui.theme.KofipodThemeMode
 import app.kofipod.ui.theme.LocalKofipodColors
 import app.kofipod.ui.theme.LocalKofipodRadii
+import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import org.koin.compose.viewmodel.koinViewModel
 import kotlin.math.roundToInt
 
@@ -97,7 +103,19 @@ fun SettingsScreen(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .clickable { viewModel.clearBackupError() },
+                        .clickable { viewModel.clearBackupMessage() },
+            )
+        }
+        state.backupMessage?.let { msg ->
+            Spacer(Modifier.height(8.dp))
+            Text(
+                msg,
+                color = c.success,
+                fontSize = 12.sp,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.clearBackupMessage() },
             )
         }
 
@@ -117,8 +135,19 @@ fun SettingsScreen(
         SettingRow(
             icon = KPIconName.Clock,
             title = "Last backup",
-            subtitle = if (state.backupEnabled) "07:12 · today" else "Never",
+            subtitle = formatLastBackup(state.lastBackupAtMillis, state.backupEnabled),
         )
+        if (state.backupEnabled) {
+            Spacer(Modifier.height(12.dp))
+            BackupActionsRow(
+                backupInProgress = state.backupInProgress,
+                restoreInProgress = state.restoreInProgress,
+                remoteVersion = state.remoteBackupVersion,
+                onBackup = { viewModel.backupNow() },
+                onCheckRemote = { viewModel.checkRemoteBackup() },
+                onRestore = { viewModel.restoreNow() },
+            )
+        }
 
         SectionLabel("Appearance", topSpacing = 22.dp)
         ThemeModeSelector(
@@ -227,6 +256,88 @@ private fun ThemeModeSelector(
             }
         }
     }
+}
+
+// --------------------------------------------------------------------------
+// Backup actions
+// --------------------------------------------------------------------------
+
+@Composable
+private fun BackupActionsRow(
+    backupInProgress: Boolean,
+    restoreInProgress: Boolean,
+    remoteVersion: Long?,
+    onBackup: () -> Unit,
+    onCheckRemote: () -> Unit,
+    onRestore: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            KPButton(
+                label = if (backupInProgress) "Backing up…" else "Back up now",
+                onClick = { if (!backupInProgress) onBackup() },
+                modifier = Modifier.weight(1f).testTag("backupNowButton"),
+                style = KPButtonStyle.PrimaryPink,
+            )
+            Spacer(Modifier.width(10.dp))
+            KPButton(
+                label = "Check remote",
+                onClick = onCheckRemote,
+                modifier = Modifier.weight(1f).testTag("checkRemoteButton"),
+                style = KPButtonStyle.SecondaryPurple,
+            )
+        }
+        if (remoteVersion != null) {
+            Spacer(Modifier.height(10.dp))
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(c.surface)
+                    .border(1.dp, c.border, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Remote backup v$remoteVersion",
+                        color = c.text,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                    )
+                    Text(
+                        "Replace local library with this backup",
+                        color = c.textMute,
+                        fontSize = 11.5.sp,
+                    )
+                }
+                KPButton(
+                    label = if (restoreInProgress) "Restoring…" else "Restore",
+                    onClick = { if (!restoreInProgress) onRestore() },
+                    style = KPButtonStyle.Outline,
+                    modifier = Modifier.testTag("restoreButton"),
+                )
+            }
+        }
+    }
+}
+
+private fun formatLastBackup(
+    millis: Long?,
+    backupEnabled: Boolean,
+): String {
+    if (!backupEnabled) return "Never"
+    if (millis == null) return "Not yet — tap ‘Back up now’"
+    val now = Clock.System.now().toEpochMilliseconds()
+    val diff = now - millis
+    val dayMs = 24L * 60 * 60 * 1000
+    if (diff < 60_000) return "Just now"
+    if (diff < 60L * 60 * 1000) return "${diff / 60_000} min ago"
+    if (diff < dayMs) return "${diff / (60L * 60 * 1000)} h ago"
+    if (diff < 7 * dayMs) return "${diff / dayMs} d ago"
+    val ldt = Instant.fromEpochMilliseconds(millis).toLocalDateTime(TimeZone.currentSystemDefault())
+    return "${ldt.date}"
 }
 
 // --------------------------------------------------------------------------
