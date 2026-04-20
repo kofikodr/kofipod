@@ -1,13 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Legacy fullBackupContent rules for Android 6.0–11 (API 23–30).
-  Keep in sync with backup_rules.xml — same include set. Excludes
-  spelled out explicitly for downloaded audio and the streaming
-  playback cache; anything else unlisted isn't backed up.
+  Keep in sync with backup_rules.xml — same include set. Downloads and the
+  streaming cache live outside the included domains, so Auto Backup omits
+  them by default; no explicit exclude needed.
 -->
 <full-backup-content>
     <include domain="database" path="." />
     <include domain="sharedpref" path="." />
-    <exclude domain="file" path="downloads/" />
-    <exclude domain="cache" path="media/" />
 </full-backup-content>

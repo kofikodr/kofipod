@@ -9,11 +9,13 @@
 # Steps:
 #   1. Verify clean working tree (skipped with --no-git).
 #   2. Verify keystore.properties + keystore/release.jks exist.
-#   3. Bump version.properties via :composeApp:bumpVersion.
-#   4. Build signed release APK + AAB.
-#   5. Copy artifacts to dist/, print SHA-256 of each.
-#   6. Commit version.properties and tag v<VERSION_NAME> (skipped with --no-git).
-#   7. With --publish: push commit + tag, then create a GitHub release with
+#   3. Run lintVitalRelease — fail fast BEFORE bumping, so a lint failure
+#      doesn't leave version.properties dirty.
+#   4. Bump version.properties via :composeApp:bumpVersion.
+#   5. Build signed release APK + AAB.
+#   6. Copy artifacts to dist/, print SHA-256 of each.
+#   7. Commit version.properties and tag v<VERSION_NAME> (skipped with --no-git).
+#   8. With --publish: push commit + tag, then create a GitHub release with
 #      auto-generated notes and attach the signed APK.
 
 set -euo pipefail
@@ -63,7 +65,13 @@ if [ ! -f "keystore.properties" ] || [ ! -f "keystore/release.jks" ]; then
     exit 1
 fi
 
-# 3. bump version
+# 3. lint-gate release variant before bumping. `assembleRelease` below will
+#    run this anyway, but doing it up front means a lint failure doesn't
+#    leave version.properties bumped and the tree dirty.
+blue "Running release-variant lint..."
+./gradlew :composeApp:lintVitalRelease
+
+# 4. bump version
 blue "Bumping version ($BUMP_TYPE)..."
 ./gradlew -q :composeApp:bumpVersion -Ptype="$BUMP_TYPE"
 
