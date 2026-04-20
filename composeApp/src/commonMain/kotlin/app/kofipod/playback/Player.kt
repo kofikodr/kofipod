@@ -24,6 +24,8 @@ data class PlayerState(
     val isPlaying: Boolean = false,
     val positionMs: Long = 0,
     val durationMs: Long = 0,
+    /** End of the contiguous range cached/buffered ahead of [positionMs]. */
+    val bufferedMs: Long = 0,
     val speed: Float = 1f,
     val sleepRemainingMs: Long? = null,
 )

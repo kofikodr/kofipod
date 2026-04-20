@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+@file:OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package app.kofipod.playback
 
 import android.app.PendingIntent
@@ -10,15 +12,19 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import app.kofipod.EXTRA_OPEN_PLAYER
 import app.kofipod.MainActivity
 import app.kofipod.data.repo.PlaybackRepository
+import app.kofipod.network.NetworkMonitor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -27,14 +33,16 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
-import org.koin.mp.KoinPlatform
+import org.koin.android.ext.android.inject
 
 class KofipodPlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var persistJob: Job? = null
 
-    private val playback: PlaybackRepository by lazy { KoinPlatform.getKoin().get() }
+    private val playback: PlaybackRepository by inject()
+    private val playbackCache: PlaybackCache by inject()
+    private val networkMonitor: NetworkMonitor by inject()
 
     override fun onCreate() {
         super.onCreate()
@@ -51,7 +59,16 @@ class KofipodPlaybackService : MediaSessionService() {
                         .setAudioProcessors(arrayOf<AudioProcessor>(KofipodAudioProcessor()))
                         .build()
             }
-        val player = ExoPlayer.Builder(this, renderersFactory).build()
+        val cacheDataSourceFactory =
+            CacheDataSource.Factory()
+                .setCache(playbackCache.cache)
+                .setUpstreamDataSourceFactory(DefaultHttpDataSource.Factory())
+                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        val player =
+            ExoPlayer.Builder(this, renderersFactory)
+                .setLoadControl(AdaptiveLoadControl(networkMonitor))
+                .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
+                .build()
         player.addListener(
             object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {

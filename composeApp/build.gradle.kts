@@ -87,6 +87,8 @@ kotlin {
                 implementation(libs.sqldelight.android.driver)
                 implementation(libs.androidx.media3.exoplayer)
                 implementation(libs.androidx.media3.session)
+                implementation(libs.androidx.media3.datasource)
+                implementation(libs.androidx.media3.database)
                 implementation(libs.androidx.work.runtime)
                 implementation(libs.koin.android)
             }

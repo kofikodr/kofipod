@@ -133,10 +133,11 @@ class DownloadService : Service() {
             }
             DownloadBroadcaster.emit(
                 DownloadProgress(
-                    episodeId,
-                    file.length(),
-                    file.length(),
-                    DownloadProgress.State.Completed,
+                    episodeId = episodeId,
+                    downloadedBytes = file.length(),
+                    totalBytes = file.length(),
+                    state = DownloadProgress.State.Completed,
+                    localPath = file.absolutePath,
                 ),
             )
         }

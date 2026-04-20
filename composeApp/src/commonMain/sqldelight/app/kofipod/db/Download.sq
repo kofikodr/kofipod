@@ -59,5 +59,18 @@ UPDATE Download SET state = ?, errorMessage = ? WHERE episodeId = ?;
 updateProgress:
 UPDATE Download SET downloadedBytes = ?, totalBytes = ? WHERE episodeId = ?;
 
+markCompleted:
+UPDATE Download
+SET state = 'Completed',
+    errorMessage = NULL,
+    localPath = ?,
+    downloadedBytes = ?,
+    totalBytes = ?,
+    completedAt = ?
+WHERE episodeId = ?;
+
+localPathFor:
+SELECT localPath FROM Download WHERE episodeId = ? AND state = 'Completed';
+
 delete:
 DELETE FROM Download WHERE episodeId = ?;

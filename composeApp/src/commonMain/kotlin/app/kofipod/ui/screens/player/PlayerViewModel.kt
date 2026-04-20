@@ -3,6 +3,7 @@ package app.kofipod.ui.screens.player
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.kofipod.data.repo.DownloadRepository
 import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.data.repo.PlaybackRepository
 import app.kofipod.data.repo.SettingsRepository
@@ -39,6 +40,7 @@ class PlayerViewModel(
     private val episodes: EpisodeSource,
     private val settings: SettingsRepository,
     private val sharer: Sharer,
+    private val downloads: DownloadRepository,
 ) : ViewModel() {
     private val toast = MutableStateFlow<String?>(null)
 
@@ -108,6 +110,7 @@ class PlayerViewModel(
         val target = list.getOrNull(idx + direction) ?: return
         if (target.enclosureUrl.isBlank()) return
         val startMs = playback.positionFor(target.id)
+        val sourceUrl = downloads.localUriFor(target.id) ?: target.enclosureUrl
         player.play(
             PlayableEpisode(
                 episodeId = target.id,
@@ -115,7 +118,7 @@ class PlayerViewModel(
                 podcastTitle = p.podcastTitle,
                 title = target.title,
                 artworkUrl = p.artworkUrl,
-                sourceUrl = target.enclosureUrl,
+                sourceUrl = sourceUrl,
                 startPositionMs = startMs,
                 episodeNumber = target.episodeNumber?.takeIf { it in 1..Int.MAX_VALUE }?.toInt(),
             ),

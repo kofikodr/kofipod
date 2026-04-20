@@ -18,6 +18,7 @@ data class DownloadProgress(
     val totalBytes: Long,
     val state: State,
     val errorMessage: String? = null,
+    val localPath: String? = null,
 ) {
     enum class State { Queued, Downloading, Completed, Failed, Paused }
 }

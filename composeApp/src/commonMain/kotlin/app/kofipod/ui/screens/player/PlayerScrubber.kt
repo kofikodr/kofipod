@@ -34,6 +34,7 @@ import app.kofipod.ui.theme.LocalKofipodColors
 internal fun PlayerScrubber(
     positionMs: Long,
     durationMs: Long,
+    bufferedMs: Long,
     onSeek: (Long) -> Unit,
 ) {
     val c = LocalKofipodColors.current
@@ -42,6 +43,8 @@ internal fun PlayerScrubber(
         dragFraction ?: run {
             if (durationMs > 0) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
         }
+    val bufferedFraction =
+        if (durationMs > 0) (bufferedMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
     Column(Modifier.fillMaxWidth()) {
         Box(Modifier.fillMaxWidth().height(48.dp)) {
             Box(
@@ -81,16 +84,28 @@ internal fun PlayerScrubber(
             ) {
                 Canvas(Modifier.fillMaxWidth().height(48.dp)) {
                     val centerY = size.height / 2f
-                    val trackThickness = 4.dp.toPx()
-                    val trackRadius = trackThickness / 2f
-                    // Track base
+                    val baseThickness = 3.dp.toPx()
+                    val baseRadius = baseThickness / 2f
+                    val fillThickness = 6.dp.toPx()
+                    val fillRadius = fillThickness / 2f
+                    // Track base (thin unbuffered)
                     drawRoundRect(
                         color = c.surfaceAlt,
-                        topLeft = Offset(0f, centerY - trackRadius),
-                        size = Size(size.width, trackThickness),
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackRadius, trackRadius),
+                        topLeft = Offset(0f, centerY - baseRadius),
+                        size = Size(size.width, baseThickness),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(baseRadius, baseRadius),
                     )
-                    // Filled part (purple -> pink gradient)
+                    // Buffered track (thicker, translucent pink) — indicates cached audio ahead of playhead.
+                    val bufferedWidth = size.width * bufferedFraction
+                    if (bufferedWidth > 0) {
+                        drawRoundRect(
+                            color = c.pink.copy(alpha = 0.28f),
+                            topLeft = Offset(0f, centerY - fillRadius),
+                            size = Size(bufferedWidth, fillThickness),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(fillRadius, fillRadius),
+                        )
+                    }
+                    // Filled part (purple -> pink gradient), same thickness as buffered.
                     val filledWidth = size.width * effectiveFraction
                     if (filledWidth > 0) {
                         drawRoundRect(
@@ -100,9 +115,9 @@ internal fun PlayerScrubber(
                                     startX = 0f,
                                     endX = size.width,
                                 ),
-                            topLeft = Offset(0f, centerY - trackRadius),
-                            size = Size(filledWidth, trackThickness),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackRadius, trackRadius),
+                            topLeft = Offset(0f, centerY - fillRadius),
+                            size = Size(filledWidth, fillThickness),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(fillRadius, fillRadius),
                         )
                     }
                     // Thumb halo (faint pink glow)
