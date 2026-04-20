@@ -1,21 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.ui.screens.player
 
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,8 +25,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -41,13 +33,14 @@ import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.theme.LocalKofipodColors
 import app.kofipod.ui.theme.LocalKofipodRadii
-import kotlin.math.sin
+import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 internal fun PlayerBottomBar(
     speed: Float,
     isPlaying: Boolean,
     sleepRemainingMs: Long?,
+    audioLevels: StateFlow<FloatArray>,
     onCycleSpeed: () -> Unit,
     onSetSleep: (Int?) -> Unit,
 ) {
@@ -64,8 +57,13 @@ internal fun PlayerBottomBar(
     ) {
         SpeedPanel(
             speed = speed,
-            isPlaying = isPlaying,
             onCycle = onCycleSpeed,
+        )
+        Spacer(Modifier.width(12.dp))
+        PlayerVisualizer(
+            isPlaying = isPlaying,
+            levelsFlow = audioLevels,
+            height = 40.dp,
             modifier = Modifier.weight(1f),
         )
         Spacer(Modifier.width(8.dp))
@@ -77,16 +75,14 @@ internal fun PlayerBottomBar(
 }
 
 @Composable
-private fun SpeedPanel(
+private fun RowScope.SpeedPanel(
     speed: Float,
-    isPlaying: Boolean,
     onCycle: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
     Row(
-        modifier
+        Modifier
             .clip(RoundedCornerShape(r.sm))
             .clickable { onCycle() }
             .padding(horizontal = 4.dp, vertical = 4.dp),
@@ -116,47 +112,6 @@ private fun SpeedPanel(
                 color = c.text,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 16.sp,
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        VuBars(active = isPlaying, modifier = Modifier.width(48.dp).height(24.dp))
-    }
-}
-
-@Composable
-private fun VuBars(
-    active: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val c = LocalKofipodColors.current
-    val transition = rememberInfiniteTransition(label = "vu")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(durationMillis = 900)),
-        label = "phase",
-    )
-    val calm by animateFloatAsState(targetValue = if (active) 1f else 0.2f, label = "calm")
-    Canvas(modifier) {
-        val bars = 5
-        val gap = 3.dp.toPx()
-        val barWidth = (size.width - gap * (bars - 1)) / bars
-        for (i in 0 until bars) {
-            val offset = i.toFloat() / bars
-            val osc =
-                if (active) {
-                    0.5f + 0.5f * sin((phase + offset) * 2f * kotlin.math.PI.toFloat() + i)
-                } else {
-                    0.25f
-                }
-            val h = size.height * (0.25f + 0.75f * osc) * calm
-            val x = i * (barWidth + gap)
-            val y = size.height - h
-            drawRoundRect(
-                color = c.pink,
-                topLeft = Offset(x, y),
-                size = Size(barWidth, h),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth / 2, barWidth / 2),
             )
         }
     }

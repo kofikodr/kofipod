@@ -108,12 +108,7 @@ fun PlayerScreen(
             podcastTitle = p.podcastTitle,
             episodeNumber = p.episodeNumber,
         )
-        Spacer(Modifier.height(16.dp))
-        PlayerVisualizer(
-            isPlaying = p.isPlaying,
-            levelsFlow = viewModel.audioLevels,
-        )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(20.dp))
         PlayerHeader(
             episodeNumber = p.episodeNumber,
             durationMs = p.durationMs,
@@ -145,6 +140,7 @@ fun PlayerScreen(
             speed = p.speed,
             isPlaying = p.isPlaying,
             sleepRemainingMs = p.sleepRemainingMs,
+            audioLevels = viewModel.audioLevels,
             onCycleSpeed = viewModel::cycleSpeed,
             onSetSleep = viewModel::setSleepTimer,
         )
