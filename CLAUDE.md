@@ -65,7 +65,7 @@ There is no in-app sign-in, no OAuth client to maintain, and no `GOOGLE_SERVER_C
 SQLDelight database name: `KofipodDatabase`, package `app.kofipod.db`. Schema files under `composeApp/src/commonMain/sqldelight/app/kofipod/db/`:
 
 - Tables: `Podcast.sq`, `Episode.sq`, `PodcastList.sq`, `Download.sq`, `PlaybackState.sq`, `RecentPodcastView.sq`, `SyncMeta.sq`.
-- Migrations in `migrations/` — current schema version is **3**. Add a new `N.sqm` file rather than editing existing tables. Dev installs auto-migrate; if a migration ever fails on an emulator, uninstall and reinstall to rebuild from `Schema.create`.
+- Migrations in `migrations/` — current schema version is **4**. Add a new `N.sqm` file rather than editing existing tables. Dev installs auto-migrate; if a migration ever fails on an emulator, uninstall and reinstall to rebuild from `Schema.create`.
 
 ### Navigation
 

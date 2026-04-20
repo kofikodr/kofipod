@@ -5,15 +5,26 @@ CREATE TABLE PlaybackState (
     completedAt INTEGER,
     playbackSpeed REAL NOT NULL DEFAULT 1.0,
     updatedAt INTEGER NOT NULL,
+    episodeTitle TEXT NOT NULL DEFAULT '',
+    podcastId TEXT NOT NULL DEFAULT '',
+    podcastTitle TEXT NOT NULL DEFAULT '',
+    artworkUrl TEXT NOT NULL DEFAULT '',
+    sourceUrl TEXT NOT NULL DEFAULT '',
+    episodeNumber INTEGER,
     FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
 );
 
 upsert:
-INSERT OR REPLACE INTO PlaybackState (episodeId, positionMs, durationMs, completedAt, playbackSpeed, updatedAt)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO PlaybackState (
+    episodeId, positionMs, durationMs, completedAt, playbackSpeed, updatedAt,
+    episodeTitle, podcastId, podcastTitle, artworkUrl, sourceUrl, episodeNumber
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 selectByEpisode:
 SELECT * FROM PlaybackState WHERE episodeId = ?;
 
 selectAll:
 SELECT * FROM PlaybackState;
+
+selectMostRecentIncomplete:
+SELECT * FROM PlaybackState WHERE completedAt IS NULL AND sourceUrl != '' ORDER BY updatedAt DESC LIMIT 1;
