@@ -13,6 +13,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -44,11 +45,21 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import org.koin.android.ext.android.inject
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class KofipodPlaybackService : MediaLibraryService() {
     private var session: MediaLibrarySession? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var persistJob: Job? = null
+
+    // Serializes DB-backed LibraryCallback work off the main thread. Media3 dispatches
+    // onGetChildren/onGetItem/onSetMediaItems on the application looper, and AutoMediaTree
+    // issues synchronous SQLDelight reads — without this executor those would ANR-risk on
+    // slow storage or cold starts. Single-threaded is fine: the browse UI rarely fires
+    // concurrent queries, and serializing keeps ordering predictable.
+    private val libraryExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     // True while prepare() is seeking to the restored position. Guards against listener
     // callbacks overwriting the saved position with the pre-seek value (0).
@@ -82,10 +93,14 @@ class KofipodPlaybackService : MediaLibraryService() {
                         .setAudioProcessors(arrayOf<AudioProcessor>(KofipodAudioProcessor()))
                         .build()
             }
+        // DefaultDataSource delegates to the right scheme: file:// → FileDataSource,
+        // http(s):// → DefaultHttpDataSource. Without it, CacheDataSource would send
+        // file:// URIs (from downloaded episodes) to DefaultHttpDataSource and fail.
+        val upstreamFactory = DefaultDataSource.Factory(this, DefaultHttpDataSource.Factory())
         val cacheDataSourceFactory =
             CacheDataSource.Factory()
                 .setCache(playbackCache.cache)
-                .setUpstreamDataSourceFactory(DefaultHttpDataSource.Factory())
+                .setUpstreamDataSourceFactory(upstreamFactory)
                 .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         val player =
             ExoPlayer.Builder(this, renderersFactory)
@@ -135,6 +150,7 @@ class KofipodPlaybackService : MediaLibraryService() {
         session?.player?.let { persistPosition(it) }
         stopPersistTicker()
         scope.cancel()
+        libraryExecutor.shutdown()
         session?.run {
             player.release()
             release()
@@ -148,11 +164,16 @@ class KofipodPlaybackService : MediaLibraryService() {
     }
 
     private inner class LibraryCallback : MediaLibrarySession.Callback {
+        // Every override here either hits SQLDelight (via AutoMediaTree) or is trivial.
+        // Media3 dispatches these on the application looper; offloading to libraryExecutor
+        // keeps the main thread responsive.
+
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
             params: LibraryParams?,
-        ): ListenableFuture<LibraryResult<MediaItem>> = Futures.immediateFuture(LibraryResult.ofItem(tree.root(), params))
+        ): ListenableFuture<LibraryResult<MediaItem>> =
+            Futures.submit(Callable { LibraryResult.ofItem(tree.root(), params) }, libraryExecutor)
 
         override fun onGetChildren(
             session: MediaLibrarySession,
@@ -161,30 +182,40 @@ class KofipodPlaybackService : MediaLibraryService() {
             page: Int,
             pageSize: Int,
             params: LibraryParams?,
-        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-            val children = ImmutableList.copyOf(tree.children(parentId))
-            return Futures.immediateFuture(LibraryResult.ofItemList(children, params))
-        }
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> =
+            Futures.submit(
+                Callable {
+                    val children = ImmutableList.copyOf(tree.children(parentId))
+                    LibraryResult.ofItemList(children, params)
+                },
+                libraryExecutor,
+            )
 
         override fun onGetItem(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
             mediaId: String,
-        ): ListenableFuture<LibraryResult<MediaItem>> {
-            val item =
-                tree.item(mediaId)
-                    ?: return Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
-            return Futures.immediateFuture(LibraryResult.ofItem(item, null))
-        }
+        ): ListenableFuture<LibraryResult<MediaItem>> =
+            Futures.submit(
+                Callable {
+                    tree.item(mediaId)
+                        ?.let { LibraryResult.ofItem(it, null) }
+                        ?: LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
+                },
+                libraryExecutor,
+            )
 
         override fun onAddMediaItems(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
             mediaItems: List<MediaItem>,
-        ): ListenableFuture<List<MediaItem>> {
-            val resolved = mediaItems.mapNotNull { tree.resolveForPlayback(it) ?: passthroughIfPlayable(it) }
-            return Futures.immediateFuture(resolved)
-        }
+        ): ListenableFuture<List<MediaItem>> =
+            Futures.submit(
+                Callable {
+                    mediaItems.mapNotNull { tree.resolveForPlayback(it) ?: passthroughIfPlayable(it) }
+                },
+                libraryExecutor,
+            )
 
         override fun onSetMediaItems(
             mediaSession: MediaSession,
@@ -193,15 +224,22 @@ class KofipodPlaybackService : MediaLibraryService() {
             startIndex: Int,
             startPositionMs: Long,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
-            val resolved = mediaItems.mapNotNull { tree.resolveForPlayback(it) ?: passthroughIfPlayable(it) }
-            val resumePosition =
-                if (startPositionMs == C.TIME_UNSET && resolved.size == 1) {
-                    tree.startPositionFor(resolved[0].mediaId)
-                } else {
-                    startPositionMs
-                }
-            return Futures.immediateFuture(
-                MediaSession.MediaItemsWithStartPosition(resolved, startIndex, resumePosition),
+            // Auto is replacing the queue, so the cold-start restore is superseded — clear
+            // the flag now so subsequent persist callbacks for the new item aren't
+            // suppressed while the restored item's STATE_READY is still pending.
+            isRestoring = false
+            return Futures.submit(
+                Callable {
+                    val resolved = mediaItems.mapNotNull { tree.resolveForPlayback(it) ?: passthroughIfPlayable(it) }
+                    val resumePosition =
+                        if (startPositionMs == C.TIME_UNSET && resolved.size == 1) {
+                            tree.startPositionFor(resolved[0].mediaId)
+                        } else {
+                            startPositionMs
+                        }
+                    MediaSession.MediaItemsWithStartPosition(resolved, startIndex, resumePosition)
+                },
+                libraryExecutor,
             )
         }
 
