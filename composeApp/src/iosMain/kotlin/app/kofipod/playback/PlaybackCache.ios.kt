@@ -6,4 +6,6 @@ actual class PlaybackCache {
     actual fun sizeBytes(): Long = 0L
 
     actual fun clear() {}
+
+    actual fun release() {}
 }

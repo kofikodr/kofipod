@@ -234,20 +234,22 @@ class PodcastDetailViewModel(
                     PlayFields(remote.title, remote.enclosureUrl, remote.episodeNumber)
                 }
             }
-        val startMs = playback.positionFor(episodeId)
-        val sourceUrl = downloads.localUriFor(episodeId) ?: fields.url
-        player.play(
-            PlayableEpisode(
-                episodeId = episodeId,
-                podcastId = podcastId,
-                podcastTitle = summary.title,
-                title = fields.title,
-                artworkUrl = summary.artworkUrl,
-                sourceUrl = sourceUrl,
-                startPositionMs = startMs,
-                episodeNumber = fields.episodeNumber,
-            ),
-        )
+        viewModelScope.launch {
+            val startMs = playback.positionFor(episodeId)
+            val sourceUrl = downloads.localUriFor(episodeId) ?: fields.url
+            player.play(
+                PlayableEpisode(
+                    episodeId = episodeId,
+                    podcastId = podcastId,
+                    podcastTitle = summary.title,
+                    title = fields.title,
+                    artworkUrl = summary.artworkUrl,
+                    sourceUrl = sourceUrl,
+                    startPositionMs = startMs,
+                    episodeNumber = fields.episodeNumber,
+                ),
+            )
+        }
     }
 
     fun download(episodeId: String) {

@@ -74,6 +74,7 @@ object KofipodAudioAnalyzer {
         ringPos = 0
         ringFilled = 0
         smoothed.fill(0f)
+        lastEmitNanos = 0L
         _levels.value = FloatArray(AUDIO_LEVEL_BAR_COUNT)
     }
 

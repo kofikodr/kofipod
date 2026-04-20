@@ -1,4 +1,7 @@
-CREATE TABLE PlaybackState (
+-- Drop the FK on Episode: PlaybackState is self-contained as of migration 4, and remote-only
+-- playback (episodes the user hasn't subscribed to) has no Episode row, which would violate
+-- the constraint if FK enforcement is ever enabled on the driver.
+CREATE TABLE PlaybackStateNew (
     episodeId TEXT NOT NULL PRIMARY KEY,
     positionMs INTEGER NOT NULL,
     durationMs INTEGER NOT NULL,
@@ -12,18 +15,9 @@ CREATE TABLE PlaybackState (
     sourceUrl TEXT NOT NULL DEFAULT '',
     episodeNumber INTEGER
 );
-
-upsert:
-INSERT OR REPLACE INTO PlaybackState (
+INSERT INTO PlaybackStateNew SELECT
     episodeId, positionMs, durationMs, completedAt, playbackSpeed, updatedAt,
     episodeTitle, podcastId, podcastTitle, artworkUrl, sourceUrl, episodeNumber
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-
-selectByEpisode:
-SELECT * FROM PlaybackState WHERE episodeId = ?;
-
-selectAll:
-SELECT * FROM PlaybackState;
-
-selectMostRecentIncomplete:
-SELECT * FROM PlaybackState WHERE completedAt IS NULL AND sourceUrl != '' ORDER BY updatedAt DESC LIMIT 1;
+FROM PlaybackState;
+DROP TABLE PlaybackState;
+ALTER TABLE PlaybackStateNew RENAME TO PlaybackState;

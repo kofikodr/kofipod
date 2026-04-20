@@ -40,6 +40,10 @@ class KofipodPlaybackService : MediaSessionService() {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var persistJob: Job? = null
 
+    // True while prepare() is seeking to the restored position. Guards against listener
+    // callbacks overwriting the saved position with the pre-seek value (0).
+    private var isRestoring = false
+
     private val playback: PlaybackRepository by inject()
     private val playbackCache: PlaybackCache by inject()
     private val networkMonitor: NetworkMonitor by inject()
@@ -77,6 +81,9 @@ class KofipodPlaybackService : MediaSessionService() {
                 }
 
                 override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (isRestoring && playbackState == Player.STATE_READY) {
+                        isRestoring = false
+                    }
                     if (playbackState == Player.STATE_ENDED) persistPosition(player)
                 }
 
@@ -93,7 +100,7 @@ class KofipodPlaybackService : MediaSessionService() {
             MediaSession.Builder(this, player)
                 .setSessionActivity(openPlayerPendingIntent())
                 .build()
-        restoreLastSession(player)
+        isRestoring = restoreLastSession(player)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -112,6 +119,10 @@ class KofipodPlaybackService : MediaSessionService() {
             release()
         }
         session = null
+        // Flush the SimpleCache DB provider after the player (and its CacheDataSource) is
+        // released. Safe to call even if the process stays alive — PlaybackCache lazily
+        // rebuilds on next access.
+        playbackCache.release()
         super.onDestroy()
     }
 
@@ -132,6 +143,7 @@ class KofipodPlaybackService : MediaSessionService() {
     }
 
     private fun persistPosition(player: Player) {
+        if (isRestoring) return
         val item = player.currentMediaItem ?: return
         val episodeId = item.mediaId.takeIf { it.isNotBlank() } ?: return
         val sourceUrl = item.localConfiguration?.uri?.toString().orEmpty()
@@ -153,9 +165,10 @@ class KofipodPlaybackService : MediaSessionService() {
         )
     }
 
-    private fun restoreLastSession(player: Player) {
-        val last = playback.mostRecentIncomplete() ?: return
-        if (last.sourceUrl.isBlank()) return
+    /** Returns true if a session was restored (media item set + prepare()d). */
+    private fun restoreLastSession(player: Player): Boolean {
+        val last = playback.mostRecentIncomplete() ?: return false
+        if (last.sourceUrl.isBlank()) return false
         val extras =
             Bundle().apply {
                 if (last.podcastId.isNotBlank()) putString(EXTRA_PODCAST_ID, last.podcastId)
@@ -181,6 +194,7 @@ class KofipodPlaybackService : MediaSessionService() {
         player.setMediaItem(item, last.positionMs)
         player.setPlaybackSpeed(last.playbackSpeed.toFloat())
         player.prepare()
+        return true
     }
 
     private fun openPlayerPendingIntent(): PendingIntent {

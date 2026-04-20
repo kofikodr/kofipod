@@ -109,20 +109,22 @@ class PlayerViewModel(
         if (idx < 0) return
         val target = list.getOrNull(idx + direction) ?: return
         if (target.enclosureUrl.isBlank()) return
-        val startMs = playback.positionFor(target.id)
-        val sourceUrl = downloads.localUriFor(target.id) ?: target.enclosureUrl
-        player.play(
-            PlayableEpisode(
-                episodeId = target.id,
-                podcastId = p.podcastId,
-                podcastTitle = p.podcastTitle,
-                title = target.title,
-                artworkUrl = p.artworkUrl,
-                sourceUrl = sourceUrl,
-                startPositionMs = startMs,
-                episodeNumber = target.episodeNumber?.takeIf { it in 1..Int.MAX_VALUE }?.toInt(),
-            ),
-        )
+        viewModelScope.launch {
+            val startMs = playback.positionFor(target.id)
+            val sourceUrl = downloads.localUriFor(target.id) ?: target.enclosureUrl
+            player.play(
+                PlayableEpisode(
+                    episodeId = target.id,
+                    podcastId = p.podcastId,
+                    podcastTitle = p.podcastTitle,
+                    title = target.title,
+                    artworkUrl = p.artworkUrl,
+                    sourceUrl = sourceUrl,
+                    startPositionMs = startMs,
+                    episodeNumber = target.episodeNumber?.takeIf { it in 1..Int.MAX_VALUE }?.toInt(),
+                ),
+            )
+        }
     }
 
     fun cycleSpeed() {

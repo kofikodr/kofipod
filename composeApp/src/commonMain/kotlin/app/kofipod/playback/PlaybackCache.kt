@@ -10,4 +10,6 @@ expect class PlaybackCache {
     fun sizeBytes(): Long
 
     fun clear()
+
+    fun release()
 }
