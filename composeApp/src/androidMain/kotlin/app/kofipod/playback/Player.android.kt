@@ -26,6 +26,8 @@ actual class KofipodPlayer(private val context: Context) {
     private val _state = MutableStateFlow(PlayerState())
     actual val state: StateFlow<PlayerState> = _state.asStateFlow()
 
+    actual val audioLevels: StateFlow<FloatArray> = KofipodAudioAnalyzer.levels
+
     private var controller: MediaController? = null
     private var tickJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
