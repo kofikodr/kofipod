@@ -17,7 +17,7 @@ actual fun SystemBarAppearance(
     val view = LocalView.current
     if (view.isInEditMode) return
     SideEffect {
-        val window = (view.context as Activity).window
+        val window = (view.context as? Activity)?.window ?: return@SideEffect
         val argb = barColor.toArgb()
         window.statusBarColor = argb
         window.navigationBarColor = argb
