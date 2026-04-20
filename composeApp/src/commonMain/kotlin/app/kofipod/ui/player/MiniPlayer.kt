@@ -18,6 +18,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -32,10 +34,24 @@ fun MiniPlayer(onOpen: () -> Unit) {
     val state by player.state.collectAsState()
     if (state.episodeId == null) return
     val c = LocalKofipodColors.current
+    val progressFraction =
+        if (state.durationMs > 0L) {
+            (state.positionMs.toFloat() / state.durationMs.toFloat()).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
     Row(
         Modifier
             .fillMaxWidth()
             .background(c.surface)
+            .drawBehind {
+                if (progressFraction > 0f) {
+                    drawRect(
+                        color = c.purpleTint,
+                        size = Size(size.width * progressFraction, size.height),
+                    )
+                }
+            }
             .clickable { onOpen() }
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .testTag("miniPlayer"),
