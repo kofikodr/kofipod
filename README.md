@@ -1,6 +1,8 @@
 # Kofipod
 
-A personal podcasting app for Android (Kotlin Multiplatform, iOS to follow).
+A personal podcasting player app for Android (Kotlin Multiplatform, iOS to follow). 
+
+If you're just here to download the app, it's in the [releases section](https://github.com/kofikodr/kofipod/releases). 
 
 ## Screenshots
 
@@ -10,7 +12,7 @@ A personal podcasting app for Android (Kotlin Multiplatform, iOS to follow).
   <img src="docs/screenshots/03-podcast-detail.png" alt="Podcast" width="240" />
 </p>
 
-## Setup
+## Development Setup
 
 1. Register a Podcast Index account at https://api.podcastindex.org/ and obtain an API key and secret.
 2. Copy `local.properties.template` to `local.properties` and fill in:
