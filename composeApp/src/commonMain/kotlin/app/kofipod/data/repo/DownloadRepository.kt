@@ -6,7 +6,7 @@ import app.cash.sqldelight.coroutines.mapToList
 import app.kofipod.db.Download
 import app.kofipod.db.KofipodDatabase
 import app.kofipod.db.SelectAllWithMeta
-import app.kofipod.downloads.DownloadEngine
+import app.kofipod.downloads.DownloadEngineApi
 import app.kofipod.downloads.DownloadJob
 import app.kofipod.downloads.DownloadProgress
 import kotlinx.coroutines.CoroutineScope
@@ -52,7 +52,7 @@ private fun SelectAllWithMeta.toDownloadRow(): DownloadRow =
 
 class DownloadRepository(
     private val db: KofipodDatabase,
-    private val engine: DownloadEngine,
+    private val engine: DownloadEngineApi,
     scope: CoroutineScope,
 ) {
     init {

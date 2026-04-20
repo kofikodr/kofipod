@@ -103,6 +103,14 @@ kotlin {
         val iosX64Main by getting { dependsOn(iosMain) }
         val iosArm64Main by getting { dependsOn(iosMain) }
         val iosSimulatorArm64Main by getting { dependsOn(iosMain) }
+        val androidUnitTest by getting {
+            dependencies {
+                // `kotlin("test")` on JVM transitively pulls `kotlin-test-junit` → `junit:junit`,
+                // so a separate `libs.junit` declaration would just duplicate the dependency.
+                implementation(kotlin("test"))
+                implementation(libs.sqldelight.sqlite.driver)
+            }
+        }
     }
 }
 

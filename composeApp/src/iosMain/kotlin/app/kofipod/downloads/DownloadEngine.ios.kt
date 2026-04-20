@@ -5,13 +5,13 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
-actual class DownloadEngine {
+actual class DownloadEngine : DownloadEngineApi {
     private val _events = MutableSharedFlow<DownloadProgress>(extraBufferCapacity = 64)
-    actual val events: SharedFlow<DownloadProgress> = _events.asSharedFlow()
+    actual override val events: SharedFlow<DownloadProgress> = _events.asSharedFlow()
 
-    actual fun enqueue(job: DownloadJob) { /* TODO URLSession */ }
+    actual override fun enqueue(job: DownloadJob) { /* TODO URLSession */ }
 
-    actual fun cancel(episodeId: String) {}
+    actual override fun cancel(episodeId: String) {}
 
-    actual fun delete(episodeId: String) {}
+    actual override fun delete(episodeId: String) {}
 }

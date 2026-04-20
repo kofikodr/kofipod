@@ -7,10 +7,10 @@ import android.os.Build
 import kotlinx.coroutines.flow.SharedFlow
 import java.io.File
 
-actual class DownloadEngine(private val context: Context) {
-    actual val events: SharedFlow<DownloadProgress> = DownloadBroadcaster.events
+actual class DownloadEngine(private val context: Context) : DownloadEngineApi {
+    actual override val events: SharedFlow<DownloadProgress> = DownloadBroadcaster.events
 
-    actual fun enqueue(job: DownloadJob) {
+    actual override fun enqueue(job: DownloadJob) {
         val intent =
             Intent(context, DownloadService::class.java).apply {
                 action = DownloadService.ACTION_ENQUEUE
@@ -21,7 +21,7 @@ actual class DownloadEngine(private val context: Context) {
         startService(intent)
     }
 
-    actual fun cancel(episodeId: String) {
+    actual override fun cancel(episodeId: String) {
         val intent =
             Intent(context, DownloadService::class.java).apply {
                 action = DownloadService.ACTION_CANCEL
@@ -30,7 +30,7 @@ actual class DownloadEngine(private val context: Context) {
         startService(intent)
     }
 
-    actual fun delete(episodeId: String) {
+    actual override fun delete(episodeId: String) {
         val dir = File(context.filesDir, "downloads")
         dir.listFiles()
             ?.filter { it.name.startsWith(episodeId) }
