@@ -6,6 +6,7 @@ import app.cash.sqldelight.coroutines.mapToList
 import app.kofipod.db.Download
 import app.kofipod.db.KofipodDatabase
 import app.kofipod.db.SelectAllWithMeta
+import app.kofipod.db.SelectCompletedWithMeta
 import app.kofipod.downloads.DownloadEngineApi
 import app.kofipod.downloads.DownloadJob
 import app.kofipod.downloads.DownloadProgress
@@ -32,6 +33,27 @@ data class DownloadRow(
     val podcastTitle: String?,
     val artworkUrl: String?,
 )
+
+data class CompletedDownload(
+    val episodeId: String,
+    val localPath: String?,
+    val completedAt: Long?,
+    val episodeTitle: String,
+    val podcastId: String,
+    val podcastTitle: String,
+    val artworkUrl: String,
+)
+
+private fun SelectCompletedWithMeta.toCompletedDownload(): CompletedDownload =
+    CompletedDownload(
+        episodeId = episodeId,
+        localPath = localPath,
+        completedAt = completedAt,
+        episodeTitle = episodeTitle.orEmpty(),
+        podcastId = podcastId.orEmpty(),
+        podcastTitle = podcastTitle.orEmpty(),
+        artworkUrl = artworkUrl.orEmpty(),
+    )
 
 private fun SelectAllWithMeta.toDownloadRow(): DownloadRow =
     DownloadRow(
@@ -82,17 +104,39 @@ class DownloadRepository(
 
     fun all(): Flow<List<Download>> = db.downloadQueries.selectAll().asFlow().mapToList(Dispatchers.Default)
 
-    /** URI for the completed local file for [episodeId], or null if not downloaded. */
-    fun localUriFor(episodeId: String): String? {
-        val path = db.downloadQueries.localPathFor(episodeId).executeAsOneOrNull()?.localPath ?: return null
-        return "file://$path"
-    }
+    /** Raw filesystem path for the completed local file for [episodeId], or null. */
+    fun localPathFor(episodeId: String): String? = db.downloadQueries.localPathFor(episodeId).executeAsOneOrNull()?.localPath
+
+    /** Same as [localPathFor] but wrapped in a `file://` URI for passing to a URL-scheme consumer. */
+    fun localUriFor(episodeId: String): String? = localPathFor(episodeId)?.let { "file://$it" }
 
     fun allWithMeta(): Flow<List<DownloadRow>> =
         db.downloadQueries.selectAllWithMeta()
             .asFlow()
             .mapToList(Dispatchers.Default)
             .map { rows -> rows.map { it.toDownloadRow() } }
+
+    fun completedWithMetaNow(): List<CompletedDownload> =
+        db.downloadQueries.selectCompletedWithMeta()
+            .executeAsList()
+            .map { it.toCompletedDownload() }
+
+    /**
+     * Returns a playable source URL for [episodeId], preferring a completed local download
+     * (as a `file://` URI) over the remote [enclosureUrl]. Returns null when neither is
+     * available.
+     */
+    fun resolvedSourceUrl(
+        episodeId: String,
+        enclosureUrl: String,
+    ): String? {
+        val local = localUriFor(episodeId)
+        return when {
+            local != null -> local
+            enclosureUrl.isNotBlank() -> enclosureUrl
+            else -> null
+        }
+    }
 
     fun enqueue(
         episodeId: String,

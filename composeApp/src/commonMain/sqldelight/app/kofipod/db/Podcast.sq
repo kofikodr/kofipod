@@ -26,6 +26,9 @@ SELECT * FROM Podcast ORDER BY title COLLATE NOCASE ASC;
 selectById:
 SELECT * FROM Podcast WHERE id = ?;
 
+countByArtworkUrl:
+SELECT COUNT(*) FROM Podcast WHERE artworkUrl = ?;
+
 selectByList:
 SELECT * FROM Podcast WHERE listId IS ? ORDER BY title COLLATE NOCASE ASC;
 

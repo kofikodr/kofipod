@@ -23,6 +23,10 @@ class LibraryRepository(private val db: KofipodDatabase) {
 
     fun podcastNow(id: String): Podcast? = db.podcastQueries.selectById(id).executeAsOneOrNull()
 
+    fun podcastsNow(): List<Podcast> = db.podcastQueries.selectAll().executeAsList()
+
+    fun hasArtworkUrl(url: String): Boolean = db.podcastQueries.countByArtworkUrl(url).executeAsOne() > 0L
+
     fun savePodcast(
         summary: PodcastSummary,
         listId: String?,

@@ -110,8 +110,8 @@ class PlayerViewModel(
         val target = list.getOrNull(idx + direction) ?: return
         if (target.enclosureUrl.isBlank()) return
         viewModelScope.launch {
+            val sourceUrl = downloads.resolvedSourceUrl(target.id, target.enclosureUrl) ?: return@launch
             val startMs = playback.positionFor(target.id)
-            val sourceUrl = downloads.localUriFor(target.id) ?: target.enclosureUrl
             player.play(
                 PlayableEpisode(
                     episodeId = target.id,

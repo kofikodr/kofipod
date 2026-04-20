@@ -93,7 +93,7 @@ actual class KofipodPlayer(private val context: Context) {
             }
         _state.value =
             PlayerState(
-                episodeId = c.currentMediaItem?.mediaId,
+                episodeId = c.currentMediaItem?.mediaId?.removePrefix(MEDIA_ID_EPISODE_PREFIX)?.takeIf { it.isNotBlank() },
                 podcastId = extras?.getString(EXTRA_PODCAST_ID).orEmpty(),
                 title = meta?.title?.toString().orEmpty(),
                 podcastTitle = meta?.artist?.toString().orEmpty(),
