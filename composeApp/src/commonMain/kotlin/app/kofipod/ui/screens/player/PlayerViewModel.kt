@@ -42,6 +42,8 @@ class PlayerViewModel(
 ) : ViewModel() {
     private val toast = MutableStateFlow<String?>(null)
 
+    val audioLevels: StateFlow<FloatArray> = player.audioLevels
+
     @OptIn(ExperimentalCoroutinesApi::class)
     private val episodesForCurrent: StateFlow<List<Episode>> =
         player.state

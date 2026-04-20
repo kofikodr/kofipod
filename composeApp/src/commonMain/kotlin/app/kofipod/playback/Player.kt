@@ -28,8 +28,21 @@ data class PlayerState(
     val sleepRemainingMs: Long? = null,
 )
 
+/**
+ * Number of frequency bars the visualizer renders. Shared by analyzer and UI so
+ * both sides agree on the [FloatArray] shape that flows through [KofipodPlayer.audioLevels].
+ */
+const val AUDIO_LEVEL_BAR_COUNT: Int = 24
+
 expect class KofipodPlayer {
     val state: StateFlow<PlayerState>
+
+    /**
+     * Emits [AUDIO_LEVEL_BAR_COUNT]-sized arrays of 0..1 magnitudes derived from the
+     * currently playing audio (log-spaced FFT bins, peak-hold smoothed). Paused or silent
+     * playback decays to zero.
+     */
+    val audioLevels: StateFlow<FloatArray>
 
     fun play(episode: PlayableEpisode)
 
