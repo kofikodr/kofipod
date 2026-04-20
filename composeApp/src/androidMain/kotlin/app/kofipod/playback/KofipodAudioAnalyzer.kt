@@ -29,7 +29,7 @@ object KofipodAudioAnalyzer {
     private const val FFT_SIZE = 256
     private const val HALF = FFT_SIZE / 2
     private const val EMIT_INTERVAL_NANOS = 40_000_000L
-    private const val DECAY = 0.78f
+    private const val DECAY = 0.85f
     private const val DB_FLOOR = -60f
 
     private val ring = FloatArray(FFT_SIZE)
