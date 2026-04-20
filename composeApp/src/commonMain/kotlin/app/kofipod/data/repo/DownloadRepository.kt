@@ -66,10 +66,14 @@ class DownloadRepository(
                 }
                 DownloadProgress.State.Paused ->
                     db.downloadQueries.updateState("Paused", null, p.episodeId)
-                DownloadProgress.State.Completed -> {
-                    db.downloadQueries.updateProgress(p.downloadedBytes, p.totalBytes, p.episodeId)
-                    db.downloadQueries.updateState("Completed", null, p.episodeId)
-                }
+                DownloadProgress.State.Completed ->
+                    db.downloadQueries.markCompleted(
+                        localPath = p.localPath,
+                        downloadedBytes = p.downloadedBytes,
+                        totalBytes = p.totalBytes,
+                        completedAt = Clock.System.now().toEpochMilliseconds(),
+                        episodeId = p.episodeId,
+                    )
                 DownloadProgress.State.Failed ->
                     db.downloadQueries.updateState("Failed", p.errorMessage, p.episodeId)
             }
@@ -77,6 +81,12 @@ class DownloadRepository(
     }
 
     fun all(): Flow<List<Download>> = db.downloadQueries.selectAll().asFlow().mapToList(Dispatchers.Default)
+
+    /** URI for the completed local file for [episodeId], or null if not downloaded. */
+    fun localUriFor(episodeId: String): String? {
+        val path = db.downloadQueries.localPathFor(episodeId).executeAsOneOrNull()?.localPath ?: return null
+        return "file://$path"
+    }
 
     fun allWithMeta(): Flow<List<DownloadRow>> =
         db.downloadQueries.selectAllWithMeta()

@@ -235,6 +235,7 @@ class PodcastDetailViewModel(
                 }
             }
         val startMs = playback.positionFor(episodeId)
+        val sourceUrl = downloads.localUriFor(episodeId) ?: fields.url
         player.play(
             PlayableEpisode(
                 episodeId = episodeId,
@@ -242,7 +243,7 @@ class PodcastDetailViewModel(
                 podcastTitle = summary.title,
                 title = fields.title,
                 artworkUrl = summary.artworkUrl,
-                sourceUrl = fields.url,
+                sourceUrl = sourceUrl,
                 startPositionMs = startMs,
                 episodeNumber = fields.episodeNumber,
             ),

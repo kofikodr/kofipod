@@ -21,6 +21,18 @@ class SettingsRepository(private val db: KofipodDatabase) {
 
     fun setStorageCapBytes(bytes: Long) = put(KEY_STORAGE_CAP, bytes.toString())
 
+    fun streamCacheCapBytes(): Flow<Long> = metaFlow(KEY_STREAM_CACHE_CAP).map { it?.toLongOrNull() ?: DEFAULT_STREAM_CACHE_CAP_BYTES }
+
+    fun setStreamCacheCapBytes(bytes: Long) = put(KEY_STREAM_CACHE_CAP, bytes.toString())
+
+    /**
+     * Snapshot read for construction-time wiring. Media3 `SimpleCache` is built once per process
+     * with a fixed byte cap; a slider that calls [setStreamCacheCapBytes] persists the new value
+     * but it only takes effect on the next cold start. Do not swap this for [streamCacheCapBytes]
+     * expecting reactive resizing.
+     */
+    fun streamCacheCapBytesNow(): Long = getMetaNow(KEY_STREAM_CACHE_CAP)?.toLongOrNull() ?: DEFAULT_STREAM_CACHE_CAP_BYTES
+
     fun themeMode(): Flow<KofipodThemeMode> =
         metaFlow(KEY_THEME).map {
             runCatching { KofipodThemeMode.valueOf(it ?: "System") }
@@ -51,7 +63,9 @@ class SettingsRepository(private val db: KofipodDatabase) {
 
     companion object {
         const val DEFAULT_CAP_BYTES: Long = 2L * 1024 * 1024 * 1024 // 2 GB
+        const val DEFAULT_STREAM_CACHE_CAP_BYTES: Long = 512L * 1024 * 1024 // 512 MB
         const val KEY_STORAGE_CAP = "storage_cap_bytes"
+        const val KEY_STREAM_CACHE_CAP = "stream_cache_cap_bytes"
         const val KEY_THEME = "theme_mode"
         const val KEY_DAILY_CHECK = "daily_check_enabled"
         const val KEY_WIFI_ONLY = "daily_check_wifi_only"

@@ -12,17 +12,23 @@
   playback state, settings) and any SharedPreferences. Together this is
   well under 1 MB.
 
-  Excluded: downloaded audio under files/downloads/. Not listed here so
-  Auto Backup excludes it by default — re-fetchable from the feed and
-  would blow the 25 MB cap on heavy libraries.
+  Excluded: downloaded audio under files/downloads/ and the streaming
+  playback cache under cache/media/. Re-fetchable from the feed and
+  would blow the 25 MB cap on heavy libraries. Android excludes the
+  cache domain from Auto Backup by default, but we spell it out so the
+  intent is obvious.
 -->
 <data-extraction-rules>
     <cloud-backup>
         <include domain="database" path="." />
         <include domain="sharedpref" path="." />
+        <exclude domain="file" path="downloads/" />
+        <exclude domain="cache" path="media/" />
     </cloud-backup>
     <device-transfer>
         <include domain="database" path="." />
         <include domain="sharedpref" path="." />
+        <exclude domain="file" path="downloads/" />
+        <exclude domain="cache" path="media/" />
     </device-transfer>
 </data-extraction-rules>

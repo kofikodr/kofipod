@@ -103,6 +103,7 @@ actual class KofipodPlayer(private val context: Context) {
                 isPlaying = c.isPlaying,
                 positionMs = c.currentPosition.coerceAtLeast(0),
                 durationMs = c.duration.coerceAtLeast(0),
+                bufferedMs = c.bufferedPosition.coerceAtLeast(0),
                 speed = c.playbackParameters.speed,
                 sleepRemainingMs = remainingSleep,
             )

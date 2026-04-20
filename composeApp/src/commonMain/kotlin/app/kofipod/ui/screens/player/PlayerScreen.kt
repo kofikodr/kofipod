@@ -119,6 +119,7 @@ fun PlayerScreen(
         PlayerScrubber(
             positionMs = p.positionMs,
             durationMs = p.durationMs,
+            bufferedMs = p.bufferedMs,
             onSeek = viewModel::seekTo,
         )
         Spacer(Modifier.height(20.dp))

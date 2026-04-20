@@ -56,6 +56,8 @@ import kotlin.math.roundToInt
 
 private const val MIN_CAP_BYTES: Long = 512L * 1024 * 1024
 private const val MAX_CAP_BYTES: Long = 8L * 1024 * 1024 * 1024
+private const val MIN_STREAM_CACHE_BYTES: Long = 128L * 1024 * 1024
+private const val MAX_STREAM_CACHE_BYTES: Long = 2L * 1024 * 1024 * 1024
 
 @Composable
 fun SettingsScreen(
@@ -124,6 +126,13 @@ fun SettingsScreen(
         MaxDownloadSizeCard(
             bytes = state.storageCapBytes,
             onChange = { viewModel.setCap(it) },
+        )
+
+        SectionLabel("Playback cache", topSpacing = 22.dp)
+        PlaybackCacheCard(
+            capBytes = state.streamCacheCapBytes,
+            usedBytes = state.streamCacheUsedBytes,
+            onChange = { viewModel.setStreamCacheCap(it) },
         )
 
         // Debug-only entry point to scheduler info screen; kept intentionally minimal.
@@ -260,6 +269,82 @@ private fun MaxDownloadSizeCard(
             )
             Text(
                 "8 GB",
+                color = c.textMute,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+    }
+}
+
+// --------------------------------------------------------------------------
+// Playback cache card — streaming cache cap with live "used" readout
+// --------------------------------------------------------------------------
+
+@Composable
+private fun PlaybackCacheCard(
+    capBytes: Long,
+    usedBytes: Long,
+    onChange: (Long) -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(c.surface)
+            .border(1.dp, c.border, RoundedCornerShape(14.dp))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Streaming cache",
+                    color = c.text,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "Audio is cached as you listen. Changes apply on next app restart.",
+                    color = c.textMute,
+                    fontSize = 11.5.sp,
+                )
+            }
+            Text(
+                formatSize(capBytes),
+                color = c.pink,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 16.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+        GradientSlider(
+            value = capBytes.coerceIn(MIN_STREAM_CACHE_BYTES, MAX_STREAM_CACHE_BYTES).toFloat(),
+            valueRange = MIN_STREAM_CACHE_BYTES.toFloat()..MAX_STREAM_CACHE_BYTES.toFloat(),
+            onValueChange = { onChange(it.toLong()) },
+            modifier = Modifier.testTag("streamCacheCapSlider"),
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth()) {
+            Text(
+                "128 MB",
+                color = c.textMute,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "Currently using ${formatSize(usedBytes)}",
+                color = c.textMute,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "2 GB",
                 color = c.textMute,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
@@ -429,4 +514,10 @@ private fun formatGb(bytes: Long): String {
         val mb = (bytes / (1024L * 1024L)).toInt()
         "$mb MB"
     }
+}
+
+private fun formatSize(bytes: Long): String {
+    if (bytes <= 0L) return "0 MB"
+    val gb = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+    return if (gb >= 1.0) formatGb(bytes) else "${(bytes / (1024L * 1024L)).toInt()} MB"
 }
