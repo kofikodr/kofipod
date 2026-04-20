@@ -22,9 +22,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-private const val EXTRA_PODCAST_ID = "kofipod.podcastId"
-private const val EXTRA_EPISODE_NUMBER = "kofipod.episodeNumber"
-
 actual class KofipodPlayer(private val context: Context) {
     private val _state = MutableStateFlow(PlayerState())
     actual val state: StateFlow<PlayerState> = _state.asStateFlow()
@@ -94,7 +91,7 @@ actual class KofipodPlayer(private val context: Context) {
             }
         _state.value =
             PlayerState(
-                episodeId = c.currentMediaItem?.mediaId,
+                episodeId = c.currentMediaItem?.mediaId?.removePrefix(MEDIA_ID_EPISODE_PREFIX)?.takeIf { it.isNotBlank() },
                 podcastId = extras?.getString(EXTRA_PODCAST_ID).orEmpty(),
                 title = meta?.title?.toString().orEmpty(),
                 podcastTitle = meta?.artist?.toString().orEmpty(),

@@ -3,6 +3,16 @@ package app.kofipod.data.repo
 
 import app.kofipod.db.KofipodDatabase
 
+data class InProgressEpisode(
+    val episodeId: String,
+    val positionMs: Long,
+    val durationMs: Long,
+    val episodeTitle: String,
+    val podcastId: String,
+    val podcastTitle: String,
+    val artworkUrl: String,
+)
+
 class PlaybackRepository(private val db: KofipodDatabase) {
     fun save(
         episodeId: String,
@@ -26,6 +36,22 @@ class PlaybackRepository(private val db: KofipodDatabase) {
             .selectByEpisode(episodeId)
             .executeAsOneOrNull()
             ?.positionMs ?: 0L
+
+    fun inProgressNow(maxRows: Long = 25L): List<InProgressEpisode> =
+        db.playbackStateQueries
+            .selectInProgressWithMeta(maxRows)
+            .executeAsList()
+            .map {
+                InProgressEpisode(
+                    episodeId = it.episodeId,
+                    positionMs = it.positionMs,
+                    durationMs = it.durationMs,
+                    episodeTitle = it.episodeTitle,
+                    podcastId = it.podcastId,
+                    podcastTitle = it.podcastTitle,
+                    artworkUrl = it.artworkUrl,
+                )
+            }
 
     fun markCompleted(
         episodeId: String,

@@ -35,6 +35,10 @@ class EpisodesRepository(
     override fun episodesFlow(podcastId: String): Flow<List<Episode>> =
         db.episodeQueries.selectByPodcast(podcastId).asFlow().mapToList(Dispatchers.Default)
 
+    fun episodesNow(podcastId: String): List<Episode> = db.episodeQueries.selectByPodcast(podcastId).executeAsList()
+
+    fun episodeNow(episodeId: String): Episode? = db.episodeQueries.selectById(episodeId).executeAsOneOrNull()
+
     override fun newEpisodeCountsFlow(): Flow<Map<String, Int>> =
         db.episodeQueries
             .selectNewEpisodeCountsByPodcast()

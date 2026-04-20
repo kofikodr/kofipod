@@ -17,3 +17,21 @@ SELECT * FROM PlaybackState WHERE episodeId = ?;
 
 selectAll:
 SELECT * FROM PlaybackState;
+
+selectInProgressWithMeta:
+SELECT
+    ps.episodeId   AS episodeId,
+    ps.positionMs  AS positionMs,
+    ps.durationMs  AS durationMs,
+    ps.updatedAt   AS updatedAt,
+    e.title        AS episodeTitle,
+    e.podcastId    AS podcastId,
+    p.title        AS podcastTitle,
+    p.artworkUrl   AS artworkUrl
+FROM PlaybackState ps
+INNER JOIN Episode e ON e.id = ps.episodeId
+INNER JOIN Podcast p ON p.id = e.podcastId
+WHERE ps.completedAt IS NULL
+  AND ps.positionMs > 0
+ORDER BY ps.updatedAt DESC
+LIMIT :maxRows;

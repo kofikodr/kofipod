@@ -59,5 +59,26 @@ UPDATE Download SET state = ?, errorMessage = ? WHERE episodeId = ?;
 updateProgress:
 UPDATE Download SET downloadedBytes = ?, totalBytes = ? WHERE episodeId = ?;
 
+updateLocalPath:
+UPDATE Download SET localPath = ? WHERE episodeId = ?;
+
+selectLocalPathByEpisode:
+SELECT localPath FROM Download WHERE episodeId = ? AND state = 'Completed';
+
+selectCompletedWithMeta:
+SELECT
+    d.episodeId,
+    d.localPath,
+    d.completedAt,
+    e.title       AS episodeTitle,
+    e.podcastId   AS podcastId,
+    p.title       AS podcastTitle,
+    p.artworkUrl  AS artworkUrl
+FROM Download d
+INNER JOIN Episode e ON e.id = d.episodeId
+INNER JOIN Podcast p ON p.id = e.podcastId
+WHERE d.state = 'Completed'
+ORDER BY d.completedAt DESC;
+
 delete:
 DELETE FROM Download WHERE episodeId = ?;

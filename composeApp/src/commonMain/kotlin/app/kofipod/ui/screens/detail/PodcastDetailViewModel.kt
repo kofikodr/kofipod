@@ -221,18 +221,13 @@ class PodcastDetailViewModel(
 
         data class PlayFields(val title: String, val url: String, val episodeNumber: Int?)
         val fields =
-            when {
-                stored != null && stored.enclosureUrl.isNotBlank() ->
-                    PlayFields(
-                        stored.title,
-                        stored.enclosureUrl,
-                        stored.episodeNumber?.toInt(),
-                    )
-                else -> {
-                    val remote = current.remoteEpisodes.firstOrNull { it.id == episodeId } ?: return
-                    if (remote.enclosureUrl.isBlank()) return
-                    PlayFields(remote.title, remote.enclosureUrl, remote.episodeNumber)
-                }
+            if (stored != null) {
+                val url = downloads.resolvedSourceUrl(episodeId, stored.enclosureUrl) ?: return
+                PlayFields(stored.title, url, stored.episodeNumber?.toInt())
+            } else {
+                val remote = current.remoteEpisodes.firstOrNull { it.id == episodeId } ?: return
+                val url = downloads.resolvedSourceUrl(episodeId, remote.enclosureUrl) ?: return
+                PlayFields(remote.title, url, remote.episodeNumber)
             }
         val startMs = playback.positionFor(episodeId)
         player.play(
