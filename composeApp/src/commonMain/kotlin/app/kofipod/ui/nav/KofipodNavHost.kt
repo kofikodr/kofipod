@@ -50,7 +50,16 @@ fun KofipodNavHost(navController: NavHostController) {
                 onOpenPodcast = { id -> navController.navigate(Route.PodcastDetail(id)) },
             )
         }
-        composable<Route.Downloads> { DownloadsScreen() }
+        composable<Route.Downloads> {
+            DownloadsScreen(
+                onOpenPlayer = {
+                    navController.navigate(
+                        Route.Player,
+                        NavOptions.Builder().setLaunchSingleTop(true).build(),
+                    )
+                },
+            )
+        }
         composable<Route.Settings> {
             SettingsScreen(onOpenScheduler = { navController.navigate(Route.SchedulerInfo) })
         }

@@ -3,9 +3,11 @@ package app.kofipod.ui.screens.downloads
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -53,7 +55,10 @@ private const val BYTES_PER_GB: Double = 1024.0 * 1024.0 * 1024.0
 private const val BYTES_PER_MB: Double = 1024.0 * 1024.0
 
 @Composable
-fun DownloadsScreen(viewModel: DownloadsViewModel = koinViewModel()) {
+fun DownloadsScreen(
+    viewModel: DownloadsViewModel = koinViewModel(),
+    onOpenPlayer: () -> Unit = {},
+) {
     val state by viewModel.state.collectAsState()
     val c = LocalKofipodColors.current
 
@@ -111,7 +116,10 @@ fun DownloadsScreen(viewModel: DownloadsViewModel = koinViewModel()) {
                 )
             }
             items(state.downloading, key = { "dl-${it.episodeId}" }) { d ->
-                InProgressRow(d, onCancel = { viewModel.cancel(d.episodeId) })
+                InProgressRow(d, onCancel = { viewModel.cancel(d.episodeId) }, onPlay = {
+                    viewModel.play(d.episodeId)
+                    onOpenPlayer()
+                })
             }
         }
 
@@ -119,7 +127,10 @@ fun DownloadsScreen(viewModel: DownloadsViewModel = koinViewModel()) {
         if (state.queued.isNotEmpty()) {
             item { SectionLabel(title = "Up next \u00B7 ${state.queued.size}") }
             items(state.queued, key = { "up-${it.episodeId}" }) { d ->
-                QueuedRow(d)
+                QueuedRow(d, onPlay = {
+                    viewModel.play(d.episodeId)
+                    onOpenPlayer()
+                })
             }
         }
 
@@ -148,7 +159,10 @@ fun DownloadsScreen(viewModel: DownloadsViewModel = koinViewModel()) {
                 )
             }
             items(state.completed, key = { "done-${it.episodeId}" }) { d ->
-                CompletedRow(d, onDelete = { viewModel.delete(d.episodeId) })
+                CompletedRow(d, onDelete = { viewModel.delete(d.episodeId) }, onPlay = {
+                    viewModel.play(d.episodeId)
+                    onOpenPlayer()
+                })
             }
         }
 
@@ -156,7 +170,10 @@ fun DownloadsScreen(viewModel: DownloadsViewModel = koinViewModel()) {
         if (state.failed.isNotEmpty()) {
             item { SectionLabel(title = "Failed \u00B7 ${state.failed.size}") }
             items(state.failed, key = { "fail-${it.episodeId}" }) { d ->
-                CompletedRow(d, onDelete = { viewModel.delete(d.episodeId) })
+                CompletedRow(d, onDelete = { viewModel.delete(d.episodeId) }, onPlay = {
+                    viewModel.play(d.episodeId)
+                    onOpenPlayer()
+                })
             }
         }
 
@@ -305,6 +322,7 @@ private fun ProgressRing(
 private fun InProgressRow(
     d: DownloadRow,
     onCancel: () -> Unit,
+    onPlay: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
     val progress: Float =
@@ -317,6 +335,7 @@ private fun InProgressRow(
         modifier =
             Modifier
                 .fillMaxWidth()
+                .clickable(onClick = onPlay)
                 .padding(vertical = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -383,12 +402,16 @@ private fun InProgressRow(
 }
 
 @Composable
-private fun QueuedRow(d: DownloadRow) {
+private fun QueuedRow(
+    d: DownloadRow,
+    onPlay: () -> Unit,
+) {
     val c = LocalKofipodColors.current
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
+                .clickable(onClick = onPlay)
                 .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -429,16 +452,22 @@ private fun QueuedRow(d: DownloadRow) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CompletedRow(
     d: DownloadRow,
     onDelete: () -> Unit,
+    onPlay: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
+                .combinedClickable(
+                    onClick = onPlay,
+                    onLongClick = onDelete,
+                )
                 .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -474,8 +503,7 @@ private fun CompletedRow(
                 Modifier
                     .size(32.dp)
                     .clip(CircleShape)
-                    .border(BorderStroke(1.dp, c.border), CircleShape)
-                    .clickable(onClick = onDelete),
+                    .border(BorderStroke(1.dp, c.border), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             KPIcon(

@@ -124,15 +124,8 @@ private fun BottomNav(nav: NavHostController) {
                     modifier = Modifier.weight(1f),
                     onClick = {
                         if (selected) return@TabItem
-                        val options =
-                            navOptions {
-                                popUpTo(nav.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        nav.navigate(tab.route, options)
+                        nav.popBackStack()
+                        nav.navigate(tab.route, navOptions { launchSingleTop = true })
                     },
                 )
             }
