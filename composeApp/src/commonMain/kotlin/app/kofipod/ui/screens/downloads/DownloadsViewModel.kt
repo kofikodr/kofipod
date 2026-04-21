@@ -4,6 +4,7 @@ package app.kofipod.ui.screens.downloads
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.kofipod.data.repo.DownloadRepository
+import app.kofipod.data.repo.DownloadRepository.Companion.STATE_WAITING_WIFI
 import app.kofipod.data.repo.DownloadRow
 import app.kofipod.data.repo.EpisodesRepository
 import app.kofipod.data.repo.PlaybackRepository
@@ -33,7 +34,7 @@ class DownloadsViewModel(
             .map { all ->
                 DownloadsUiState(
                     downloading = all.filter { it.state == "Downloading" },
-                    queued = all.filter { it.state == "Queued" || it.state == "Paused" },
+                    queued = all.filter { it.state == "Queued" || it.state == "Paused" || it.state == STATE_WAITING_WIFI },
                     completed = all.filter { it.state == "Completed" },
                     failed = all.filter { it.state == "Failed" },
                 )

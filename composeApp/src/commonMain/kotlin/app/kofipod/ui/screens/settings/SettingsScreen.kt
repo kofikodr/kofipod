@@ -100,6 +100,7 @@ fun SettingsScreen(
         SettingRow(
             icon = KPIconName.Radar,
             title = "Daily check for new episodes",
+            subtitle = "Runs about once a day while you have a network connection",
             trailing = {
                 PinkSwitch(
                     checked = state.dailyCheck,
@@ -111,12 +112,12 @@ fun SettingsScreen(
         Spacer(Modifier.height(8.dp))
         SettingRow(
             icon = KPIconName.Radar,
-            title = "Wi-Fi only",
+            title = "Download on Wi-Fi only",
+            subtitle = "Cellular downloads are deferred until you're back on Wi-Fi",
             trailing = {
                 PinkSwitch(
                     checked = state.wifiOnly,
                     onCheckedChange = viewModel::setWifiOnly,
-                    enabled = state.dailyCheck,
                     testTag = "wifiOnlySwitch",
                 )
             },

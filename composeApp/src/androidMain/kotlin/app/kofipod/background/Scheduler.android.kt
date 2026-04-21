@@ -10,16 +10,15 @@ import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
 actual class Scheduler(private val context: Context) {
-    actual fun enable(wifiOnly: Boolean) {
+    // The episode check only fetches small feed JSON, so it only requires a network
+    // connection. Charging / battery / Wi-Fi constraints belong to the download step,
+    // not the check step — they're enforced inside DownloadRepository instead.
+    actual fun enable() {
         val req =
             PeriodicWorkRequestBuilder<EpisodeCheckWorker>(24, TimeUnit.HOURS)
                 .setConstraints(
                     Constraints.Builder()
-                        .setRequiredNetworkType(
-                            if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED,
-                        )
-                        .setRequiresCharging(true)
-                        .setRequiresBatteryNotLow(true)
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
                         .build(),
                 )
                 .addTag(TAG)

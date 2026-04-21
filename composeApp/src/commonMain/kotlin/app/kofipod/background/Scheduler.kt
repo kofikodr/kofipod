@@ -2,7 +2,7 @@
 package app.kofipod.background
 
 expect class Scheduler {
-    fun enable(wifiOnly: Boolean)
+    fun enable()
 
     fun disable()
 }

@@ -74,14 +74,12 @@ class SettingsViewModel(
     fun setDailyCheck(on: Boolean) =
         viewModelScope.launch {
             repo.setDailyCheckEnabled(on)
-            if (on) scheduler.enable(repo.wifiOnlyNow()) else scheduler.disable()
+            if (on) scheduler.enable() else scheduler.disable()
         }
 
-    fun setWifiOnly(on: Boolean) =
-        viewModelScope.launch {
-            repo.setWifiOnly(on)
-            if (state.value.dailyCheck) scheduler.enable(on)
-        }
+    // Wi-Fi-only now only gates downloads (enforced in DownloadRepository). It no
+    // longer affects the scheduler, so we just persist the preference.
+    fun setWifiOnly(on: Boolean) = viewModelScope.launch { repo.setWifiOnly(on) }
 
     fun setCap(bytes: Long) = viewModelScope.launch { repo.setStorageCapBytes(bytes) }
 

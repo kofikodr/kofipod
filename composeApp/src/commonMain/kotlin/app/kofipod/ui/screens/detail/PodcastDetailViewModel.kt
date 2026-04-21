@@ -18,10 +18,12 @@ import app.kofipod.db.PodcastList
 import app.kofipod.domain.PodcastSummary
 import app.kofipod.domain.toSummary
 import app.kofipod.downloads.DownloadJob
+import app.kofipod.downloads.downloadFileName
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.playback.PlayableEpisode
 import app.kofipod.share.Sharer
 import com.mr3y.podcastindex.model.EpisodeFeed
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +32,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 
 data class DetailUiState(
@@ -80,6 +83,8 @@ class PodcastDetailViewModel(
     private val displayLimit = MutableStateFlow(PodcastIndexApi.PAGE_SIZE)
     private val remoteLimit = MutableStateFlow(PodcastIndexApi.PAGE_SIZE)
     private val error = MutableStateFlow<String?>(null)
+    private val _refreshing = MutableStateFlow(false)
+    val refreshing: StateFlow<Boolean> = _refreshing
 
     private data class StoredBundle(val podcast: Podcast?, val episodes: List<Episode>, val lists: List<PodcastList>)
 
@@ -157,6 +162,50 @@ class PodcastDetailViewModel(
 
     init {
         loadRemote(loadMore = false)
+    }
+
+    fun refresh() {
+        if (_refreshing.value) return
+        val feedId = podcastId.toLongOrNull()
+        if (feedId == null) {
+            error.value = "Invalid podcast id"
+            return
+        }
+        viewModelScope.launch {
+            _refreshing.value = true
+            try {
+                val now = Clock.System.now().toEpochMilliseconds()
+                if (state.value.inLibrary) {
+                    runCatching { episodes.refresh(podcastId, feedId, now) }
+                        .onSuccess { result ->
+                            if (result.inserted > 0 && state.value.autoDownload) {
+                                result.insertedEpisodes.forEach { ep ->
+                                    if (ep.enclosureUrl.isNotBlank()) {
+                                        downloads.enqueue(
+                                            episodeId = ep.id,
+                                            url = ep.enclosureUrl,
+                                            fileName = downloadFileName(ep.id, ep.enclosureMimeType),
+                                            source = DownloadJob.Source.Auto,
+                                        )
+                                    }
+                                }
+                                // DB reads + file deletes — keep off the UI dispatcher.
+                                // `Dispatchers.IO` is JVM-only; `Default` is multiplatform and
+                                // also backed by a worker pool suitable for blocking I/O here.
+                                withContext(Dispatchers.Default) { downloads.evictUntilUnderCap() }
+                            }
+                        }
+                        .onFailure { error.value = it.message ?: "Failed to refresh episodes" }
+                } else {
+                    runCatching {
+                        val eps = api.episodesByFeedId(feedId, limit = remoteLimit.value)
+                        remoteEpisodes.value = eps.map { it.toPreview() }
+                    }.onFailure { error.value = it.message ?: "Failed to refresh" }
+                }
+            } finally {
+                _refreshing.value = false
+            }
+        }
     }
 
     fun loadMoreEpisodes() {
@@ -248,11 +297,10 @@ class PodcastDetailViewModel(
     fun download(episodeId: String) {
         val ep = state.value.storedEpisodes.firstOrNull { it.id == episodeId } ?: return
         if (ep.enclosureUrl.isBlank()) return
-        val ext = ep.enclosureMimeType.substringAfter('/', "mp3").ifBlank { "mp3" }
         downloads.enqueue(
             episodeId = ep.id,
             url = ep.enclosureUrl,
-            fileName = "${ep.id}.$ext",
+            fileName = downloadFileName(ep.id, ep.enclosureMimeType),
             source = DownloadJob.Source.Manual,
         )
     }

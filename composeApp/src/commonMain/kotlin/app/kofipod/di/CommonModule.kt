@@ -56,6 +56,8 @@ val commonDataModule =
             DownloadRepository(
                 db = get(),
                 engine = get(),
+                settings = get(),
+                network = get(),
                 scope = get(org.koin.core.qualifier.named("appScope")),
             )
         }

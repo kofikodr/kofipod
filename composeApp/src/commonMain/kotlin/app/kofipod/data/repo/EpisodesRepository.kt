@@ -26,7 +26,12 @@ interface EpisodeSource {
     ): RefreshResult
 }
 
-data class RefreshResult(val inserted: Int, val totalRemote: Int)
+data class RefreshResult(
+    val insertedEpisodes: List<Episode>,
+    val totalRemote: Int,
+) {
+    val inserted: Int get() = insertedEpisodes.size
+}
 
 class EpisodesRepository(
     private val db: KofipodDatabase,
@@ -53,11 +58,12 @@ class EpisodesRepository(
     ): RefreshResult {
         val existingGuids = db.episodeQueries.selectGuidsByPodcast(podcastId).executeAsList().toSet()
         val remote = api.episodesByFeedId(feedId)
-        var inserted = 0
+        val insertedIds = mutableListOf<String>()
         for (ep in remote) {
             if (ep.guid in existingGuids) continue
+            val id = ep.id.toString()
             db.episodeQueries.insert(
-                id = ep.id.toString(),
+                id = id,
                 podcastId = podcastId,
                 guid = ep.guid,
                 title = ep.title,
@@ -73,9 +79,10 @@ class EpisodesRepository(
                 seasonNumber = ep.season?.toLong(),
                 episodeNumber = ep.episode?.toLong(),
             )
-            inserted++
+            insertedIds += id
         }
         db.podcastQueries.setLastChecked(nowMillis, podcastId)
-        return RefreshResult(inserted = inserted, totalRemote = remote.size)
+        val insertedEpisodes = insertedIds.mapNotNull { db.episodeQueries.selectById(it).executeAsOneOrNull() }
+        return RefreshResult(insertedEpisodes = insertedEpisodes, totalRemote = remote.size)
     }
 }

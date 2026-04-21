@@ -8,9 +8,15 @@ import app.kofipod.ui.theme.KofipodThemeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlin.coroutines.CoroutineContext
 
-class SettingsRepository(private val db: KofipodDatabase) {
-    private fun metaFlow(key: String): Flow<String?> = db.syncMetaQueries.get(key).asFlow().mapToOneOrNull(Dispatchers.Default)
+class SettingsRepository(
+    private val db: KofipodDatabase,
+    // Injectable so tests can route flow emissions through an `UnconfinedTestDispatcher`
+    // for deterministic propagation. Production always uses `Dispatchers.Default`.
+    private val flowContext: CoroutineContext = Dispatchers.Default,
+) {
+    private fun metaFlow(key: String): Flow<String?> = db.syncMetaQueries.get(key).asFlow().mapToOneOrNull(flowContext)
 
     fun put(
         key: String,
@@ -18,6 +24,8 @@ class SettingsRepository(private val db: KofipodDatabase) {
     ) = db.syncMetaQueries.put(key, value)
 
     fun storageCapBytes(): Flow<Long> = metaFlow(KEY_STORAGE_CAP).map { it?.toLongOrNull() ?: DEFAULT_CAP_BYTES }
+
+    fun storageCapBytesNow(): Long = getMetaNow(KEY_STORAGE_CAP)?.toLongOrNull() ?: DEFAULT_CAP_BYTES
 
     fun setStorageCapBytes(bytes: Long) = put(KEY_STORAGE_CAP, bytes.toString())
 

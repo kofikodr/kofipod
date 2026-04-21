@@ -5,8 +5,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-actual class NetworkMonitor {
-    // TODO NWPathMonitor — iOS is secondary; treat as Wi-Fi so playback behavior matches "no limits".
+class IosNetworkMonitor : NetworkMonitor {
+    // TODO NWPathMonitor — iOS is secondary; treat as Wi-Fi so downloads aren't blocked.
     private val _type = MutableStateFlow(NetworkType.Wifi)
-    actual val type: StateFlow<NetworkType> = _type.asStateFlow()
+    override val type: StateFlow<NetworkType> = _type.asStateFlow()
 }

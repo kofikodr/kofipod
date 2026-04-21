@@ -432,8 +432,10 @@ private fun QueuedRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            val badge =
+                if (d.state == "WaitingForWifi") "WAITING FOR WI-FI" else d.source.uppercase()
             Text(
-                text = "${d.podcastTitle ?: "\u2014"} \u00B7 ${d.source.uppercase()} \u00B7 ${formatMb(
+                text = "${d.podcastTitle ?: "\u2014"} \u00B7 $badge \u00B7 ${formatMb(
                     d.totalBytes.coerceAtLeast(d.downloadedBytes),
                 )}",
                 color = c.textMute,

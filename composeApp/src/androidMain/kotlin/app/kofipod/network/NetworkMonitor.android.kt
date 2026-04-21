@@ -10,10 +10,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-actual class NetworkMonitor(context: Context) {
+class AndroidNetworkMonitor(context: Context) : NetworkMonitor {
     private val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private val _type = MutableStateFlow(resolveCurrent())
-    actual val type: StateFlow<NetworkType> = _type.asStateFlow()
+    override val type: StateFlow<NetworkType> = _type.asStateFlow()
 
     private val callback =
         object : ConnectivityManager.NetworkCallback() {
@@ -48,9 +48,9 @@ actual class NetworkMonitor(context: Context) {
     private fun resolveCurrent(): NetworkType {
         val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return NetworkType.None
         if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return NetworkType.None
-        // Trust the metered flag only — aligns with Scheduler's `NetworkType.UNMETERED` work
-        // constraint. A Wi-Fi hotspot the user has flagged as metered (or a cellular tether on
-        // Wi-Fi transport) correctly falls into the 5-minute cap bucket.
+        // Trust the metered flag only — aligns with the Wi-Fi-only download gate. A Wi-Fi hotspot
+        // the user has flagged as metered (or a cellular tether on Wi-Fi transport) correctly
+        // falls into the "metered" bucket and is blocked when the setting is on.
         return if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)) {
             NetworkType.Wifi
         } else {

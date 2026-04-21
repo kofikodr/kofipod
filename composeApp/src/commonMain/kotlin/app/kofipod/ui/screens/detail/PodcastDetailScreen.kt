@@ -12,9 +12,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,6 +55,7 @@ import org.koin.core.parameter.parametersOf
 
 private enum class DetailTab { Episodes, About }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PodcastDetailScreen(
     podcastId: String,
@@ -60,6 +65,7 @@ fun PodcastDetailScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val playingEpisodeId by viewModel.playingEpisodeId.collectAsState()
+    val refreshing by viewModel.refreshing.collectAsState()
     val c = LocalKofipodColors.current
 
     val summary = state.summary
@@ -135,107 +141,114 @@ fun PodcastDetailScreen(
     val visibleRows = remember(rows, displayLimit) { rows.take(displayLimit) }
     val activePlaybackFlow = viewModel.activePlayback
 
-    LazyColumn(Modifier.fillMaxSize().background(c.bg)) {
-        item {
-            TopIconBar(
-                onBack = onBack,
-                onShare = { viewModel.sharePodcast() },
-            )
-        }
-        item { HeroRow(summary) }
-        if (summary.description.isNotBlank()) {
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = viewModel::refresh,
+        modifier = Modifier.fillMaxSize().background(c.bg),
+    ) {
+        LazyColumn(Modifier.fillMaxSize()) {
             item {
-                Text(
-                    summary.description,
-                    color = c.textSoft,
-                    fontSize = 14.sp,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                TopIconBar(
+                    onBack = onBack,
+                    onShare = { viewModel.sharePodcast() },
+                    onCheckForEpisodes = viewModel::refresh,
                 )
             }
-        } else {
-            item { Spacer(Modifier.height(12.dp)) }
-        }
-        item {
-            ActionRow(
-                saveLabel = saveLabel,
-                saved = state.inLibrary,
-                bellOn = state.inLibrary && state.notifyNewEpisodes,
-                bellEnabled = state.inLibrary,
-                onSave = { listPickerOpen = true },
-                onToggleBell = {
-                    if (!state.inLibrary) return@ActionRow
-                    if (state.notifyNewEpisodes) {
-                        viewModel.toggleNotifyNewEpisodes(false)
-                    } else {
-                        requestNotificationPermission()
-                    }
-                },
-                onDownload = {
-                    if (!state.inLibrary) return@ActionRow
-                    val newest = state.storedEpisodes.firstOrNull()?.id
-                    if (newest != null) viewModel.download(newest)
-                },
-                downloadEnabled = state.inLibrary,
-            )
-        }
-        if (state.inLibrary) {
-            item {
-                AutoDownloadRow(
-                    enabled = state.autoDownload,
-                    onToggle = { viewModel.toggleAutoDownload(it) },
-                )
-            }
-        }
-        item { TabsRow(tab = tab, onSelect = { tab = it }, newestFirst = newestFirst, onToggleSort = { newestFirst = !newestFirst }) }
-
-        if (tab == DetailTab.Episodes) {
-            if (state.loading && rows.isEmpty()) {
-                item { Text("Loading episodes…", color = c.textMute, fontSize = 12.sp, modifier = Modifier.padding(20.dp)) }
-            }
-            state.error?.let { err ->
-                item { Text(err, color = c.danger, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp)) }
-            }
-
-            val hasMore = if (inLibrary) rows.size > visibleRows.size else state.remoteHasMore
-            items(visibleRows, key = { it.id }) { ep ->
-                EpisodeRow(
-                    ep = ep,
-                    isActive = ep.id == playingEpisodeId,
-                    canDownload = inLibrary,
-                    activePlaybackFlow = activePlaybackFlow,
-                    viewModel = viewModel,
-                    onOpenPlayer = onOpenPlayer,
-                )
-            }
-            if (hasMore) {
-                item(key = "load-more") {
-                    LoadMoreRow(loading = state.loadingMore, onClick = viewModel::loadMoreEpisodes)
-                }
-            }
-        } else {
-            item {
-                Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+            item { HeroRow(summary) }
+            if (summary.description.isNotBlank()) {
+                item {
                     Text(
-                        summary.description.ifBlank { "No description." },
+                        summary.description,
                         color = c.textSoft,
                         fontSize = 14.sp,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
                     )
-                    if (summary.feedUrl.isNotBlank()) {
-                        Spacer(Modifier.height(12.dp))
+                }
+            } else {
+                item { Spacer(Modifier.height(12.dp)) }
+            }
+            item {
+                ActionRow(
+                    saveLabel = saveLabel,
+                    saved = state.inLibrary,
+                    bellOn = state.inLibrary && state.notifyNewEpisodes,
+                    bellEnabled = state.inLibrary,
+                    onSave = { listPickerOpen = true },
+                    onToggleBell = {
+                        if (!state.inLibrary) return@ActionRow
+                        if (state.notifyNewEpisodes) {
+                            viewModel.toggleNotifyNewEpisodes(false)
+                        } else {
+                            requestNotificationPermission()
+                        }
+                    },
+                    onDownload = {
+                        if (!state.inLibrary) return@ActionRow
+                        val newest = state.storedEpisodes.firstOrNull()?.id
+                        if (newest != null) viewModel.download(newest)
+                    },
+                    downloadEnabled = state.inLibrary,
+                )
+            }
+            if (state.inLibrary) {
+                item {
+                    AutoDownloadRow(
+                        enabled = state.autoDownload,
+                        onToggle = { viewModel.toggleAutoDownload(it) },
+                    )
+                }
+            }
+            item { TabsRow(tab = tab, onSelect = { tab = it }, newestFirst = newestFirst, onToggleSort = { newestFirst = !newestFirst }) }
+
+            if (tab == DetailTab.Episodes) {
+                if (state.loading && rows.isEmpty()) {
+                    item { Text("Loading episodes…", color = c.textMute, fontSize = 12.sp, modifier = Modifier.padding(20.dp)) }
+                }
+                state.error?.let { err ->
+                    item { Text(err, color = c.danger, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp)) }
+                }
+
+                val hasMore = if (inLibrary) rows.size > visibleRows.size else state.remoteHasMore
+                items(visibleRows, key = { it.id }) { ep ->
+                    EpisodeRow(
+                        ep = ep,
+                        isActive = ep.id == playingEpisodeId,
+                        canDownload = inLibrary,
+                        activePlaybackFlow = activePlaybackFlow,
+                        viewModel = viewModel,
+                        onOpenPlayer = onOpenPlayer,
+                    )
+                }
+                if (hasMore) {
+                    item(key = "load-more") {
+                        LoadMoreRow(loading = state.loadingMore, onClick = viewModel::loadMoreEpisodes)
+                    }
+                }
+            } else {
+                item {
+                    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
                         Text(
-                            summary.feedUrl,
-                            color = c.textMute,
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace,
+                            summary.description.ifBlank { "No description." },
+                            color = c.textSoft,
+                            fontSize = 14.sp,
                         )
+                        if (summary.feedUrl.isNotBlank()) {
+                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                summary.feedUrl,
+                                color = c.textMute,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        item { Spacer(Modifier.height(24.dp)) }
+            item { Spacer(Modifier.height(24.dp)) }
+        }
     }
 
     if (listPickerOpen) {
@@ -255,8 +268,10 @@ fun PodcastDetailScreen(
 private fun TopIconBar(
     onBack: () -> Unit,
     onShare: () -> Unit,
+    onCheckForEpisodes: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
+    var menuOpen by remember { mutableStateOf(false) }
     Row(
         Modifier
             .fillMaxWidth()
@@ -270,8 +285,22 @@ private fun TopIconBar(
         IconButton(onClick = onShare) {
             KPIcon(name = KPIconName.Share, color = c.text, size = 20.dp, strokeWidth = 1.6f)
         }
-        IconButton(onClick = { /* more not wired */ }) {
-            KPIcon(name = KPIconName.More, color = c.text, size = 20.dp, strokeWidth = 1.6f)
+        Box {
+            IconButton(onClick = { menuOpen = true }) {
+                KPIcon(name = KPIconName.More, color = c.text, size = 20.dp, strokeWidth = 1.6f)
+            }
+            DropdownMenu(
+                expanded = menuOpen,
+                onDismissRequest = { menuOpen = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Check for episodes", color = c.text) },
+                    onClick = {
+                        menuOpen = false
+                        onCheckForEpisodes()
+                    },
+                )
+            }
         }
     }
 }

@@ -109,6 +109,7 @@ kotlin {
                 // so a separate `libs.junit` declaration would just duplicate the dependency.
                 implementation(kotlin("test"))
                 implementation(libs.sqldelight.sqlite.driver)
+                implementation(libs.kotlinx.coroutines.test)
             }
         }
     }

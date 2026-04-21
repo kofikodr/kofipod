@@ -7,6 +7,7 @@ import app.kofipod.data.db.DatabaseFactory
 import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.downloads.DownloadEngine
 import app.kofipod.downloads.DownloadEngineApi
+import app.kofipod.network.AndroidNetworkMonitor
 import app.kofipod.network.NetworkMonitor
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.playback.PlaybackCache
@@ -21,7 +22,7 @@ val androidPlatformModule =
         single { KofipodPlayer(androidContext()) }
         single { DownloadEngine(androidContext()) }
         single<DownloadEngineApi> { get<DownloadEngine>() }
-        single { NetworkMonitor(androidContext()) }
+        single<NetworkMonitor> { AndroidNetworkMonitor(androidContext()) }
         single {
             // Read the cap synchronously at Koin resolution; SimpleCache is constructed once per
             // process and can't be re-sized without reopening, so later slider changes apply on

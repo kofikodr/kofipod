@@ -11,6 +11,7 @@ import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.data.repo.autoDownloadEnabledBool
 import app.kofipod.data.repo.notifyNewEpisodesEnabledBool
 import app.kofipod.downloads.DownloadJob
+import app.kofipod.downloads.downloadFileName
 import kotlinx.coroutines.flow.first
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -45,16 +46,14 @@ class EpisodeCheckWorker(
                         notifyShows++
                     }
                     if (podcast.autoDownloadEnabledBool()) {
-                        episodes.episodesFlow(podcast.id).first()
-                            .take(result.inserted)
-                            .forEach { ep ->
-                                downloads.enqueue(
-                                    episodeId = ep.id,
-                                    url = ep.enclosureUrl,
-                                    fileName = "${ep.id}.mp3",
-                                    source = DownloadJob.Source.Auto,
-                                )
-                            }
+                        result.insertedEpisodes.forEach { ep ->
+                            downloads.enqueue(
+                                episodeId = ep.id,
+                                url = ep.enclosureUrl,
+                                fileName = downloadFileName(ep.id, ep.enclosureMimeType),
+                                source = DownloadJob.Source.Auto,
+                            )
+                        }
                     }
                 }
             }

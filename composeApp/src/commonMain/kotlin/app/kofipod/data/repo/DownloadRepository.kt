@@ -10,9 +10,14 @@ import app.kofipod.db.SelectCompletedWithMeta
 import app.kofipod.downloads.DownloadEngineApi
 import app.kofipod.downloads.DownloadJob
 import app.kofipod.downloads.DownloadProgress
+import app.kofipod.downloads.downloadFileName
+import app.kofipod.network.NetworkMonitor
+import app.kofipod.network.NetworkType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -75,6 +80,8 @@ private fun SelectAllWithMeta.toDownloadRow(): DownloadRow =
 class DownloadRepository(
     private val db: KofipodDatabase,
     private val engine: DownloadEngineApi,
+    private val settings: SettingsRepository,
+    private val network: NetworkMonitor,
     scope: CoroutineScope,
 ) {
     init {
@@ -100,6 +107,40 @@ class DownloadRepository(
                     db.downloadQueries.updateState("Failed", p.errorMessage, p.episodeId)
             }
         }.launchIn(scope)
+
+        // Flush deferred downloads whenever the user's settings or connectivity allow them.
+        combine(settings.wifiOnly(), network.type) { wifiOnly, type -> canDownloadNow(wifiOnly, type) }
+            .distinctUntilChanged()
+            .onEach { allowed -> if (allowed) flushWaiting() }
+            .launchIn(scope)
+    }
+
+    private fun canDownloadNow(
+        wifiOnly: Boolean,
+        type: NetworkType,
+    ): Boolean =
+        when (type) {
+            NetworkType.None -> false
+            NetworkType.Wifi -> true
+            NetworkType.Metered -> !wifiOnly
+        }
+
+    private fun flushWaiting() {
+        val waiting = db.downloadQueries.selectByState(STATE_WAITING_WIFI).executeAsList()
+        for (row in waiting) {
+            val ep = db.episodeQueries.selectById(row.episodeId).executeAsOneOrNull() ?: continue
+            if (ep.enclosureUrl.isBlank()) continue
+            val source = runCatching { DownloadJob.Source.valueOf(row.source) }.getOrDefault(DownloadJob.Source.Manual)
+            db.downloadQueries.updateState("Queued", null, row.episodeId)
+            engine.enqueue(
+                DownloadJob(
+                    episodeId = row.episodeId,
+                    url = ep.enclosureUrl,
+                    targetFileName = downloadFileName(row.episodeId, ep.enclosureMimeType),
+                    source = source,
+                ),
+            )
+        }
     }
 
     fun all(): Flow<List<Download>> = db.downloadQueries.selectAll().asFlow().mapToList(Dispatchers.Default)
@@ -145,9 +186,10 @@ class DownloadRepository(
         source: DownloadJob.Source,
     ) {
         val now = Clock.System.now().toEpochMilliseconds()
+        val allowed = canDownloadNow(settings.wifiOnlyNow(), network.type.value)
         db.downloadQueries.upsert(
             episodeId = episodeId,
-            state = "Queued",
+            state = if (allowed) "Queued" else STATE_WAITING_WIFI,
             localPath = null,
             downloadedBytes = 0,
             totalBytes = 0,
@@ -156,7 +198,17 @@ class DownloadRepository(
             completedAt = null,
             errorMessage = null,
         )
-        engine.enqueue(DownloadJob(episodeId, url, fileName, source))
+        when {
+            allowed ->
+                engine.enqueue(DownloadJob(episodeId, url, fileName, source))
+            // If the gate opened between our first read and the DB commit, a concurrent
+            // flushWaiting() may have scanned WaitingForWifi rows before ours landed and
+            // missed it. Re-check and promote inline to avoid orphaning the row.
+            canDownloadNow(settings.wifiOnlyNow(), network.type.value) -> {
+                db.downloadQueries.updateState("Queued", null, episodeId)
+                engine.enqueue(DownloadJob(episodeId, url, fileName, source))
+            }
+        }
     }
 
     fun cancel(episodeId: String) {
@@ -178,5 +230,13 @@ class DownloadRepository(
             total -= v.totalBytes
             if (total <= capBytes) break
         }
+    }
+
+    /** Convenience for callers that don't already have the cap in hand. */
+    fun evictUntilUnderCap() = evictUntilUnderCap(settings.storageCapBytesNow())
+
+    companion object {
+        /** Persistent state for downloads deferred until the Wi-Fi / metered rule allows them. */
+        const val STATE_WAITING_WIFI = "WaitingForWifi"
     }
 }
