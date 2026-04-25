@@ -12,6 +12,8 @@ import app.kofipod.network.NetworkMonitor
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.playback.PlaybackCache
 import app.kofipod.share.Sharer
+import app.kofipod.ui.palette.AndroidPalettePort
+import app.kofipod.ui.palette.PalettePort
 import app.kofipod.ui.screens.settings.AndroidUpdateActionPort
 import app.kofipod.ui.screens.settings.UpdateActionPort
 import app.kofipod.ui.theme.ThemeSystem
@@ -40,6 +42,7 @@ val androidPlatformModule =
         single { Notifier(androidContext()) }
         single { Sharer(androidContext()) }
         single { ThemeSystem(androidContext()) }
+        single<PalettePort> { AndroidPalettePort(androidContext()) }
         single<LocalApkPathStore> { AndroidLocalApkPathStore(androidContext()) }
         single { UpdateChecker(api = get(), repo = get()) }
         single { UpdateInstaller(context = androidContext(), httpClient = get(), repo = get()) }

@@ -3,6 +3,8 @@ package app.kofipod.di
 
 import app.kofipod.network.IosNetworkMonitor
 import app.kofipod.network.NetworkMonitor
+import app.kofipod.ui.palette.IosPalettePort
+import app.kofipod.ui.palette.PalettePort
 import app.kofipod.ui.screens.settings.IosUpdateActionPort
 import app.kofipod.ui.screens.settings.UpdateActionPort
 import app.kofipod.update.IosLocalApkPathStore
@@ -19,6 +21,7 @@ val iosPlatformModule =
     module {
         single<NetworkMonitor> { IosNetworkMonitor() }
         single<UpdateActionPort> { IosUpdateActionPort() }
+        single<PalettePort> { IosPalettePort() }
         single<LocalApkPathStore> { IosLocalApkPathStore() }
         single { UpdateChecker() }
     }

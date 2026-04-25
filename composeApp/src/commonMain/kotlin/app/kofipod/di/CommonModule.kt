@@ -19,6 +19,7 @@ import app.kofipod.data.repo.SearchRepository
 import app.kofipod.data.repo.SearchSource
 import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.data.repo.UpdateRepository
+import app.kofipod.ui.palette.PaletteCache
 import app.kofipod.ui.screens.detail.PodcastDetailViewModel
 import app.kofipod.ui.screens.downloads.DownloadsViewModel
 import app.kofipod.ui.screens.library.LibraryDetailViewModel
@@ -53,6 +54,7 @@ val commonDataModule =
         single { SettingsRepository(get()) }
         single { UpdateRepository(settings = get(), localApk = get()) }
         single { GithubReleasesApi(get()) }
+        single { PaletteCache(port = get()) }
         single { app.kofipod.data.repo.PlaybackRepository(get()) }
         single<CoroutineScope>(qualifier = org.koin.core.qualifier.named("appScope")) {
             CoroutineScope(SupervisorJob() + Dispatchers.Default)

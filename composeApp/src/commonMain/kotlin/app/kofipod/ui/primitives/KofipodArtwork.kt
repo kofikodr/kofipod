@@ -114,7 +114,7 @@ fun KofipodArtwork(
     contentDescription = contentDescription,
 )
 
-private fun artGradient(
+internal fun artGradient(
     seed: Int,
     dark: Boolean,
 ): Pair<Color, Color> {

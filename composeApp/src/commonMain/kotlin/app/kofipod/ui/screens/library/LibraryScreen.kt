@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -49,11 +50,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import app.kofipod.db.Podcast
 import app.kofipod.db.PodcastList
+import app.kofipod.ui.palette.rememberTileVisuals
 import app.kofipod.ui.primitives.KPButton
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
@@ -81,7 +84,6 @@ fun LibraryScreen(
 
     val lists: List<PodcastList> = state.groups.mapNotNull { it.list }
     val podcasts: List<Podcast> = state.groups.flatMap { it.podcasts }
-    val unfiledCount = podcasts.count { it.listId == null }
 
     val activeListId: String? =
         lists
@@ -98,10 +100,11 @@ fun LibraryScreen(
     // Lets the grid iterate uniformly without special-casing indices inline.
     // NewList tile appears only before any folder exists — once folders are created the "+"
     // moves to the header to free up grid space.
+    val unfiledPodcasts = podcasts.filter { it.listId == null }
     val tiles: List<Tile> =
         buildList {
             lists.forEach { add(Tile.OfList(it)) }
-            if (unfiledCount > 0) add(Tile.Unfiled(unfiledCount))
+            if (unfiledPodcasts.isNotEmpty()) add(Tile.Unfiled(unfiledPodcasts))
             if (lists.isEmpty()) add(Tile.NewList)
         }
 
@@ -229,7 +232,7 @@ fun LibraryScreen(
 private sealed interface Tile {
     data class OfList(val list: PodcastList) : Tile
 
-    data class Unfiled(val count: Int) : Tile
+    data class Unfiled(val podcasts: List<Podcast>) : Tile
 
     data object NewList : Tile
 }
@@ -284,11 +287,11 @@ private fun TileSlot(
 ) {
     when (tile) {
         is Tile.OfList -> {
-            val count = podcasts.count { it.listId == tile.list.id }
+            val members = podcasts.filter { it.listId == tile.list.id }
             ListTile(
                 modifier = modifier,
                 list = tile.list,
-                podcastCount = count,
+                members = members,
                 active = tile.list.id == activeListId,
                 hasNew = tile.list.id in groupsWithNew,
                 seed = tile.list.id.hashCode(),
@@ -299,7 +302,7 @@ private fun TileSlot(
         is Tile.Unfiled ->
             UnfiledTile(
                 modifier = modifier,
-                podcastCount = tile.count,
+                members = tile.podcasts,
                 hasNew = null in groupsWithNew,
                 onClick = { onOpenList(null) },
             )
@@ -313,7 +316,7 @@ private fun TileSlot(
 private fun ListTile(
     modifier: Modifier,
     list: PodcastList,
-    podcastCount: Int,
+    members: List<Podcast>,
     active: Boolean,
     hasNew: Boolean,
     seed: Int,
@@ -322,19 +325,35 @@ private fun ListTile(
 ) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
+    val visuals = rememberTileVisuals(members = members, fallbackSeed = seed)
 
-    val background = if (active) c.purple else c.surface
-    val textColor = if (active) Color.White else c.text
-    val subTextColor = if (active) Color.White.copy(alpha = 0.72f) else c.textMute
-    val folderColor = if (active) c.pink else c.purple
+    val onSampledBg = visuals.sampled && !active
+    val textColor =
+        when {
+            active -> Color.White
+            onSampledBg -> Color.White
+            else -> c.text
+        }
+    val subTextColor =
+        when {
+            active -> Color.White.copy(alpha = 0.72f)
+            onSampledBg -> Color.White.copy(alpha = 0.85f)
+            else -> c.textMute
+        }
+    val folderColor =
+        when {
+            active -> c.pink
+            onSampledBg -> Color.White.copy(alpha = 0.9f)
+            else -> c.purple
+        }
 
-    Box(
-        modifier
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(r.md))
-            .background(background)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(16.dp),
+    TileSurface(
+        modifier = modifier,
+        radius = r.md,
+        active = active,
+        visuals = visuals,
+        clickable = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        showScrim = onSampledBg,
     ) {
         KPIcon(
             name = KPIconName.Folder,
@@ -343,15 +362,14 @@ private fun ListTile(
             modifier = Modifier.align(Alignment.TopStart),
         )
         Box(Modifier.align(Alignment.TopEnd)) {
-            KofipodArtwork(
-                size = 44.dp,
-                seed = seed * 7 + 3,
-                label = null,
-                radius = 22.dp,
+            ListMosaic(
+                members = members,
+                size = 96.dp,
+                seed = seed,
             )
             if (hasNew) {
                 NewDot(
-                    ringColor = background,
+                    ringColor = if (active) c.purple else c.surface,
                     modifier = Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-2).dp),
                 )
             }
@@ -361,13 +379,13 @@ private fun ListTile(
                 list.name,
                 color = textColor,
                 fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
+                fontSize = 16.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                "$podcastCount PODCASTS",
+                "${members.size} PODCASTS",
                 color = subTextColor,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 11.sp,
@@ -378,46 +396,185 @@ private fun ListTile(
     }
 }
 
+/**
+ * Shared chrome for [ListTile] / [UnfiledTile]: square clipped surface that draws the
+ * tile-background brush (sampled palette gradient or seeded fallback), an optional
+ * bottom scrim for text legibility on busy gradients, and a 12dp content padding.
+ * Active tiles always paint solid `c.purple` to keep the "you are here" signal clear.
+ */
+@Composable
+private fun TileSurface(
+    modifier: Modifier,
+    radius: Dp,
+    active: Boolean,
+    visuals: app.kofipod.ui.palette.TileVisuals,
+    clickable: Modifier,
+    showScrim: Boolean,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Box(
+        modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(radius))
+            .then(if (active) Modifier.background(c.purple) else Modifier.background(visuals.brush))
+            .then(clickable)
+            .padding(12.dp),
+    ) {
+        if (showScrim) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            0.55f to Color.Transparent,
+                            1f to Color.Black.copy(alpha = 0.35f),
+                        ),
+                    ),
+            )
+        }
+        content()
+    }
+}
+
+/**
+ * Variable-shape mosaic of the first up to 4 podcast artworks for a list.
+ * 0 → keeps the existing decorative gradient (no real artwork);
+ * 1 → single full-bleed cell; 2 → side-by-side; 3 → 2-on-top + 1 wide; 4 → 2×2.
+ *
+ * Each cell falls back to per-podcast gradient art when [Podcast.artworkUrl] is blank,
+ * matching the `RecentRow` convention.
+ */
+@Composable
+private fun ListMosaic(
+    members: List<Podcast>,
+    size: Dp,
+    seed: Int,
+) {
+    val r = LocalKofipodRadii.current
+    val outerRadius = r.sm
+    val gap = 2.dp
+    val cellRadius = 4.dp
+
+    if (members.isEmpty()) {
+        KofipodArtwork(
+            size = size,
+            seed = seed * 7 + 3,
+            label = null,
+            radius = outerRadius,
+        )
+        return
+    }
+
+    val take = members.take(4)
+    Box(Modifier.size(size).clip(RoundedCornerShape(outerRadius))) {
+        when (take.size) {
+            1 -> MosaicCell(take[0], Modifier.fillMaxSize(), cellRadius)
+            2 ->
+                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                    MosaicCell(take[0], Modifier.weight(1f).fillMaxSize(), cellRadius)
+                    MosaicCell(take[1], Modifier.weight(1f).fillMaxSize(), cellRadius)
+                }
+            3 ->
+                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gap)) {
+                    MosaicRow(listOf(take[0], take[1]), Modifier.weight(1f).fillMaxWidth(), gap, cellRadius)
+                    MosaicCell(take[2], Modifier.weight(1f).fillMaxSize(), cellRadius)
+                }
+            else ->
+                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gap)) {
+                    MosaicRow(listOf(take[0], take[1]), Modifier.weight(1f).fillMaxWidth(), gap, cellRadius)
+                    MosaicRow(listOf(take[2], take[3]), Modifier.weight(1f).fillMaxWidth(), gap, cellRadius)
+                }
+        }
+    }
+}
+
+@Composable
+private fun MosaicRow(
+    cells: List<Podcast>,
+    modifier: Modifier,
+    gap: Dp,
+    cellRadius: Dp,
+) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(gap)) {
+        cells.forEach { MosaicCell(it, Modifier.weight(1f).fillMaxSize(), cellRadius) }
+    }
+}
+
+@Composable
+private fun MosaicCell(
+    podcast: Podcast,
+    modifier: Modifier,
+    radius: Dp,
+) {
+    KofipodArtwork(
+        seed = podcast.id.hashCode(),
+        modifier = modifier,
+        label = null,
+        radius = radius,
+        model = podcast.artworkUrl.ifBlank { null },
+        contentDescription = podcast.title,
+    )
+}
+
 @Composable
 private fun UnfiledTile(
     modifier: Modifier,
-    podcastCount: Int,
+    members: List<Podcast>,
     hasNew: Boolean,
     onClick: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
+    val seed = UNFILED_SEED
+    val visuals = rememberTileVisuals(members = members, fallbackSeed = seed)
 
-    Box(
-        modifier
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(r.md))
-            .background(c.surface)
-            .clickable { onClick() }
-            .padding(16.dp),
+    val onSampledBg = visuals.sampled
+    val textColor = if (onSampledBg) Color.White else c.text
+    val subTextColor = if (onSampledBg) Color.White.copy(alpha = 0.85f) else c.textMute
+    val folderColor = if (onSampledBg) Color.White.copy(alpha = 0.9f) else c.textSoft
+
+    TileSurface(
+        modifier = modifier,
+        radius = r.md,
+        active = false,
+        visuals = visuals,
+        clickable = Modifier.clickable { onClick() },
+        showScrim = onSampledBg,
     ) {
         KPIcon(
             name = KPIconName.Folder,
-            color = c.textSoft,
+            color = folderColor,
             size = 22.dp,
             modifier = Modifier.align(Alignment.TopStart),
         )
-        if (hasNew) {
-            NewDot(ringColor = c.surface, modifier = Modifier.align(Alignment.TopEnd))
+        Box(Modifier.align(Alignment.TopEnd)) {
+            ListMosaic(
+                members = members,
+                size = 96.dp,
+                seed = seed,
+            )
+            if (hasNew) {
+                NewDot(
+                    ringColor = c.surface,
+                    modifier = Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-2).dp),
+                )
+            }
         }
         Column(Modifier.align(Alignment.BottomStart)) {
             Text(
                 "Unfiled",
-                color = c.text,
+                color = textColor,
                 fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
+                fontSize = 16.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                "$podcastCount PODCASTS",
-                color = c.textMute,
+                "${members.size} PODCASTS",
+                color = subTextColor,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
@@ -426,6 +583,8 @@ private fun UnfiledTile(
         }
     }
 }
+
+private val UNFILED_SEED = "unfiled".hashCode()
 
 @Composable
 private fun NewListTile(
@@ -489,10 +648,10 @@ private fun NewDot(
 
 private fun Modifier.dashedBorder(
     color: Color,
-    cornerRadius: androidx.compose.ui.unit.Dp,
-    strokeWidth: androidx.compose.ui.unit.Dp = 1.5.dp,
-    dashLength: androidx.compose.ui.unit.Dp = 6.dp,
-    gapLength: androidx.compose.ui.unit.Dp = 5.dp,
+    cornerRadius: Dp,
+    strokeWidth: Dp = 1.5.dp,
+    dashLength: Dp = 6.dp,
+    gapLength: Dp = 5.dp,
 ): Modifier =
     this.drawBehind {
         val strokePx = strokeWidth.toPx()

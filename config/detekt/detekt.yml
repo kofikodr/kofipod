@@ -31,6 +31,8 @@ style:
         reason: 'Android-only. Scope to androidMain.'
       - value: 'androidx.credentials.**'
         reason: 'Android-only. Scope to androidMain.'
+      - value: 'androidx.palette.**'
+        reason: 'Android-only. Scope to androidMain (used by the Library tile palette extractor).'
       - value: 'androidx.core.content.FileProvider'
         reason: 'Android-only AAR. Scope to androidMain (used by the in-app updater).'
       - value: 'android.app.PendingIntent'

@@ -90,6 +90,7 @@ kotlin {
                 implementation(libs.androidx.media3.datasource)
                 implementation(libs.androidx.media3.database)
                 implementation(libs.androidx.work.runtime)
+                implementation(libs.androidx.palette)
                 implementation(libs.koin.android)
             }
         }
