@@ -67,7 +67,15 @@ class SettingsRepository(
 
     fun setSkipBack(sec: Int) = put(KEY_SKIP_BACK, sec.toString())
 
+    fun autoUpdateCheckEnabled(): Flow<Boolean> = metaFlow(KEY_AUTO_UPDATE_CHECK).map { it?.toBoolean() ?: true }
+
+    fun autoUpdateCheckEnabledNow(): Boolean = getMetaNow(KEY_AUTO_UPDATE_CHECK)?.toBoolean() ?: true
+
+    fun setAutoUpdateCheckEnabled(enabled: Boolean) = put(KEY_AUTO_UPDATE_CHECK, enabled.toString())
+
     fun getMetaNow(key: String): String? = db.syncMetaQueries.get(key).executeAsOneOrNull()
+
+    fun metaFlowPublic(key: String): Flow<String?> = metaFlow(key)
 
     companion object {
         const val DEFAULT_CAP_BYTES: Long = 2L * 1024 * 1024 * 1024 // 2 GB
@@ -80,5 +88,18 @@ class SettingsRepository(
         const val KEY_SKIP_FWD = "skip_forward_sec"
         const val KEY_SKIP_BACK = "skip_back_sec"
         const val KEY_SCHEDULER_RUNS = "scheduler_runs"
+        const val KEY_AUTO_UPDATE_CHECK = "auto_update_check_enabled"
+
+        // Update-checker keys. These ride existing Auto Backup so the user's "skipped
+        // v1.2.0" preference and last-checked timestamp persist across reinstalls. The
+        // device-local APK path lives in `LocalApkPathStore` instead — see that class
+        // for why it must NOT be backed up.
+        const val KEY_UPDATE_LATEST_VERSION = "update_latest_version"
+        const val KEY_UPDATE_RELEASE_URL = "update_release_url"
+        const val KEY_UPDATE_APK_URL = "update_apk_url"
+        const val KEY_UPDATE_APK_SIZE = "update_apk_size_bytes"
+        const val KEY_UPDATE_RELEASE_NOTES = "update_release_notes"
+        const val KEY_UPDATE_DISMISSED_VERSION = "update_dismissed_version"
+        const val KEY_UPDATE_LAST_CHECK_AT = "update_last_check_at_ms"
     }
 }

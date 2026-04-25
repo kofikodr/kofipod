@@ -12,18 +12,25 @@
   playback state, settings) and any SharedPreferences. Together this is
   well under 1 MB.
 
-  Not included: downloaded audio under files/downloads/ and the streaming
-  playback cache under cache/media/. Both live in domains we never
-  <include>, so Auto Backup skips them by default — no explicit exclude
-  needed (and lint rejects excludes outside included paths).
+  Not included: downloaded audio under files/downloads/, the streaming
+  playback cache under cache/media/, and the in-app updater's downloaded
+  APK under files/updates/. Those live in domains we never <include>, so
+  Auto Backup skips them by default.
+
+  Explicitly excluded: the `kofipod_local` SharedPreferences file holds
+  device-local pointers (currently the downloaded-APK path) that must
+  match what's actually on disk. Restoring those pointers onto a new
+  device would crash the installer when it tried to open a missing file.
 -->
 <data-extraction-rules>
     <cloud-backup>
         <include domain="database" path="." />
         <include domain="sharedpref" path="." />
+        <exclude domain="sharedpref" path="kofipod_local.xml" />
     </cloud-backup>
     <device-transfer>
         <include domain="database" path="." />
         <include domain="sharedpref" path="." />
+        <exclude domain="sharedpref" path="kofipod_local.xml" />
     </device-transfer>
 </data-extraction-rules>

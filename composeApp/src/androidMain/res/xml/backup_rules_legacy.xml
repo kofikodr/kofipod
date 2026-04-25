@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Legacy fullBackupContent rules for Android 6.0–11 (API 23–30).
-  Keep in sync with backup_rules.xml — same include set. Downloads and the
-  streaming cache live outside the included domains, so Auto Backup omits
-  them by default; no explicit exclude needed.
+  Keep in sync with backup_rules.xml — same include + exclude set.
+  Downloads, streaming cache, and the updater APK live outside the
+  included domains, so Auto Backup omits them by default. The
+  `kofipod_local` SharedPreferences file is explicitly excluded because
+  it holds device-local pointers (downloaded-APK path) that mustn't
+  survive a restore onto a fresh device.
 -->
 <full-backup-content>
     <include domain="database" path="." />
     <include domain="sharedpref" path="." />
+    <exclude domain="sharedpref" path="kofipod_local.xml" />
 </full-backup-content>

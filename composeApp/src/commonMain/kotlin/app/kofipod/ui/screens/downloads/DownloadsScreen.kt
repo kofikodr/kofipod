@@ -505,7 +505,8 @@ private fun CompletedRow(
                 Modifier
                     .size(32.dp)
                     .clip(CircleShape)
-                    .border(BorderStroke(1.dp, c.border), CircleShape),
+                    .border(BorderStroke(1.dp, c.border), CircleShape)
+                    .clickable(onClick = onDelete),
             contentAlignment = Alignment.Center,
         ) {
             KPIcon(

@@ -58,6 +58,22 @@ fun AppShell() {
             }
         }
     }
+    LaunchedEffect(nav) {
+        DeepLinks.openSettings.collect {
+            if (nav.currentDestination?.route != Route.Settings::class.qualifiedName) {
+                // Pop the current top (e.g. Player) before switching tab so the bottom
+                // nav state lines up with the user's mental model.
+                nav.popBackStack(Route.Player::class.qualifiedName!!, inclusive = true)
+                nav.navigate(
+                    Route.Settings,
+                    navOptions {
+                        launchSingleTop = true
+                        popUpTo(nav.graph.findStartDestination().id) { inclusive = false }
+                    },
+                )
+            }
+        }
+    }
     val onPlayerScreen = currentRoute == Route.Player::class.qualifiedName
     Scaffold(
         containerColor = LocalKofipodColors.current.bg,

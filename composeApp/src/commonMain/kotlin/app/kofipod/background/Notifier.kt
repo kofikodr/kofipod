@@ -6,4 +6,6 @@ expect class Notifier {
         totalEpisodes: Int,
         totalShows: Int,
     )
+
+    fun postUpdateAvailable(version: String)
 }

@@ -12,7 +12,13 @@ import app.kofipod.network.NetworkMonitor
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.playback.PlaybackCache
 import app.kofipod.share.Sharer
+import app.kofipod.ui.screens.settings.AndroidUpdateActionPort
+import app.kofipod.ui.screens.settings.UpdateActionPort
 import app.kofipod.ui.theme.ThemeSystem
+import app.kofipod.update.AndroidLocalApkPathStore
+import app.kofipod.update.LocalApkPathStore
+import app.kofipod.update.UpdateChecker
+import app.kofipod.update.UpdateInstaller
 import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
 
@@ -34,4 +40,8 @@ val androidPlatformModule =
         single { Notifier(androidContext()) }
         single { Sharer(androidContext()) }
         single { ThemeSystem(androidContext()) }
+        single<LocalApkPathStore> { AndroidLocalApkPathStore(androidContext()) }
+        single { UpdateChecker(api = get(), repo = get()) }
+        single { UpdateInstaller(context = androidContext(), httpClient = get(), repo = get()) }
+        single<UpdateActionPort> { AndroidUpdateActionPort(installer = get()) }
     }

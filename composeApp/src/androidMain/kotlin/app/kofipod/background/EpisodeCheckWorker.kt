@@ -8,10 +8,12 @@ import app.kofipod.data.repo.DownloadRepository
 import app.kofipod.data.repo.EpisodesRepository
 import app.kofipod.data.repo.LibraryRepository
 import app.kofipod.data.repo.SettingsRepository
+import app.kofipod.data.repo.UpdateRepository
 import app.kofipod.data.repo.autoDownloadEnabledBool
 import app.kofipod.data.repo.notifyNewEpisodesEnabledBool
 import app.kofipod.downloads.DownloadJob
 import app.kofipod.downloads.downloadFileName
+import app.kofipod.update.UpdateChecker
 import kotlinx.coroutines.flow.first
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -25,6 +27,8 @@ class EpisodeCheckWorker(
     private val settings: SettingsRepository by inject()
     private val downloads: DownloadRepository by inject()
     private val notifier: Notifier by inject()
+    private val updateChecker: UpdateChecker by inject()
+    private val updateRepo: UpdateRepository by inject()
 
     override suspend fun doWork(): Result =
         runCatching {
@@ -64,6 +68,24 @@ class EpisodeCheckWorker(
                 SchedulerRun(at = now, inserted = totalNew, shows = showsWithNew),
             )
             if (notifyNew > 0) notifier.postNewEpisodes(notifyNew, notifyShows)
+
+            // Piggyback an app-update check on the same daily run. Gated by the user's
+            // Settings → Downloads → "Check for app updates" toggle so opt-out users
+            // pay no network cost. Notify only on the *transition* from "didn't know
+            // about this version" to "knows about it" — i.e. don't re-notify each day
+            // for the same available release.
+            if (settings.autoUpdateCheckEnabledNow()) {
+                runCatching {
+                    val previouslyKnown = updateRepo.readUpdateInfoSnapshot()?.version
+                    val info = updateChecker.check(force = false)
+                    if (info != null &&
+                        info.version != previouslyKnown &&
+                        updateRepo.dismissedVersionNow() != info.version
+                    ) {
+                        notifier.postUpdateAvailable(info.version)
+                    }
+                }
+            }
             Result.success()
         }.getOrElse { Result.retry() }
 }

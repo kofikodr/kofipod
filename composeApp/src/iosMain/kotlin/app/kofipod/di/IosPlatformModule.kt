@@ -3,6 +3,11 @@ package app.kofipod.di
 
 import app.kofipod.network.IosNetworkMonitor
 import app.kofipod.network.NetworkMonitor
+import app.kofipod.ui.screens.settings.IosUpdateActionPort
+import app.kofipod.ui.screens.settings.UpdateActionPort
+import app.kofipod.update.IosLocalApkPathStore
+import app.kofipod.update.LocalApkPathStore
+import app.kofipod.update.UpdateChecker
 import org.koin.dsl.module
 
 /**
@@ -13,4 +18,7 @@ import org.koin.dsl.module
 val iosPlatformModule =
     module {
         single<NetworkMonitor> { IosNetworkMonitor() }
+        single<UpdateActionPort> { IosUpdateActionPort() }
+        single<LocalApkPathStore> { IosLocalApkPathStore() }
+        single { UpdateChecker() }
     }

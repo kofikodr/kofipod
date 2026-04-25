@@ -7,6 +7,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import app.kofipod.background.Notifier
 import app.kofipod.ui.nav.DeepLinks
 import app.kofipod.ui.theme.ThemeSystem
 
@@ -44,6 +45,9 @@ class MainActivity : ComponentActivity() {
     private fun handleDeepLink(intent: Intent?) {
         if (intent?.getBooleanExtra(EXTRA_OPEN_PLAYER, false) == true) {
             DeepLinks.requestOpenPlayer()
+        }
+        if (intent?.getBooleanExtra(Notifier.EXTRA_OPEN_SETTINGS_FOR_UPDATE, false) == true) {
+            DeepLinks.requestOpenSettings()
         }
     }
 }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -45,6 +46,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kofipod.config.AppInfo
+import app.kofipod.data.repo.UpdateUiState
+import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.primitives.SectionLabel
 import app.kofipod.ui.primitives.SettingRow
@@ -81,6 +84,16 @@ fun SettingsScreen(
             fontWeight = FontWeight.ExtraBold,
             fontSize = 32.sp,
         )
+        SectionLabel("App update", topSpacing = 22.dp)
+        UpdateCard(
+            update = state.update,
+            action = state.updateAction,
+            onCheck = viewModel::checkForUpdates,
+            onDownload = viewModel::downloadUpdate,
+            onInstall = viewModel::installUpdate,
+            onDismiss = viewModel::dismissUpdate,
+        )
+
         SectionLabel("Backup", topSpacing = 22.dp)
         SettingRow(
             icon = KPIconName.Folder,
@@ -96,7 +109,7 @@ fun SettingsScreen(
             onSelect = viewModel::setTheme,
         )
 
-        SectionLabel("Auto-downloader", topSpacing = 22.dp)
+        SectionLabel("Downloads", topSpacing = 22.dp)
         SettingRow(
             icon = KPIconName.Radar,
             title = "Daily check for new episodes",
@@ -122,14 +135,26 @@ fun SettingsScreen(
                 )
             },
         )
+        Spacer(Modifier.height(8.dp))
+        SettingRow(
+            icon = KPIconName.Download,
+            title = "Check for app updates",
+            subtitle = "Looks for newer Kofipod releases on GitHub during the daily check",
+            trailing = {
+                PinkSwitch(
+                    checked = state.autoUpdateCheck,
+                    onCheckedChange = viewModel::setAutoUpdateCheck,
+                    testTag = "autoUpdateCheckSwitch",
+                )
+            },
+        )
 
-        Spacer(Modifier.height(12.dp))
+        SectionLabel("Storage", topSpacing = 22.dp)
         MaxDownloadSizeCard(
             bytes = state.storageCapBytes,
             onChange = { viewModel.setCap(it) },
         )
-
-        SectionLabel("Playback cache", topSpacing = 22.dp)
+        Spacer(Modifier.height(12.dp))
         PlaybackCacheCard(
             capBytes = state.streamCacheCapBytes,
             usedBytes = state.streamCacheUsedBytes,
@@ -499,6 +524,257 @@ private fun PinkSwitch(
                 uncheckedBorderColor = c.border,
             ),
     )
+}
+
+// --------------------------------------------------------------------------
+// Update card
+// --------------------------------------------------------------------------
+
+@Composable
+private fun UpdateCard(
+    update: UpdateUiState,
+    action: UpdateAction,
+    onCheck: () -> Unit,
+    onDownload: () -> Unit,
+    onInstall: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(c.surface)
+            .border(1.dp, c.border, RoundedCornerShape(14.dp))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        when (update) {
+            is UpdateUiState.UpToDate -> UpToDateRow(update, action, onCheck)
+            is UpdateUiState.Available -> AvailableRow(update, action, onDownload, onDismiss)
+            is UpdateUiState.ReadyToInstall -> ReadyToInstallRow(update, onInstall, onDismiss)
+        }
+        if (action is UpdateAction.Error) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                action.message,
+                color = c.pink,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun UpToDateRow(
+    state: UpdateUiState.UpToDate,
+    action: UpdateAction,
+    onCheck: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        KPIcon(name = KPIconName.Check, color = c.purple, size = 22.dp)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                "You're up to date",
+                color = c.text,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+            )
+            Text(
+                lastCheckedSubtitle(state.lastCheckedAtMs),
+                color = c.textMute,
+                fontSize = 11.5.sp,
+            )
+        }
+        UpdatePillButton(
+            label = if (action is UpdateAction.Checking) "Checking…" else "Check now",
+            enabled = action !is UpdateAction.Checking,
+            onClick = onCheck,
+        )
+    }
+}
+
+@Composable
+private fun AvailableRow(
+    state: UpdateUiState.Available,
+    action: UpdateAction,
+    onDownload: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        KPIcon(name = KPIconName.Download, color = c.pink, size = 22.dp)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                "Update v${state.info.version}",
+                color = c.text,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+            )
+            val sizeLabel = if (state.info.apkSizeBytes > 0) " · ${formatMb(state.info.apkSizeBytes)}" else ""
+            Text(
+                "Newer version available$sizeLabel",
+                color = c.textMute,
+                fontSize = 11.5.sp,
+            )
+        }
+        UpdatePillButton(
+            label = downloadButtonLabel(action),
+            enabled = action !is UpdateAction.Downloading,
+            onClick = onDownload,
+        )
+    }
+    if (action is UpdateAction.Downloading && action.totalBytes > 0) {
+        Spacer(Modifier.height(8.dp))
+        DownloadProgress(
+            downloaded = action.downloadedBytes,
+            total = action.totalBytes,
+        )
+    }
+    Spacer(Modifier.height(6.dp))
+    Text(
+        "Skip this version",
+        color = c.textMute,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier =
+            Modifier
+                .clickable { onDismiss() }
+                .padding(vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun ReadyToInstallRow(
+    state: UpdateUiState.ReadyToInstall,
+    onInstall: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        KPIcon(name = KPIconName.Download, color = c.purple, size = 22.dp)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                "Ready to install v${state.info.version}",
+                color = c.text,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+            )
+            Text(
+                "Tap install to launch the system installer. You may need to grant " +
+                    "permission to install from this app the first time.",
+                color = c.textMute,
+                fontSize = 11.5.sp,
+            )
+        }
+        UpdatePillButton(label = "Install", enabled = true, onClick = onInstall)
+    }
+    Spacer(Modifier.height(6.dp))
+    Text(
+        "Skip this version",
+        color = c.textMute,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier =
+            Modifier
+                .clickable { onDismiss() }
+                .padding(vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun UpdatePillButton(
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    val r = LocalKofipodRadii.current
+    Box(
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(r.pill))
+                .background(if (enabled) c.purple else c.purpleTint)
+                .clickable(enabled = enabled) { onClick() }
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Text(
+            label,
+            color = if (enabled) Color.White else c.textMute,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp,
+        )
+    }
+}
+
+@Composable
+private fun DownloadProgress(
+    downloaded: Long,
+    total: Long,
+) {
+    val c = LocalKofipodColors.current
+    val fraction = if (total > 0) (downloaded.toFloat() / total.toFloat()).coerceIn(0f, 1f) else 0f
+    Column {
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(c.purpleTint),
+        ) {
+            if (fraction > 0f) {
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth(fraction)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(
+                                Brush.horizontalGradient(listOf(c.purple, c.pink)),
+                            ),
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "${formatMb(downloaded)} / ${formatMb(total)}",
+            color = c.textMute,
+            fontSize = 10.5.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+    }
+}
+
+private fun downloadButtonLabel(action: UpdateAction): String =
+    when (action) {
+        is UpdateAction.Downloading -> {
+            val pct = if (action.totalBytes > 0) (action.downloadedBytes * 100 / action.totalBytes).toInt() else 0
+            "$pct%"
+        }
+        else -> "Download"
+    }
+
+private fun lastCheckedSubtitle(lastCheckedAtMs: Long?): String {
+    if (lastCheckedAtMs == null) return "Tap to check for new releases"
+    val ageMs = kotlinx.datetime.Clock.System.now().toEpochMilliseconds() - lastCheckedAtMs
+    val minutes = ageMs / 60_000L
+    return when {
+        minutes < 1L -> "Checked just now"
+        minutes < 60L -> "Checked $minutes min ago"
+        minutes < 60L * 24L -> "Checked ${minutes / 60L} hr ago"
+        else -> "Checked ${minutes / (60L * 24L)} day(s) ago"
+    }
+}
+
+private fun formatMb(bytes: Long): String {
+    if (bytes <= 0L) return "0 MB"
+    val mb = bytes / (1024L * 1024L)
+    return "$mb MB"
 }
 
 // --------------------------------------------------------------------------

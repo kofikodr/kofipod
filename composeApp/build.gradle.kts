@@ -177,6 +177,16 @@ android {
             signingConfig = signingConfigs.findByName("release")
         }
     }
+    applicationVariants.all {
+        val variant = this
+        if (variant.buildType.name == "release") {
+            variant.outputs.all {
+                val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+                output.outputFileName =
+                    "kofipod-${variant.versionName}-${variant.versionCode}-${variant.buildType.name}.apk"
+            }
+        }
+    }
 }
 
 sqldelight {
