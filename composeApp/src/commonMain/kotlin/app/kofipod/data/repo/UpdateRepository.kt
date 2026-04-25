@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.data.repo
 
+import app.kofipod.config.AppInfo
 import app.kofipod.update.LocalApkPathStore
 import app.kofipod.update.UpdateInfo
+import app.kofipod.update.compareSemver
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 
@@ -49,8 +51,16 @@ class UpdateRepository(
             val info = readUpdateInfoSnapshot()
             val cleanApkPath = apkPath?.takeIf { it.isNotEmpty() }
             val cleanDismissed = dismissed?.takeIf { it.isNotEmpty() }
+            // If the user has installed an APK out-of-band (or via our installer) and the
+            // running version already matches/exceeds the cached "available" version, the
+            // banner must flip back to "up to date" without waiting for the next periodic
+            // check. Clear the stale row so it doesn't reappear after a process restart.
+            val installedCoversAvailable = info != null && compareSemver(AppInfo.versionName, info.version) >= 0
+            if (installedCoversAvailable) {
+                clearAvailable()
+            }
             when {
-                info == null -> UpdateUiState.UpToDate(lastMs)
+                info == null || installedCoversAvailable -> UpdateUiState.UpToDate(lastMs)
                 cleanDismissed == latest -> UpdateUiState.UpToDate(lastMs)
                 cleanApkPath != null -> UpdateUiState.ReadyToInstall(info, cleanApkPath, lastMs)
                 else -> UpdateUiState.Available(info, lastMs)
