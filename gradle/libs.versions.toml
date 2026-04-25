@@ -1,6 +1,6 @@
 [versions]
 kotlin = "2.0.21"
-agp = "8.7.3"
+agp = "8.13.2"
 composeMultiplatform = "1.7.3"
 androidxActivity = "1.9.3"
 androidxLifecycle = "2.8.7"
