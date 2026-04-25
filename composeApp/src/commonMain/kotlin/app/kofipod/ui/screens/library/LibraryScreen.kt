@@ -353,7 +353,6 @@ private fun ListTile(
         active = active,
         visuals = visuals,
         clickable = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        showScrim = onSampledBg,
     ) {
         KPIcon(
             name = KPIconName.Folder,
@@ -409,7 +408,6 @@ private fun TileSurface(
     active: Boolean,
     visuals: app.kofipod.ui.palette.TileVisuals,
     clickable: Modifier,
-    showScrim: Boolean,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val c = LocalKofipodColors.current
@@ -421,19 +419,6 @@ private fun TileSurface(
             .then(clickable)
             .padding(12.dp),
     ) {
-        if (showScrim) {
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .background(
-                        Brush.verticalGradient(
-                            0f to Color.Transparent,
-                            0.55f to Color.Transparent,
-                            1f to Color.Black.copy(alpha = 0.35f),
-                        ),
-                    ),
-            )
-        }
         content()
     }
 }
@@ -541,7 +526,6 @@ private fun UnfiledTile(
         active = false,
         visuals = visuals,
         clickable = Modifier.clickable { onClick() },
-        showScrim = onSampledBg,
     ) {
         KPIcon(
             name = KPIconName.Folder,
