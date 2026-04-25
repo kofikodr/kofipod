@@ -84,7 +84,7 @@ green "Building v${VERSION_NAME} (${VERSION_CODE})"
 
 # 5. copy + checksum
 mkdir -p dist
-APK_SRC="composeApp/build/outputs/apk/release/composeApp-release.apk"
+APK_SRC="composeApp/build/outputs/apk/release/kofipod-${VERSION_NAME}-${VERSION_CODE}-release.apk"
 AAB_SRC="composeApp/build/outputs/bundle/release/composeApp-release.aab"
 APK_DST="dist/kofipod-${VERSION_NAME}-${VERSION_CODE}-release.apk"
 AAB_DST="dist/kofipod-${VERSION_NAME}-${VERSION_CODE}-release.aab"
