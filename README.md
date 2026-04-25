@@ -12,6 +12,22 @@ If you're just here to download the app, it's in the [releases section](https://
   <img src="docs/screenshots/03-podcast-detail.png" alt="Podcast" width="240" />
 </p>
 
+## Android Auto
+
+Kofipod supports Android Auto — your library, folders, and recent episodes show up in the car's media picker, and playback controls work from the head unit.
+
+If you installed Kofipod from the [releases page](https://github.com/kofikodr/kofipod/releases) (i.e. sideloaded), Android Auto will hide it by default. Production head units only show media apps installed from the Play Store unless you opt in to unknown sources. (The Desktop Head Unit emulator skips this check, which is why testing there always works.)
+
+To enable it:
+
+1. Open Android Auto settings on your phone. On newer phones (e.g. recent Pixel / Android 14+) Android Auto is no longer a standalone app — open **Settings** and search for **Android Auto**, or go to **Settings → Connected devices → Android Auto**. On older phones, open the **Android Auto** app from the launcher.
+2. Scroll to the bottom and tap the **Version** line about 10 times until a "Allow development settings" toast appears.
+3. Tap the ⋮ overflow menu → **Developer settings**.
+4. Enable **Unknown sources**.
+5. Force-stop Android Auto and reconnect to the car. Kofipod should now appear in the media app picker.
+
+After an Android Auto update the developer toggle occasionally resets — re-enable if Kofipod disappears later.
+
 ## Development Setup
 
 1. Register a Podcast Index account at https://api.podcastindex.org/ and obtain an API key and secret.
