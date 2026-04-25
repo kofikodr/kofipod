@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -102,12 +103,21 @@ class KofipodPlaybackService : MediaLibraryService() {
                 .setCache(playbackCache.cache)
                 .setUpstreamDataSourceFactory(upstreamFactory)
                 .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        val audioAttributes =
+            AudioAttributes.Builder()
+                .setUsage(C.USAGE_MEDIA)
+                .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
+                .build()
         val player =
             ExoPlayer.Builder(this, renderersFactory)
                 .setLoadControl(AdaptiveLoadControl(networkMonitor))
                 .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
                 .setSeekForwardIncrementMs(skipForwardMs)
                 .setSeekBackIncrementMs(skipBackMs)
+                // handleAudioFocus = true: ExoPlayer requests focus on play (pausing other media
+                // apps), ducks for transient losses (notifications/GPS), and pauses on full loss.
+                .setAudioAttributes(audioAttributes, true)
+                .setHandleAudioBecomingNoisy(true)
                 .build()
         player.addListener(
             object : Player.Listener {
