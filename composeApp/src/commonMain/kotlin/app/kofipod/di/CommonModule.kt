@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.di
 
+import app.kofipod.ai.GeminiClient
 import app.kofipod.data.api.GithubReleasesApi
 import app.kofipod.data.api.PodcastIndexApi
 import app.kofipod.data.db.DatabaseFactory
@@ -67,6 +68,7 @@ val commonDataModule =
         single { StatsRepository(get(), get()) }
         single { UpdateRepository(settings = get(), localApk = get()) }
         single { GithubReleasesApi(get()) }
+        single { GeminiClient(get()) }
         single { PaletteCache(port = get()) }
         single { app.kofipod.data.repo.PlaybackRepository(get()) }
         single<CoroutineScope>(qualifier = org.koin.core.qualifier.named("appScope")) {
