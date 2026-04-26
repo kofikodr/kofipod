@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.ui.screens.search
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,10 +34,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,6 +73,8 @@ import app.kofipod.ui.theme.LocalKofipodRadii
 import com.mr3y.podcastindex.model.Category
 import org.koin.compose.viewmodel.koinViewModel
 
+private enum class EmptyQueryContent { Loading, ForYou, ColdStart }
+
 @Composable
 fun SearchScreen(
     onOpenPodcast: (String) -> Unit,
@@ -69,73 +83,109 @@ fun SearchScreen(
     val state by viewModel.state.collectAsState()
     val c = LocalKofipodColors.current
 
-    Column(Modifier.fillMaxSize().background(c.bg).padding(horizontal = 20.dp)) {
-        Spacer(Modifier.height(24.dp))
-        Text(
-            "Search",
-            color = c.text,
-            fontWeight = FontWeight.ExtraBold,
-            fontSize = 32.sp,
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            "Powered by the Podcast Index",
-            color = c.textMute,
-            fontSize = 13.sp,
-        )
-        Spacer(Modifier.height(16.dp))
-        SearchBar(
-            value = state.query,
-            onValueChange = viewModel::setQuery,
-            onClear = { viewModel.setQuery("") },
-        )
-        Spacer(Modifier.height(14.dp))
-        TabRow(current = state.tab, onSelect = viewModel::setTab)
-        Spacer(Modifier.height(16.dp))
+    // Surface "out of reshuffles" as a transient toast string, consumed by the rendering below.
+    var toastText by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            toastText =
+                when (event) {
+                    SearchEvent.OutOfReshuffles -> "All shuffled out for today — come back tomorrow."
+                }
+        }
+    }
 
-        when {
-            state.loading ->
-                Box(Modifier.fillMaxSize(), Alignment.Center) {
-                    CircularProgressIndicator(color = c.pink)
-                }
-            state.error != null ->
-                Box(Modifier.fillMaxSize(), Alignment.Center) {
-                    Text(state.error!!, color = c.danger)
-                }
-            state.results.isEmpty() && state.query.isNotBlank() ->
-                Box(
-                    Modifier.fillMaxSize(),
-                    Alignment.Center,
-                ) {
-                    Text("No results", color = c.textMute)
-                }
-            state.results.isEmpty() ->
-                SearchEmptyState(
-                    categories = state.popularCategories,
-                    onPickTopic = viewModel::setQuery,
-                )
-            else -> {
-                ResultsCaption(count = state.results.size)
-                Spacer(Modifier.height(12.dp))
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp),
-                ) {
-                    itemsIndexed(state.results, key = { _, p -> p.id }) { index, p ->
-                        ResultCard(
-                            p = p,
-                            isTopMatch = index == 0,
-                            onClick = { onOpenPodcast(p.id) },
-                        )
+    Box(Modifier.fillMaxSize().background(c.bg)) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+            Spacer(Modifier.height(24.dp))
+            Text(
+                "Search",
+                color = c.text,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 32.sp,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "Powered by the Podcast Index",
+                color = c.textMute,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(16.dp))
+            SearchBar(
+                value = state.query,
+                onValueChange = viewModel::setQuery,
+                onClear = { viewModel.setQuery("") },
+            )
+            Spacer(Modifier.height(14.dp))
+            TabRow(current = state.tab, onSelect = viewModel::setTab)
+            Spacer(Modifier.height(16.dp))
+
+            when {
+                state.loading ->
+                    Box(Modifier.fillMaxSize(), Alignment.Center) {
+                        CircularProgressIndicator(color = c.pink)
                     }
-                    if (state.hasMore) {
-                        item(key = "load-more") {
-                            LoadMoreRow(loading = state.loadingMore, onClick = viewModel::loadMore)
+                state.error != null ->
+                    Box(Modifier.fillMaxSize(), Alignment.Center) {
+                        Text(state.error!!, color = c.danger)
+                    }
+                state.results.isEmpty() && state.query.isNotBlank() ->
+                    Box(
+                        Modifier.fillMaxSize(),
+                        Alignment.Center,
+                    ) {
+                        Text("No results", color = c.textMute)
+                    }
+                state.results.isEmpty() -> {
+                    val target =
+                        when {
+                            state.recommendations.isEmpty() && state.recsLoading -> EmptyQueryContent.Loading
+                            state.recommendations.isNotEmpty() -> EmptyQueryContent.ForYou
+                            else -> EmptyQueryContent.ColdStart
+                        }
+                    Crossfade(targetState = target, label = "empty-query-content") { which ->
+                        when (which) {
+                            EmptyQueryContent.Loading ->
+                                RecommendationsLoading(quip = state.recsLoadingQuip)
+                            EmptyQueryContent.ForYou ->
+                                ForYouSection(
+                                    items = state.recommendations,
+                                    inlineLoading = state.recsLoading,
+                                    inlineQuip = state.recsLoadingQuip,
+                                    onReshuffle = viewModel::reshuffle,
+                                    onOpenPodcast = onOpenPodcast,
+                                )
+                            EmptyQueryContent.ColdStart ->
+                                SearchEmptyState(
+                                    categories = state.popularCategories,
+                                    onPickTopic = viewModel::setQuery,
+                                )
+                        }
+                    }
+                }
+                else -> {
+                    ResultsCaption(count = state.results.size)
+                    Spacer(Modifier.height(12.dp))
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp),
+                    ) {
+                        itemsIndexed(state.results, key = { _, p -> p.id }) { index, p ->
+                            ResultCard(
+                                p = p,
+                                isTopMatch = index == 0,
+                                onClick = { onOpenPodcast(p.id) },
+                            )
+                        }
+                        if (state.hasMore) {
+                            item(key = "load-more") {
+                                LoadMoreRow(loading = state.loadingMore, onClick = viewModel::loadMore)
+                            }
                         }
                     }
                 }
             }
         }
+        SearchToast(text = toastText, onDone = { toastText = null })
     }
 }
 
@@ -356,6 +406,101 @@ private fun CategoryTag(label: String) {
             fontWeight = FontWeight.Medium,
             fontSize = 11.sp,
         )
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ForYouSection(
+    items: List<PodcastSummary>,
+    inlineLoading: Boolean,
+    inlineQuip: String,
+    onReshuffle: () -> Unit,
+    onOpenPodcast: (String) -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    PullToRefreshBox(
+        isRefreshing = inlineLoading,
+        onRefresh = onReshuffle,
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(bottom = 24.dp),
+        ) {
+            item(key = "for-you-header") {
+                Column {
+                    SectionLabel(title = "For you", topSpacing = 0.dp)
+                    Text(
+                        if (inlineLoading) inlineQuip else "Based on what you've been listening to · pull to reshuffle",
+                        color = c.textMute,
+                        fontSize = 12.sp,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
+            itemsIndexed(items, key = { _, p -> p.id }) { _, p ->
+                ResultCard(
+                    p = p,
+                    isTopMatch = false,
+                    onClick = { onOpenPodcast(p.id) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecommendationsLoading(quip: String) {
+    val c = LocalKofipodColors.current
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        CircularProgressIndicator(color = c.pink)
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = quip.ifBlank { "Brewing a fresh batch…" },
+            color = c.textMute,
+            fontSize = 13.sp,
+        )
+    }
+}
+
+@Composable
+private fun SearchToast(
+    text: String?,
+    onDone: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    // Drive the auto-dismiss from the outer composable so the exit transition gets to play
+    // before the bubble's children leave composition.
+    LaunchedEffect(text) {
+        if (text != null) {
+            kotlinx.coroutines.delay(2200)
+            onDone()
+        }
+    }
+    // Latch the last non-null text so the exit transition keeps showing it while fading out.
+    var lastText by remember { mutableStateOf("") }
+    if (text != null) lastText = text
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+        AnimatedVisibility(
+            visible = text != null,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
+        ) {
+            Box(
+                Modifier
+                    .padding(bottom = 96.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(c.purple)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
+                Text(text = lastText, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+        }
     }
 }
 

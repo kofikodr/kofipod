@@ -4,6 +4,7 @@ package app.kofipod.data.api
 import app.kofipod.config.BuildKonfig
 import com.mr3y.podcastindex.PodcastIndexClient
 import com.mr3y.podcastindex.ktor3.PodcastIndexClient
+import com.mr3y.podcastindex.model.Category
 import com.mr3y.podcastindex.model.EpisodeFeed
 import com.mr3y.podcastindex.model.PodcastFeed
 
@@ -31,8 +32,10 @@ class PodcastIndexApi(private val client: PodcastIndexClient) {
         client.search.forEpisodesByPerson(name = person, limit = limit)
             .items
 
-    suspend fun trending(limit: Int = DEFAULT_LIMIT): List<com.mr3y.podcastindex.model.TrendingFeed> =
-        client.misc.getTrending(limit = limit).feeds
+    suspend fun trending(
+        limit: Int = DEFAULT_LIMIT,
+        includeCategories: List<Category> = emptyList(),
+    ): List<com.mr3y.podcastindex.model.TrendingFeed> = client.misc.getTrending(limit = limit, includeCategories = includeCategories).feeds
 
     suspend fun podcastByFeedId(feedId: Long): PodcastFeed = client.podcasts.byFeedId(id = feedId).feed
 

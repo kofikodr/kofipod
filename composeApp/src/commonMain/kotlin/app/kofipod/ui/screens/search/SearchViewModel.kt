@@ -4,19 +4,31 @@ package app.kofipod.ui.screens.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.kofipod.data.api.PodcastIndexApi
+import app.kofipod.data.recommend.RecommendationsRepository
+import app.kofipod.data.recommend.RecommendationsSource
+import app.kofipod.data.recommend.ReshuffleResult
 import app.kofipod.data.repo.CategoriesSource
 import app.kofipod.data.repo.SearchSource
 import app.kofipod.domain.PodcastSummary
 import com.mr3y.podcastindex.model.Category
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 enum class SearchTab { All, Title, Person }
+
+sealed interface SearchEvent {
+    data object OutOfReshuffles : SearchEvent
+}
 
 data class SearchUiState(
     val query: String = "",
@@ -27,17 +39,80 @@ data class SearchUiState(
     val hasMore: Boolean = false,
     val error: String? = null,
     val popularCategories: List<Category> = emptyList(),
+    val recommendations: List<PodcastSummary> = emptyList(),
+    val recsLoading: Boolean = false,
+    /** Stable while [recsLoading] is true so the UI doesn't flicker between quips. */
+    val recsLoadingQuip: String = "",
+    val recsReshufflesRemaining: Int = RecommendationsRepository.MAX_DAILY_RESHUFFLES,
 )
 
 class SearchViewModel(
     private val repo: SearchSource,
     categories: CategoriesSource,
+    private val recommendations: RecommendationsSource,
+    private val appScope: CoroutineScope,
 ) : ViewModel() {
     private val _state = MutableStateFlow(SearchUiState(popularCategories = categories.popular()))
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
 
+    private val _events = MutableSharedFlow<SearchEvent>(extraBufferCapacity = 1)
+    val events: SharedFlow<SearchEvent> = _events.asSharedFlow()
+
     private var searchJob: Job? = null
     private var currentLimit: Int = PodcastIndexApi.PAGE_SIZE
+
+    init {
+        viewModelScope.launch {
+            recommendations.observe().collect { recState ->
+                _state.value =
+                    _state.value.copy(
+                        recommendations = recState.items.orEmpty(),
+                        recsReshufflesRemaining = recState.reshufflesRemaining,
+                    )
+            }
+        }
+        // Daily refresh — show loading only when we have nothing to show, so an existing cache
+        // doesn't get covered up while we re-check.
+        val initialHasNoCache = _state.value.recommendations.isEmpty()
+        if (initialHasNoCache) startLoadingQuip()
+        appScope.launch {
+            try {
+                recommendations.refreshIfStale()
+            } finally {
+                _state.value = _state.value.copy(recsLoading = false)
+            }
+        }
+    }
+
+    fun reshuffle() {
+        if (_state.value.recsLoading) return
+        startLoadingQuip()
+        appScope.launch {
+            try {
+                // Cap check inside the launch (not as an early-return) so PullToRefreshBox
+                // observes a real false→true→false cycle on recsLoading. Skipping the cycle
+                // leaves its indicator anchored at the release position with nothing to drive
+                // the retraction animation.
+                if (_state.value.recsReshufflesRemaining <= 0) {
+                    delay(LOADING_MIN_VISIBLE_MS)
+                    _events.tryEmit(SearchEvent.OutOfReshuffles)
+                    return@launch
+                }
+                when (recommendations.reshuffle()) {
+                    // Race fallback: another caller hit the cap between our check and this call.
+                    ReshuffleResult.OutOfQuota -> _events.tryEmit(SearchEvent.OutOfReshuffles)
+                    ReshuffleResult.Done, ReshuffleResult.NoData -> Unit
+                }
+            } finally {
+                _state.value = _state.value.copy(recsLoading = false)
+            }
+        }
+    }
+
+    private fun startLoadingQuip() {
+        val quip = LOADING_QUIPS.random(Random(Random.nextLong()))
+        _state.value = _state.value.copy(recsLoading = true, recsLoadingQuip = quip)
+    }
 
     fun setQuery(q: String) {
         _state.value = _state.value.copy(query = q)
@@ -103,5 +178,24 @@ class SearchViewModel(
 
     companion object {
         const val DEBOUNCE_MS: Long = 350
+
+        // Long enough for PullToRefreshBox to observe recsLoading=true and play its retract
+        // animation cleanly when we short-circuit (e.g. daily cap hit, no API call needed).
+        private const val LOADING_MIN_VISIBLE_MS: Long = 450
+
+        // Coffee-themed loading quips. Picked at random so each refresh feels a little different.
+        internal val LOADING_QUIPS: List<String> =
+            listOf(
+                "Brewing a fresh batch…",
+                "Grinding the algorithm beans…",
+                "Tamping the perfect pull…",
+                "Pulling a fresh shot of recs…",
+                "Frothing up new shows…",
+                "Decaffeinating the noise…",
+                "Steeping podcast magic…",
+                "Asking the barista for picks…",
+                "Sniffing out tasty new feeds…",
+                "Skimming the crema for gems…",
+            )
     }
 }

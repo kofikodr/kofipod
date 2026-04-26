@@ -6,6 +6,10 @@ import app.kofipod.data.api.PodcastIndexApi
 import app.kofipod.data.db.DatabaseFactory
 import app.kofipod.data.db.buildDatabase
 import app.kofipod.data.net.buildHttpClient
+import app.kofipod.data.recommend.PodcastIndexRecommendationApi
+import app.kofipod.data.recommend.RecommendationApi
+import app.kofipod.data.recommend.RecommendationsRepository
+import app.kofipod.data.recommend.RecommendationsSource
 import app.kofipod.data.repo.CategoriesRepository
 import app.kofipod.data.repo.CategoriesSource
 import app.kofipod.data.repo.DiscoveryRepository
@@ -51,6 +55,9 @@ val commonDataModule =
         single<DiscoverySource> { get<DiscoveryRepository>() }
         single { CategoriesRepository() }
         single<CategoriesSource> { get<CategoriesRepository>() }
+        single<RecommendationApi> { PodcastIndexRecommendationApi(get()) }
+        single { RecommendationsRepository(db = get(), api = get()) }
+        single<RecommendationsSource> { get<RecommendationsRepository>() }
         single { EpisodesRepository(get(), get()) }
         single<EpisodeSource> { get<EpisodesRepository>() }
         single { SettingsRepository(get()) }
@@ -72,7 +79,14 @@ val commonDataModule =
             )
         }
 
-        viewModel { SearchViewModel(get(), get()) }
+        viewModel {
+            SearchViewModel(
+                repo = get(),
+                categories = get(),
+                recommendations = get<RecommendationsSource>(),
+                appScope = get(org.koin.core.qualifier.named("appScope")),
+            )
+        }
         viewModel { LibraryViewModel(get(), get(), get()) }
         viewModel { StarterPackViewModel(get()) }
         viewModel { (listId: String?) -> LibraryDetailViewModel(listId, get(), get(), get(), get()) }

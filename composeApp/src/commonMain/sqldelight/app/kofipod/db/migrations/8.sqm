@@ -1,0 +1,4 @@
+-- Track manual reshuffles within the same day so the UI can cap them and so each manual
+-- reshuffle uses a different sample seed. Reset to 0 when a fresh daily refresh writes a
+-- new row (the upsert overwrites the column).
+ALTER TABLE RecommendationCache ADD COLUMN reshufflesUsed INTEGER NOT NULL DEFAULT 0;

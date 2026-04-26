@@ -1,0 +1,16 @@
+-- Adds PodcastCategory (lazy per-podcast category cache) and RecommendationCache (single-row
+-- daily snapshot of the "For You" recommendations on the Search screen). Both are additive;
+-- no existing data is touched.
+CREATE TABLE PodcastCategory (
+    podcastId TEXT NOT NULL,
+    categoryId INTEGER NOT NULL,
+    PRIMARY KEY (podcastId, categoryId),
+    FOREIGN KEY (podcastId) REFERENCES Podcast(id) ON DELETE CASCADE
+);
+CREATE INDEX PodcastCategory_byCategory ON PodcastCategory(categoryId);
+
+CREATE TABLE RecommendationCache (
+    id INTEGER NOT NULL PRIMARY KEY DEFAULT 0,
+    computedEpochDay INTEGER NOT NULL,
+    payloadJson TEXT NOT NULL
+);

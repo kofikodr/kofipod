@@ -46,6 +46,7 @@ enum class KPIconName {
     Pencil,
     Chart,
     CoffeeCup,
+    Refresh,
 }
 
 @Composable
@@ -393,6 +394,19 @@ private fun buildKPIconPath(
                 cubicTo(10f * scale, 5f * scale, 12f * scale, 4f * scale, 11f * scale, 3f * scale)
                 moveTo(14f * scale, 6f * scale)
                 cubicTo(13f * scale, 5f * scale, 15f * scale, 4f * scale, 14f * scale, 3f * scale)
+            }
+        KPIconName.Refresh ->
+            Path().apply {
+                // Open circular arc with arrowhead at the top — classic "reload" glyph.
+                addArc(
+                    Rect(4f * scale, 4f * scale, 20f * scale, 20f * scale),
+                    startAngleDegrees = 60f,
+                    sweepAngleDegrees = 270f,
+                )
+                // Arrowhead at the open end (~ angle 330° from center).
+                moveTo(20f * scale, 4f * scale)
+                lineTo(20f * scale, 9f * scale)
+                lineTo(15f * scale, 9f * scale)
             }
     }
 }

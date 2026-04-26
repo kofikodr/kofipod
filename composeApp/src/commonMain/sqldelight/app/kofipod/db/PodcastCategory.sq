@@ -1,0 +1,27 @@
+-- Many-to-many between library Podcast rows and Podcast Index `Category` enum ids.
+-- Filled lazily by RecommendationsRepository the first time it sees a library podcast
+-- with no rows here. Categories don't change for a feed in practice, so we keep them
+-- until the parent podcast is removed (cascade).
+CREATE TABLE PodcastCategory (
+    podcastId TEXT NOT NULL,
+    categoryId INTEGER NOT NULL,
+    PRIMARY KEY (podcastId, categoryId),
+    FOREIGN KEY (podcastId) REFERENCES Podcast(id) ON DELETE CASCADE
+);
+
+CREATE INDEX PodcastCategory_byCategory ON PodcastCategory(categoryId);
+
+selectByPodcast:
+SELECT categoryId FROM PodcastCategory WHERE podcastId = ?;
+
+selectAll:
+SELECT podcastId, categoryId FROM PodcastCategory;
+
+insert:
+INSERT OR IGNORE INTO PodcastCategory(podcastId, categoryId) VALUES (?, ?);
+
+deleteByPodcast:
+DELETE FROM PodcastCategory WHERE podcastId = ?;
+
+countDistinctPodcasts:
+SELECT COUNT(DISTINCT podcastId) FROM PodcastCategory;
