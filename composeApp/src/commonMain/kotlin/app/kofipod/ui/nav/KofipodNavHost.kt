@@ -22,6 +22,7 @@ import app.kofipod.ui.screens.player.PlayerScreen
 import app.kofipod.ui.screens.scheduler.SchedulerInfoScreen
 import app.kofipod.ui.screens.search.SearchScreen
 import app.kofipod.ui.screens.settings.SettingsScreen
+import app.kofipod.ui.screens.settings.ai.AiSetupScreen
 import app.kofipod.ui.screens.stats.StatsScreen
 
 @Composable
@@ -67,10 +68,16 @@ fun KofipodNavHost(navController: NavHostController) {
             )
         }
         composable<Route.Settings> {
-            SettingsScreen(onOpenScheduler = { navController.navigate(Route.SchedulerInfo) })
+            SettingsScreen(
+                onOpenScheduler = { navController.navigate(Route.SchedulerInfo) },
+                onOpenAiSetup = { navController.navigate(Route.AiSetup) },
+            )
         }
         composable<Route.SchedulerInfo> {
             SchedulerInfoScreen(onBack = { navController.popBackStack() })
+        }
+        composable<Route.AiSetup> {
+            AiSetupScreen(onBack = { navController.popBackStack() })
         }
         composable<Route.PodcastDetail> { entry ->
             val detail = entry.toRoute<Route.PodcastDetail>()

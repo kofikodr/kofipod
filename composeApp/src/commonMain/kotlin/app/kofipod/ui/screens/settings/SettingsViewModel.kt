@@ -3,6 +3,8 @@ package app.kofipod.ui.screens.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.kofipod.ai.AiConfigRepository
+import app.kofipod.ai.GeminiModel
 import app.kofipod.background.Scheduler
 import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.data.repo.UpdateRepository
@@ -47,6 +49,8 @@ data class SettingsUiState(
     val skipBack: Int = 10,
     val update: UpdateUiState = UpdateUiState.UpToDate(null),
     val updateAction: UpdateAction = UpdateAction.Idle,
+    val aiConnected: Boolean = false,
+    val aiModel: GeminiModel = GeminiModel.Flash,
 )
 
 class SettingsViewModel(
@@ -58,6 +62,7 @@ class SettingsViewModel(
     private val updateRepo: UpdateRepository,
     // Wrapped in an interface so commonMain VM stays Android-free.
     private val updateActions: UpdateActionPort,
+    private val aiConfig: AiConfigRepository,
 ) : ViewModel() {
     // Refreshes the displayed cache usage once per second while Settings is visible.
     private val cacheUsedFlow =
@@ -95,10 +100,21 @@ class SettingsViewModel(
                     autoUpdateCheck = values[8] as Boolean,
                 )
             },
-            updateRepo.state(),
-            updateActionFlow,
-        ) { base, updateState, action ->
-            base.copy(update = updateState, updateAction = action)
+            combine(
+                updateRepo.state(),
+                updateActionFlow,
+                aiConfig.isKeyConfigured(),
+                aiConfig.model(),
+            ) { updateState, action, aiConnected, aiModel ->
+                AiAndUpdateState(updateState, action, aiConnected, aiModel)
+            },
+        ) { base, combined ->
+            base.copy(
+                update = combined.updateState,
+                updateAction = combined.action,
+                aiConnected = combined.aiConnected,
+                aiModel = combined.aiModel,
+            )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
     fun setTheme(mode: KofipodThemeMode) =
@@ -158,3 +174,10 @@ class SettingsViewModel(
 
     fun dismissUpdate() = viewModelScope.launch { updateRepo.dismissCurrentVersion() }
 }
+
+private data class AiAndUpdateState(
+    val updateState: UpdateUiState,
+    val action: UpdateAction,
+    val aiConnected: Boolean,
+    val aiModel: GeminiModel,
+)

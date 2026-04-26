@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.di
 
+import app.kofipod.ai.AiConfigRepository
 import app.kofipod.ai.GeminiClient
 import app.kofipod.data.api.GithubReleasesApi
 import app.kofipod.data.api.PodcastIndexApi
@@ -38,6 +39,7 @@ import app.kofipod.ui.screens.scheduler.SchedulerInfoViewModel
 import app.kofipod.ui.screens.search.SearchViewModel
 import app.kofipod.ui.screens.settings.SettingsViewModel
 import app.kofipod.ui.screens.settings.UpdateActionPort
+import app.kofipod.ui.screens.settings.ai.AiSetupViewModel
 import app.kofipod.ui.screens.stats.StatsViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -69,6 +71,13 @@ val commonDataModule =
         single { UpdateRepository(settings = get(), localApk = get()) }
         single { GithubReleasesApi(get()) }
         single { GeminiClient(get()) }
+        single {
+            AiConfigRepository(
+                keyVault = get(),
+                settings = get(),
+                appScope = get(org.koin.core.qualifier.named("appScope")),
+            )
+        }
         single { PaletteCache(port = get()) }
         single { app.kofipod.data.repo.PlaybackRepository(get()) }
         single<CoroutineScope>(qualifier = org.koin.core.qualifier.named("appScope")) {
@@ -104,8 +113,10 @@ val commonDataModule =
                 updateChecker = get(),
                 updateRepo = get(),
                 updateActions = get<UpdateActionPort>(),
+                aiConfig = get(),
             )
         }
+        viewModel { AiSetupViewModel(config = get(), client = get()) }
         viewModel { DownloadsViewModel(get()) }
         viewModel { SchedulerInfoViewModel(get()) }
         viewModel { (podcastId: String) ->

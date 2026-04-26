@@ -65,6 +65,7 @@ private const val MAX_STREAM_CACHE_BYTES: Long = 2L * 1024 * 1024 * 1024
 @Composable
 fun SettingsScreen(
     onOpenScheduler: () -> Unit,
+    onOpenAiSetup: () -> Unit,
     viewModel: SettingsViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -146,6 +147,22 @@ fun SettingsScreen(
                     onCheckedChange = viewModel::setAutoUpdateCheck,
                     testTag = "autoUpdateCheckSwitch",
                 )
+            },
+        )
+
+        SectionLabel("AI features (optional)", topSpacing = 22.dp)
+        SettingRow(
+            icon = KPIconName.Pencil,
+            title = if (state.aiConnected) "Gemini connected" else "Connect Gemini API key",
+            subtitle =
+                if (state.aiConnected) {
+                    "Model: ${state.aiModel.displayName} · Tap to manage"
+                } else {
+                    "Optional. Enables on-device episode summaries with your own free Gemini key."
+                },
+            onClick = onOpenAiSetup,
+            trailing = {
+                KPIcon(name = KPIconName.ChevronRight, color = c.textMute, size = 18.dp)
             },
         )
 
