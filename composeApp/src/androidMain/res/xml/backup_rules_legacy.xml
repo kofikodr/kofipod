@@ -3,13 +3,18 @@
   Legacy fullBackupContent rules for Android 6.0–11 (API 23–30).
   Keep in sync with backup_rules.xml — same include + exclude set.
   Downloads, streaming cache, and the updater APK live outside the
-  included domains, so Auto Backup omits them by default. The
-  `kofipod_local` SharedPreferences file is explicitly excluded because
-  it holds device-local pointers (downloaded-APK path) that mustn't
-  survive a restore onto a fresh device.
+  included domains, so Auto Backup omits them by default.
+
+  Explicitly excluded:
+    * `kofipod_local` — device-local pointers (downloaded-APK path) that
+      mustn't survive a restore onto a fresh device.
+    * `kofipod_secure` — encrypted store for the user's BYOK Gemini API
+      key. The key is per-device; restoring it onto another phone would
+      expose the user's quota to a device they no longer control.
 -->
 <full-backup-content>
     <include domain="database" path="." />
     <include domain="sharedpref" path="." />
     <exclude domain="sharedpref" path="kofipod_local.xml" />
+    <exclude domain="sharedpref" path="kofipod_secure.xml" />
 </full-backup-content>
