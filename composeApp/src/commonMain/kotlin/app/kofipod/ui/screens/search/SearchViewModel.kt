@@ -8,6 +8,7 @@ import app.kofipod.data.repo.CategoriesSource
 import app.kofipod.data.repo.SearchSource
 import app.kofipod.domain.PodcastSummary
 import com.mr3y.podcastindex.model.Category
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -89,6 +90,7 @@ class SearchViewModel(
                             hasMore = results.size >= limit,
                         )
                 }.onFailure { e ->
+                    if (e is CancellationException) throw e
                     _state.value =
                         _state.value.copy(
                             loading = false,
