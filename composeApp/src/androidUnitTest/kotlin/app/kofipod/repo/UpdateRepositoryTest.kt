@@ -97,7 +97,7 @@ class UpdateRepositoryTest {
             repo.storeAvailable(SAMPLE_INFO)
             repo.markApkDownloaded("/path/to/kofipod-1.2.0.apk")
 
-            repo.storeAvailable(SAMPLE_INFO.copy(version = "1.3.0"))
+            repo.storeAvailable(SAMPLE_INFO.copy(version = NEWER_VERSION))
 
             assertNull(
                 repo.downloadedApkPathNow(),
@@ -105,7 +105,7 @@ class UpdateRepositoryTest {
             )
             val state = repo.state().first()
             assertTrue(state is UpdateUiState.Available, "state should fall back to Available, got $state")
-            assertEquals("1.3.0", state.info.version)
+            assertEquals(NEWER_VERSION, state.info.version)
         }
 
     @Test
@@ -117,14 +117,14 @@ class UpdateRepositoryTest {
             repo.dismissCurrentVersion()
             assertTrue(repo.state().first() is UpdateUiState.UpToDate)
 
-            repo.storeAvailable(SAMPLE_INFO.copy(version = "1.3.0"))
+            repo.storeAvailable(SAMPLE_INFO.copy(version = NEWER_VERSION))
 
             val state = repo.state().first()
             assertTrue(
                 state is UpdateUiState.Available,
                 "a new release after a dismiss must surface again, got $state",
             )
-            assertEquals("1.3.0", state.info.version)
+            assertEquals(NEWER_VERSION, state.info.version)
         }
 
     @Test
@@ -176,11 +176,19 @@ class UpdateRepositoryTest {
         }
 
     private companion object {
+        // Version must stay ahead of `AppInfo.versionName` (i.e. `BuildConfig.VERSION_NAME` in
+        // unit tests) so `UpdateRepository.state()`'s installed-covers-available short-circuit
+        // doesn't fire and silently clear the row under test. Picking a far-future version is
+        // a deliberate sentinel — using realistic numbers like 1.2.0 silently rots the fixture
+        // every time the app ships a release.
+        const val NEXT_VERSION = "99.0.0"
+        const val NEWER_VERSION = "99.0.1"
+
         val SAMPLE_INFO =
             UpdateInfo(
-                version = "1.2.0",
-                releaseUrl = "https://github.com/kofikodr/kofipod/releases/tag/v1.2.0",
-                apkUrl = "https://github.com/kofikodr/kofipod/releases/download/v1.2.0/kofipod-1.2.0.apk",
+                version = NEXT_VERSION,
+                releaseUrl = "https://github.com/kofikodr/kofipod/releases/tag/v$NEXT_VERSION",
+                apkUrl = "https://github.com/kofikodr/kofipod/releases/download/v$NEXT_VERSION/kofipod-$NEXT_VERSION.apk",
                 apkSizeBytes = 7_500_000L,
                 releaseNotes = "Fix typo, ship it",
             )
