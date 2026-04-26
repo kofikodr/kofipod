@@ -28,6 +28,16 @@ SELECT * FROM PlaybackState;
 selectMostRecentIncomplete:
 SELECT * FROM PlaybackState WHERE completedAt IS NULL AND sourceUrl != '' ORDER BY updatedAt DESC LIMIT 1;
 
+selectCompletedAllTime:
+SELECT COUNT(*) AS c FROM PlaybackState WHERE completedAt IS NOT NULL;
+
+-- :sinceMs is wall-clock epoch milliseconds (PlaybackState.completedAt is stored that way).
+-- Stats elsewhere bucket by local epoch day; this query is the one place where the
+-- "since N days" window is a true 30*24h sliding window rather than a calendar-day window.
+-- The two definitions can disagree by up to a day around the boundary.
+selectCompletedSince:
+SELECT COUNT(*) AS c FROM PlaybackState WHERE completedAt IS NOT NULL AND completedAt >= :sinceMs;
+
 selectInProgressWithMeta:
 SELECT
     ps.episodeId   AS episodeId,

@@ -94,6 +94,8 @@ Testing scope per user lock-in: Compose UI tests (`commonTest`) + Paparazzi JVM 
 
 When adding emulator-verified features, the expected workflow is: assemble debug → install → interact via `adb` (use `adb shell uiautomator dump /sdcard/view.xml && adb pull /sdcard/view.xml /tmp/` to get real element bounds; don't guess coordinates from screenshots).
 
+**All tests must pass before declaring work done.** Run `./gradlew :composeApp:testDebugUnitTest` (and `:verifyPaparazziDebug` if visuals changed) as part of the green-check sequence alongside compile + ktlintFormat + detekt. Do not ignore failing tests — even ones that look unrelated to the current change. If a test is failing, fix it (or the code it covers); only skip with explicit user sign-off.
+
 ## Koin ViewModel factories
 
 Any change that adds a dependency to a `ViewModel` constructor must also update the corresponding `viewModel { ... }` factory in `CommonModule.kt`. `PodcastDetailViewModel` has grown to 9 positional params — if you add another, bump the factory in lockstep.

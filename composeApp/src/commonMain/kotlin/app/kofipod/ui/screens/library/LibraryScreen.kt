@@ -72,6 +72,7 @@ fun LibraryScreen(
     onOpenList: (String?) -> Unit,
     onOpenSearch: () -> Unit,
     onOpenStarterPack: () -> Unit,
+    onOpenStats: () -> Unit,
     viewModel: LibraryViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -116,6 +117,8 @@ fun LibraryScreen(
             LibraryHeader(
                 showAddButton = lists.isNotEmpty(),
                 onNewList = { newListOpen = true },
+                onOpenStats = onOpenStats,
+                statsHasBadge = state.statsHasUnseenTierChange,
             )
         }
 
@@ -241,6 +244,8 @@ private sealed interface Tile {
 private fun LibraryHeader(
     showAddButton: Boolean,
     onNewList: () -> Unit,
+    onOpenStats: () -> Unit,
+    statsHasBadge: Boolean,
 ) {
     val c = LocalKofipodColors.current
     Row(
@@ -254,7 +259,30 @@ private fun LibraryHeader(
             fontSize = 32.sp,
             modifier = Modifier.weight(1f),
         )
+        Box(contentAlignment = Alignment.TopEnd) {
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(c.bgSubtle)
+                    .clickable(onClick = onOpenStats),
+                contentAlignment = Alignment.Center,
+            ) {
+                KPIcon(
+                    name = KPIconName.Chart,
+                    color = c.purple,
+                    size = 20.dp,
+                )
+            }
+            if (statsHasBadge) {
+                NewDot(
+                    ringColor = c.bg,
+                    modifier = Modifier.offset(x = 2.dp, y = (-2).dp),
+                )
+            }
+        }
         if (showAddButton) {
+            Spacer(Modifier.width(10.dp))
             Box(
                 Modifier
                     .size(44.dp)

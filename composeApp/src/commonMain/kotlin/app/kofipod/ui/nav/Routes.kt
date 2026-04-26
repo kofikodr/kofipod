@@ -21,4 +21,6 @@ sealed interface Route {
     @Serializable data class LibraryDetail(val listId: String? = null) : Route
 
     @Serializable data object Player : Route
+
+    @Serializable data object Stats : Route
 }

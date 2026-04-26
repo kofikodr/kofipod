@@ -1,0 +1,13 @@
+-- Adds ListeningSession: per-day, per-podcast accumulator of seconds listened. Drives
+-- the Stats screen (totals, daily chart, top podcasts, streak) and the level computation
+-- (30-day rolling avg minutes/day). One row per (epochDay, podcastId); the addSeconds
+-- query upserts and increments.
+CREATE TABLE ListeningSession (
+    epochDay INTEGER NOT NULL,
+    podcastId TEXT NOT NULL,
+    podcastTitle TEXT NOT NULL DEFAULT '',
+    secondsListened INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (epochDay, podcastId)
+);
+CREATE INDEX ListeningSession_byPodcast ON ListeningSession(podcastId);
+CREATE INDEX ListeningSession_byDay ON ListeningSession(epochDay);

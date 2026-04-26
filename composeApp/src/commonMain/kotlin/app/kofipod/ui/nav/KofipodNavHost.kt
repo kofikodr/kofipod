@@ -21,6 +21,7 @@ import app.kofipod.ui.screens.player.PlayerScreen
 import app.kofipod.ui.screens.scheduler.SchedulerInfoScreen
 import app.kofipod.ui.screens.search.SearchScreen
 import app.kofipod.ui.screens.settings.SettingsScreen
+import app.kofipod.ui.screens.stats.StatsScreen
 
 @Composable
 fun KofipodNavHost(navController: NavHostController) {
@@ -34,6 +35,13 @@ fun KofipodNavHost(navController: NavHostController) {
                 onOpenList = { listId -> navController.navigate(Route.LibraryDetail(listId)) },
                 onOpenSearch = { navController.navigate(Route.Search) },
                 onOpenStarterPack = { navController.navigate(Route.StarterPack) },
+                onOpenStats = { navController.navigate(Route.Stats) },
+            )
+        }
+        composable<Route.Stats> {
+            StatsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenPodcast = { id -> navController.navigate(Route.PodcastDetail(id)) },
             )
         }
         composable<Route.StarterPack> {

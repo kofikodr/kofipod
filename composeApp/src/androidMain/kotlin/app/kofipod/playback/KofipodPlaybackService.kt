@@ -34,6 +34,7 @@ import app.kofipod.data.repo.PlaybackRepository
 import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.network.NetworkMonitor
 import app.kofipod.playback.auto.AutoMediaTree
+import app.kofipod.util.todayEpochDay
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -65,6 +66,13 @@ class KofipodPlaybackService : MediaLibraryService() {
     // True while prepare() is seeking to the restored position. Guards against listener
     // callbacks overwriting the saved position with the pre-seek value (0).
     private var isRestoring = false
+
+    // Listening-session tracker state. Holds the last sample's episodeId and positionMs;
+    // each persist call computes the forward delta and credits it to today's bucket for
+    // that podcast. A new episode (or large jump from a seek) resets the anchor without
+    // recording — only contiguous forward playback counts.
+    private var lastSampleEpisodeId: String? = null
+    private var lastSamplePositionMs: Long = 0L
 
     private val library by inject<LibraryRepository>()
     private val episodes by inject<EpisodesRepository>()
@@ -138,7 +146,19 @@ class KofipodPlaybackService : MediaLibraryService() {
                     newPosition: Player.PositionInfo,
                     reason: Int,
                 ) {
-                    if (reason == Player.DISCONTINUITY_REASON_SEEK) persistPosition(player)
+                    if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                        // A seek invalidates the delta anchor — otherwise a forward seek
+                        // would credit the skipped span as "listened time."
+                        lastSampleEpisodeId = null
+                        persistPosition(player)
+                    }
+                }
+
+                override fun onMediaItemTransition(
+                    mediaItem: MediaItem?,
+                    reason: Int,
+                ) {
+                    lastSampleEpisodeId = null
                 }
             },
         )
@@ -283,19 +303,64 @@ class KofipodPlaybackService : MediaLibraryService() {
         if (sourceUrl.isEmpty()) return
         val meta = item.mediaMetadata
         val extras = meta.extras
+        val positionMs = player.currentPosition.coerceAtLeast(0)
+        val podcastId = extras?.getString(EXTRA_PODCAST_ID).orEmpty()
+        val podcastTitle = meta.artist?.toString().orEmpty()
         playback.save(
             episodeId = episodeId,
-            positionMs = player.currentPosition.coerceAtLeast(0),
+            positionMs = positionMs,
             durationMs = player.duration.coerceAtLeast(0),
             speed = player.playbackParameters.speed,
             updatedAt = Clock.System.now().toEpochMilliseconds(),
             episodeTitle = meta.title?.toString().orEmpty(),
-            podcastId = extras?.getString(EXTRA_PODCAST_ID).orEmpty(),
-            podcastTitle = meta.artist?.toString().orEmpty(),
+            podcastId = podcastId,
+            podcastTitle = podcastTitle,
             artworkUrl = meta.artworkUri?.toString().orEmpty(),
             sourceUrl = sourceUrl,
             episodeNumber = extras?.getInt(EXTRA_EPISODE_NUMBER, -1)?.takeIf { it > 0 },
         )
+        recordListeningDelta(episodeId, positionMs, player.isPlaying, podcastId, podcastTitle)
+    }
+
+    /**
+     * Credits today's bucket with elapsed playback since the last sample of the same
+     * episode. The delta is capped at twice the persist interval to absorb wall-clock
+     * scheduling jitter without inflating totals on long stalls; values outside [1, cap]
+     * just reset the anchor.
+     *
+     * The anchor (lastSample…) is only mutated on the service's main thread, so reads
+     * and writes here are race-free with the persist ticker. The actual DB write is
+     * dispatched to IO so the per-tick read-modify-write doesn't cost frames.
+     */
+    private fun recordListeningDelta(
+        episodeId: String,
+        positionMs: Long,
+        isPlaying: Boolean,
+        podcastId: String,
+        podcastTitle: String,
+    ) {
+        val prevId = lastSampleEpisodeId
+        val prevPos = lastSamplePositionMs
+        // Update anchor unconditionally so the next sample has a baseline. Snapshotting
+        // the anchor before this update is what lets the seek path "skip this delta and
+        // re-anchor on the next sample": persistPosition's seek listener nulls the
+        // episodeId, so the next call here sees prevId=null and bails after re-anchoring.
+        lastSampleEpisodeId = episodeId
+        lastSamplePositionMs = positionMs
+        if (!isPlaying || prevId != episodeId || podcastId.isBlank()) return
+        val deltaMs = positionMs - prevPos
+        if (deltaMs <= 0L || deltaMs > LISTENING_DELTA_CAP_MS) return
+        val seconds = deltaMs / 1000L
+        if (seconds <= 0L) return
+        val day = todayEpochDay()
+        scope.launch(Dispatchers.IO) {
+            playback.recordListening(
+                epochDay = day,
+                podcastId = podcastId,
+                podcastTitle = podcastTitle,
+                seconds = seconds,
+            )
+        }
     }
 
     /** Returns true if a session was restored (media item set + prepare()d). */
@@ -346,5 +411,10 @@ class KofipodPlaybackService : MediaLibraryService() {
 
     private companion object {
         const val PERSIST_INTERVAL_MS = 5_000L
+
+        // Cap a single delta sample at 2× the persist interval. Real samples sit at
+        // ~5s; values larger than this are usually paused-but-position-jumped or the
+        // first sample after a transition we missed.
+        const val LISTENING_DELTA_CAP_MS = 2L * PERSIST_INTERVAL_MS
     }
 }

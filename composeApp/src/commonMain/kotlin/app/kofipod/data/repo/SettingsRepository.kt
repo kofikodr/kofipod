@@ -101,5 +101,17 @@ class SettingsRepository(
         const val KEY_UPDATE_RELEASE_NOTES = "update_release_notes"
         const val KEY_UPDATE_DISMISSED_VERSION = "update_dismissed_version"
         const val KEY_UPDATE_LAST_CHECK_AT = "update_last_check_at_ms"
+
+        // Stats / level tier state. Backed by SyncMeta so they ride Auto Backup.
+        // KEY_STATS_TIER_EMITTED — last tier the level computation actually emitted.
+        // Drives hysteresis (don't drop until the rolling avg falls past the dropMinPerDay
+        // of this tier). Stored as Tier.rank (1..7); 0 = none yet.
+        const val KEY_STATS_TIER_EMITTED = "stats_tier_emitted_rank"
+
+        // KEY_STATS_TIER_SEEN — last tier the user saw on the Stats screen. Compared
+        // against KEY_STATS_TIER_EMITTED to drive the badge dot on the Library header.
+        // Absence of this key means "the user has never opened the Stats screen since a
+        // tier was emitted" — i.e. show the dot on first emission.
+        const val KEY_STATS_TIER_SEEN = "stats_tier_seen_rank"
     }
 }

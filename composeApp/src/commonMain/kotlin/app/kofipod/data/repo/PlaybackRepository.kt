@@ -71,6 +71,34 @@ class PlaybackRepository(private val db: KofipodDatabase) {
                 )
             }
 
+    /**
+     * Increment the day's listening total for [podcastId] by [seconds]. The session
+     * tracker upstream is responsible for sanitizing — only positive values for an
+     * actively-playing source should land here.
+     */
+    fun recordListening(
+        epochDay: Int,
+        podcastId: String,
+        podcastTitle: String,
+        seconds: Long,
+    ) {
+        if (seconds <= 0L || podcastId.isBlank()) return
+        val existing =
+            db.listeningSessionQueries
+                .selectSecondsForKey(epochDay.toLong(), podcastId)
+                .executeAsOneOrNull()
+        val newSeconds = (existing?.secondsListened ?: 0L) + seconds
+        // Preserve the previously-stored title if the caller passed an empty one (rare,
+        // but the service code may emit before metadata is fully populated).
+        val title = if (podcastTitle.isNotBlank()) podcastTitle else existing?.podcastTitle.orEmpty()
+        db.listeningSessionQueries.setRow(
+            epochDay = epochDay.toLong(),
+            podcastId = podcastId,
+            podcastTitle = title,
+            secondsListened = newSeconds,
+        )
+    }
+
     fun markCompleted(
         episodeId: String,
         nowMillis: Long,

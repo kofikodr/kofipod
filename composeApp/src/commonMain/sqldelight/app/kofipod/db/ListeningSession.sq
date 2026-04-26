@@ -1,0 +1,50 @@
+CREATE TABLE ListeningSession (
+    epochDay INTEGER NOT NULL,
+    podcastId TEXT NOT NULL,
+    podcastTitle TEXT NOT NULL DEFAULT '',
+    secondsListened INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (epochDay, podcastId)
+);
+
+CREATE INDEX ListeningSession_byPodcast ON ListeningSession(podcastId);
+CREATE INDEX ListeningSession_byDay ON ListeningSession(epochDay);
+
+selectSecondsForKey:
+SELECT secondsListened, podcastTitle FROM ListeningSession
+WHERE epochDay = :epochDay AND podcastId = :podcastId;
+
+setRow:
+INSERT OR REPLACE INTO ListeningSession(epochDay, podcastId, podcastTitle, secondsListened)
+VALUES (?, ?, ?, ?);
+
+selectDailyTotalsBetween:
+SELECT epochDay, SUM(secondsListened) AS seconds
+FROM ListeningSession
+WHERE epochDay >= :fromDay AND epochDay <= :toDay
+GROUP BY epochDay
+ORDER BY epochDay ASC;
+
+selectTopPodcasts:
+SELECT podcastId, podcastTitle, SUM(secondsListened) AS seconds
+FROM ListeningSession
+GROUP BY podcastId
+ORDER BY seconds DESC
+LIMIT :maxRows;
+
+selectTotalAllTime:
+SELECT COALESCE(SUM(secondsListened), 0) AS seconds FROM ListeningSession;
+
+selectTotalSince:
+SELECT COALESCE(SUM(secondsListened), 0) AS seconds
+FROM ListeningSession
+WHERE epochDay >= :fromDay;
+
+selectActiveDaysSince:
+SELECT epochDay, SUM(secondsListened) AS seconds
+FROM ListeningSession
+WHERE epochDay >= :fromDay
+GROUP BY epochDay
+ORDER BY epochDay ASC;
+
+selectFirstDay:
+SELECT MIN(epochDay) AS firstDay FROM ListeningSession;

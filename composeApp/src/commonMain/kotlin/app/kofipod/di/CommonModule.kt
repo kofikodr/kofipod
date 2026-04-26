@@ -18,6 +18,7 @@ import app.kofipod.data.repo.RecentlyViewedRepository
 import app.kofipod.data.repo.SearchRepository
 import app.kofipod.data.repo.SearchSource
 import app.kofipod.data.repo.SettingsRepository
+import app.kofipod.data.repo.StatsRepository
 import app.kofipod.data.repo.UpdateRepository
 import app.kofipod.ui.palette.PaletteCache
 import app.kofipod.ui.screens.detail.PodcastDetailViewModel
@@ -30,6 +31,7 @@ import app.kofipod.ui.screens.scheduler.SchedulerInfoViewModel
 import app.kofipod.ui.screens.search.SearchViewModel
 import app.kofipod.ui.screens.settings.SettingsViewModel
 import app.kofipod.ui.screens.settings.UpdateActionPort
+import app.kofipod.ui.screens.stats.StatsViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -52,6 +54,7 @@ val commonDataModule =
         single { EpisodesRepository(get(), get()) }
         single<EpisodeSource> { get<EpisodesRepository>() }
         single { SettingsRepository(get()) }
+        single { StatsRepository(get(), get()) }
         single { UpdateRepository(settings = get(), localApk = get()) }
         single { GithubReleasesApi(get()) }
         single { PaletteCache(port = get()) }
@@ -70,7 +73,7 @@ val commonDataModule =
         }
 
         viewModel { SearchViewModel(get(), get()) }
-        viewModel { LibraryViewModel(get(), get()) }
+        viewModel { LibraryViewModel(get(), get(), get()) }
         viewModel { StarterPackViewModel(get()) }
         viewModel { (listId: String?) -> LibraryDetailViewModel(listId, get(), get(), get(), get()) }
         viewModel {
@@ -90,4 +93,5 @@ val commonDataModule =
             PodcastDetailViewModel(podcastId, get(), get(), get(), get(), get(), get(), get(), get())
         }
         viewModel { PlayerViewModel(get(), get(), get(), get(), get(), get()) }
+        viewModel { StatsViewModel(get()) }
     }
