@@ -139,15 +139,15 @@ private fun DisclosureCard() {
     ) {
         Text(
             "Kofipod doesn't run AI itself. You bring your own free Gemini API key from " +
-                "Google AI Studio, and Kofipod uses it on your device to summarise episodes.",
+                "Google AI Studio, and Kofipod uses it on your device for AI features.",
             color = c.text,
             fontSize = 12.5.sp,
             lineHeight = 18.sp,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "When you tap Generate on an episode, the audio is uploaded to Google and the " +
-                "summary comes back to your device. Your key stays only on this phone — it is " +
+            "When these features are used, only the audio is uploaded to Google." +
+                "Your key stays only on this phone, it is " +
                 "never synced or sent anywhere else.",
             color = c.text,
             fontSize = 12.5.sp,
