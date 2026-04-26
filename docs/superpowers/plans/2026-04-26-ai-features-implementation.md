@@ -208,8 +208,8 @@
 
 **Files:**
 - Create: `composeApp/src/commonMain/sqldelight/app/kofipod/db/EpisodeAiSummary.sq`
-- Create: `composeApp/src/commonMain/sqldelight/app/kofipod/db/migrations/7.sqm`
-- Modify: `CLAUDE.md` — bump the "current schema version is 5" line to 7 (it's already stale at 6 from the Stats slice).
+- Create: `composeApp/src/commonMain/sqldelight/app/kofipod/db/migrations/9.sqm`
+- Modify: `CLAUDE.md` — bump the "current schema version" line to 9 (it's at 8 after the For You cherry-pick; Slice 2 nudges to 9).
 
 - [ ] **Step 1: `EpisodeAiSummary.sq`** — schema per the spec:
 
@@ -242,9 +242,9 @@
 
   The entity-JSON columns ship empty (`'[]'`) in Slice 2 and get populated in Slice 3.
 
-- [ ] **Step 2: `7.sqm`** — exactly the `CREATE TABLE` block above (no other changes).
+- [ ] **Step 2: `9.sqm`** — exactly the `CREATE TABLE` block above (no other changes).
 
-- [ ] **Step 3: CLAUDE.md** — find the "current schema version is **5**" line and update to "current schema version is **7**". Two-line edit.
+- [ ] **Step 3: CLAUDE.md** — bump "current schema version is **8**" to "current schema version is **9**". One-line edit.
 
 - [ ] **Step 4: green-check.** SQLDelight code-gen happens during `compileDebugKotlinAndroid`. Commit `feat(ai): add EpisodeAiSummary table (schema v7)`.
 
