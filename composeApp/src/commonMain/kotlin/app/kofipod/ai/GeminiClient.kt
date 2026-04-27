@@ -3,14 +3,28 @@ package app.kofipod.ai
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.request.delete
+import io.ktor.client.request.get
+import io.ktor.client.request.headers
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.OutgoingContent
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.ByteWriteChannel
+import io.ktor.utils.io.copyAndClose
+import kotlinx.coroutines.delay
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Tiny seam over the "validate this API key" call so [AiSetupViewModel] can be
@@ -38,6 +52,24 @@ fun interface TextSummariser {
         content: String,
     ): Result<String>
 }
+
+/**
+ * Files API uploaded-file metadata. Returned by [GeminiClient.uploadAudio] and
+ * [GeminiClient.pollUntilActive]; passed through to [GeminiClient.generateFromAudio]
+ * (we read [uri] + [mimeType]) and [GeminiClient.deleteFile] (we read [name]).
+ *
+ * `state` follows Gemini's lifecycle: `PROCESSING` immediately after upload,
+ * `ACTIVE` once Gemini has indexed the file, `FAILED` on a server-side error.
+ * The Files API auto-deletes after 48h.
+ */
+@Serializable
+data class UploadedFile(
+    val name: String,
+    val uri: String,
+    val mimeType: String,
+    val sizeBytes: String? = null,
+    val state: String,
+)
 
 /**
  * Thin wrapper over the Gemini Developer API (`generativelanguage.googleapis.com`).
@@ -114,7 +146,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
                     url { parameters.append("key", apiKey) }
                     setBody(
                         GenerateContentRequest(
-                            contents = listOf(Content(listOf(Part(prompt), Part(content)))),
+                            contents = listOf(Content(listOf(Part(text = prompt), Part(text = content)))),
                             generationConfig =
                                 GenerationConfig(
                                     maxOutputTokens = SUMMARY_MAX_OUTPUT_TOKENS,
@@ -150,7 +182,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         val text =
             candidate
                 ?.content?.parts
-                ?.mapNotNull { it.text.takeIf { t -> t.isNotBlank() } }
+                ?.mapNotNull { it.text?.takeIf { t -> t.isNotBlank() } }
                 ?.joinToString(separator = "")
                 ?.trim()
         // If the model stopped for a non-natural reason (MAX_TOKENS, SAFETY,
@@ -167,12 +199,259 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         }
     }
 
+    /**
+     * Resumable upload to the Files API. Done in two HTTP round-trips per Google's
+     * resumable protocol:
+     *
+     *  1. `POST /upload/v1beta/files?uploadType=resumable&key=…` with the metadata
+     *     body — Gemini replies with the upload URL in the `X-Goog-Upload-URL`
+     *     header. We never write that URL to a log; it's a single-use bearer.
+     *  2. `PUT <uploadUrl>` streaming the audio bytes (`upload, finalize`
+     *     command). Body is parsed as `{"file": UploadedFile}`.
+     *
+     * The returned [UploadedFile] is typically `state == "PROCESSING"` — call
+     * [pollUntilActive] before passing the URI to [generateFromAudio].
+     *
+     * The audio bytes are read from [fileChannel] — a fresh channel per call,
+     * since Ktor will drain it. We never log the file path or any byte content.
+     */
+    suspend fun uploadAudio(
+        apiKey: String,
+        fileChannel: ByteReadChannel,
+        mimeType: String,
+        sizeBytes: Long,
+        displayName: String,
+    ): Result<UploadedFile> {
+        val startResponse: HttpResponse =
+            runCatching {
+                client.post("$BASE_URL/upload/v1beta/files") {
+                    url {
+                        parameters.append("key", apiKey)
+                        parameters.append("uploadType", "resumable")
+                    }
+                    headers {
+                        append("X-Goog-Upload-Protocol", "resumable")
+                        append("X-Goog-Upload-Command", "start")
+                        append("X-Goog-Upload-Header-Content-Length", sizeBytes.toString())
+                        append("X-Goog-Upload-Header-Content-Type", mimeType)
+                    }
+                    contentType(ContentType.Application.Json)
+                    setBody(StartUploadRequest(StartUploadFile(displayName = displayName)))
+                }
+            }.getOrElse {
+                logTransportFailure("uploadAudio.start", it)
+                return Result.failure(AiErrorException(AiError.Network))
+            }
+
+        if (!startResponse.status.isSuccess()) {
+            logHttpFailure("uploadAudio.start", startResponse.status.value)
+            return Result.failure(AiErrorException(startResponse.status.toAiError()))
+        }
+        val uploadUrl =
+            startResponse.headers["X-Goog-Upload-URL"]
+                ?: return Result.failure(AiErrorException(AiError.Unknown(startResponse.status.value)))
+
+        val finalizeResponse: HttpResponse =
+            runCatching {
+                client.put(uploadUrl) {
+                    headers {
+                        append("X-Goog-Upload-Command", "upload, finalize")
+                        append("X-Goog-Upload-Offset", "0")
+                    }
+                    setBody(
+                        object : OutgoingContent.WriteChannelContent() {
+                            override val contentLength = sizeBytes
+                            override val contentType = ContentType.parse(mimeType)
+
+                            override suspend fun writeTo(channel: ByteWriteChannel) {
+                                fileChannel.copyAndClose(channel)
+                            }
+                        },
+                    )
+                }
+            }.getOrElse {
+                logTransportFailure("uploadAudio.finalize", it)
+                return Result.failure(AiErrorException(AiError.Network))
+            }
+
+        if (!finalizeResponse.status.isSuccess()) {
+            logHttpFailure("uploadAudio.finalize", finalizeResponse.status.value)
+            return Result.failure(AiErrorException(finalizeResponse.status.toAiError()))
+        }
+        return runCatching { finalizeResponse.body<FileEnvelope>().file }
+            .map { Result.success(it) }
+            .getOrElse {
+                logParseFailure("uploadAudio.finalize", it)
+                Result.failure(AiErrorException(AiError.Unknown(finalizeResponse.status.value)))
+            }
+    }
+
+    /**
+     * Polls `GET /v1beta/{name}?key=…` until the file's `state` flips from
+     * `PROCESSING` to `ACTIVE`. Caps at [pollTimeoutMs] (30s default) — beyond
+     * that we surface [AiError.Unknown] rather than block the UI forever. The
+     * 30s budget is a soft cap; bumping to 60s is a pre-approved follow-up.
+     *
+     * `pollIntervalMs` and `pollTimeoutMs` are injected so unit tests can use
+     * tighter values without real wall-clock waits.
+     */
+    suspend fun pollUntilActive(
+        apiKey: String,
+        name: String,
+        pollIntervalMs: Long = DEFAULT_POLL_INTERVAL_MS,
+        pollTimeoutMs: Long = DEFAULT_POLL_TIMEOUT_MS,
+    ): Result<UploadedFile> {
+        // First check is immediate — the upload's finalize response often already
+        // reports ACTIVE for short clips, and we'd otherwise pay an unnecessary
+        // [pollIntervalMs] wait before learning that.
+        val maxAttempts = (pollTimeoutMs / pollIntervalMs).toInt().coerceAtLeast(1)
+        repeat(maxAttempts) { attempt ->
+            val response: HttpResponse =
+                runCatching {
+                    client.get("$BASE_URL/v1beta/$name") {
+                        url { parameters.append("key", apiKey) }
+                    }
+                }.getOrElse {
+                    logTransportFailure("pollUntilActive", it)
+                    return Result.failure(AiErrorException(AiError.Network))
+                }
+            if (!response.status.isSuccess()) {
+                logHttpFailure("pollUntilActive", response.status.value)
+                return Result.failure(AiErrorException(response.status.toAiError()))
+            }
+            val file =
+                runCatching { response.body<UploadedFile>() }
+                    .getOrElse {
+                        logParseFailure("pollUntilActive", it)
+                        return Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
+                    }
+            if (file.state == "ACTIVE") return Result.success(file)
+            if (file.state == "FAILED") return Result.failure(AiErrorException(AiError.Unknown(null)))
+            // Don't sleep after the final attempt — we're about to fall through
+            // to the timeout failure anyway.
+            if (attempt < maxAttempts - 1) delay(pollIntervalMs)
+        }
+        return Result.failure(AiErrorException(AiError.Unknown(null)))
+    }
+
+    /**
+     * Issues `generateContent` with a `fileData` part referencing an already-uploaded
+     * audio file plus a text prompt. Same status-code mapping as [generateFromText],
+     * with one addition: a 400 carrying `INVALID_ARGUMENT` and a "exceeds the maximum"
+     * / token-budget message maps to [AiError.AudioTooLong] so the UI can show a
+     * dedicated copy variant rather than the generic "key invalid" card.
+     */
+    suspend fun generateFromAudio(
+        apiKey: String,
+        model: GeminiModel,
+        fileUri: String,
+        mimeType: String,
+        prompt: String,
+    ): Result<String> {
+        val response: HttpResponse =
+            runCatching {
+                client.post("$BASE_URL/v1beta/models/${model.apiId}:generateContent") {
+                    contentType(ContentType.Application.Json)
+                    url { parameters.append("key", apiKey) }
+                    setBody(
+                        GenerateContentRequest(
+                            contents =
+                                listOf(
+                                    Content(
+                                        listOf(
+                                            Part(fileData = FileData(mimeType = mimeType, fileUri = fileUri)),
+                                            Part(text = prompt),
+                                        ),
+                                    ),
+                                ),
+                            generationConfig =
+                                GenerationConfig(
+                                    maxOutputTokens = SUMMARY_MAX_OUTPUT_TOKENS,
+                                    temperature = SUMMARY_TEMPERATURE,
+                                    thinkingConfig = ThinkingConfig(thinkingBudget = 0),
+                                ),
+                        ),
+                    )
+                }
+            }.getOrElse {
+                logTransportFailure("generateFromAudio", it)
+                return Result.failure(AiErrorException(AiError.Network))
+            }
+
+        if (!response.status.isSuccess()) {
+            val bodyText = runCatching { response.bodyAsText() }.getOrNull().orEmpty()
+            logHttpFailure("generateFromAudio", response.status.value)
+            return Result.failure(AiErrorException(response.status.toAudioAiError(bodyText)))
+        }
+        val parsed =
+            runCatching { response.body<GenerateContentResponse>() }
+                .getOrElse {
+                    logParseFailure("generateFromAudio", it)
+                    return Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
+                }
+        val candidate = parsed.candidates.firstOrNull()
+        val text =
+            candidate
+                ?.content?.parts
+                ?.mapNotNull { it.text?.takeIf { t -> t.isNotBlank() } }
+                ?.joinToString(separator = "")
+                ?.trim()
+        val reason = candidate?.finishReason
+        if (reason != null && reason != "STOP") {
+            logFinishReason("generateFromAudio", reason)
+        }
+        return if (text.isNullOrBlank()) {
+            Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
+        } else {
+            Result.success(text)
+        }
+    }
+
+    /**
+     * Best-effort Files API delete. Returns success even on HTTP failures — the
+     * caller treats this as a hint, not a guarantee, because Gemini auto-deletes
+     * uploaded files after 48h anyway. Transport failures are swallowed too.
+     */
+    suspend fun deleteFile(
+        apiKey: String,
+        name: String,
+    ): Result<Unit> {
+        runCatching {
+            client.delete("$BASE_URL/v1beta/$name") {
+                url { parameters.append("key", apiKey) }
+            }
+        }.onFailure {
+            logTransportFailure("deleteFile", it)
+        }
+        return Result.success(Unit)
+    }
+
     private fun HttpStatusCode.toAiError(): AiError =
         when (this) {
             HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden -> AiError.KeyInvalid
             HttpStatusCode.TooManyRequests -> AiError.RateLimited
             else -> AiError.Unknown(value)
         }
+
+    /**
+     * Audio variant of [toAiError]. A 400 with `INVALID_ARGUMENT` and a message
+     * mentioning the token / size cap is Gemini's way of saying "this audio is
+     * past my context window". Anything else falls through to the same mapping
+     * the text path uses — a malformed key still surfaces as KeyInvalid.
+     */
+    private fun HttpStatusCode.toAudioAiError(body: String): AiError {
+        if (this != HttpStatusCode.BadRequest) return toAiError()
+        val parsed = runCatching { Json.parseToJsonElement(body).jsonObject["error"]?.jsonObject }.getOrNull()
+        val status = parsed?.get("status")?.jsonPrimitive?.content
+        val message = parsed?.get("message")?.jsonPrimitive?.content.orEmpty()
+        val tooLong =
+            status == "INVALID_ARGUMENT" &&
+                (
+                    message.contains("exceeds the maximum", ignoreCase = true) ||
+                        message.contains("token", ignoreCase = true)
+                )
+        return if (tooLong) AiError.AudioTooLong else AiError.KeyInvalid
+    }
 
     companion object {
         const val BASE_URL = "https://generativelanguage.googleapis.com"
@@ -184,6 +463,9 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         // slightly more verbose than the prompt asked for, which is fine.
         private const val SUMMARY_MAX_OUTPUT_TOKENS = 1024
         private const val SUMMARY_TEMPERATURE = 0.4
+
+        private const val DEFAULT_POLL_INTERVAL_MS = 1000L
+        private const val DEFAULT_POLL_TIMEOUT_MS = 30_000L
 
         // Diagnostic log tag. Filterable via `adb logcat -s Kofipod-AI:V`. We
         // never log the request body, response body, or API key — only the
@@ -246,7 +528,34 @@ private data class GenerateContentRequest(
 private data class Content(val parts: List<Part>)
 
 @Serializable
-private data class Part(val text: String = "")
+private data class Part(
+    val text: String? = null,
+    val fileData: FileData? = null,
+)
+
+/**
+ * `fileData` part referencing a file already uploaded via the Files API.
+ * `fileUri` is the `gs://`-equivalent URI Gemini returns from the upload, not
+ * the original local path.
+ */
+@Serializable
+private data class FileData(
+    val mimeType: String,
+    val fileUri: String,
+)
+
+/** Resumable upload start metadata: `{"file": {"display_name": "..."}}`. */
+@Serializable
+private data class StartUploadRequest(val file: StartUploadFile)
+
+@Serializable
+private data class StartUploadFile(
+    @SerialName("display_name") val displayName: String,
+)
+
+/** Wraps an [UploadedFile] inside a `{"file": …}` envelope, as the upload PUT response does. */
+@Serializable
+private data class FileEnvelope(val file: UploadedFile)
 
 @Serializable
 private data class GenerationConfig(
