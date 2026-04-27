@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -177,8 +178,9 @@ private fun EpisodeBody(
 
     if (episode.description.isNotBlank()) {
         Spacer(Modifier.height(20.dp))
+        val description = remember(episode.description) { renderDescription(episode.description) }
         Text(
-            cleanDescription(episode.description),
+            description,
             color = c.text,
             fontSize = 14.sp,
             lineHeight = 22.sp,
@@ -406,25 +408,3 @@ private fun CircleAction(
         KPIcon(name = icon, color = tint, size = 18.dp, strokeWidth = 1.8f)
     }
 }
-
-/**
- * RSS descriptions are routinely HTML. Strip the tags and decode the handful of named
- * entities that appear most often. Slice 4 may upgrade this to a small AnnotatedString
- * renderer that preserves links; for now we render flat text so the layout matches the
- * design mock.
- */
-private fun cleanDescription(raw: String): String {
-    val noTags = raw.replace(HTML_TAG, "")
-    return noTags
-        .replace("&nbsp;", " ")
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace(WHITESPACE_RUNS, " ")
-        .trim()
-}
-
-private val HTML_TAG = Regex("<[^>]+>")
-private val WHITESPACE_RUNS = Regex("\\s{2,}")
