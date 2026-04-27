@@ -12,6 +12,8 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -28,15 +30,36 @@ class ChaptersRepository(
     private val db: KofipodDatabase,
     private val http: HttpClient,
 ) {
+    // Single Mutex covers all refreshes — chapter fetches are rare (only on detail-screen
+    // open of an episode with chaptersUrl + no cached rows), so contention is negligible
+    // and a per-episode keyed map would be over-engineered.
+    private val refreshLock = Mutex()
+
     fun chaptersFlow(episodeId: String): Flow<List<EpisodeChapter>> =
         db.episodeChapterQueries.selectByEpisode(episodeId).asFlow().mapToList(Dispatchers.Default)
 
     fun hasCached(episodeId: String): Boolean = db.episodeChapterQueries.countByEpisode(episodeId).executeAsOne() > 0L
 
     /**
+     * Idempotent entry point used by detail-screen open. Atomically checks the cache
+     * and, on miss, fetches + replaces. Two concurrent callers for the same episode see
+     * a single network round-trip — the second will observe a populated cache and bail.
+     */
+    suspend fun ensureCached(
+        episodeId: String,
+        url: String,
+    ): Result<Int> =
+        refreshLock.withLock {
+            if (hasCached(episodeId)) return@withLock Result.success(0)
+            refresh(episodeId, url)
+        }
+
+    /**
      * Hits [url], parses the chapters JSON, and replaces any cached rows for
-     * [episodeId]. No-ops on network/parse failure — callers should observe the
-     * persisted Flow rather than awaiting this result.
+     * [episodeId] in a single transaction so observers never see a partial list.
+     * No-ops on network/parse failure — callers should observe the persisted Flow
+     * rather than awaiting this result. Prefer [ensureCached] for the common path;
+     * call this directly only when you mean "force a refetch even if cached".
      */
     suspend fun refresh(
         episodeId: String,
@@ -62,16 +85,18 @@ class ChaptersRepository(
                             linkUrl = chapter.url.orEmpty(),
                         )
                     }
-                db.episodeChapterQueries.deleteByEpisode(episodeId)
-                rows.forEach {
-                    db.episodeChapterQueries.insert(
-                        episodeId = it.episodeId,
-                        seq = it.seq,
-                        startMs = it.startMs,
-                        title = it.title,
-                        imageUrl = it.imageUrl,
-                        linkUrl = it.linkUrl,
-                    )
+                db.episodeChapterQueries.transaction {
+                    db.episodeChapterQueries.deleteByEpisode(episodeId)
+                    rows.forEach {
+                        db.episodeChapterQueries.insert(
+                            episodeId = it.episodeId,
+                            seq = it.seq,
+                            startMs = it.startMs,
+                            title = it.title,
+                            imageUrl = it.imageUrl,
+                            linkUrl = it.linkUrl,
+                        )
+                    }
                 }
                 rows.size
             }

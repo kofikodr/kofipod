@@ -18,10 +18,15 @@ import app.kofipod.downloads.downloadFileName
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.playback.PlayableEpisode
 import app.kofipod.share.Sharer
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
@@ -53,12 +58,21 @@ class EpisodeDetailViewModel(
     private val episodeFlow = episodes.episodeFlow(episodeId)
     private val chaptersFlow = chapters.chaptersFlow(episodeId)
 
+    // Derive the podcast as a Flow off the episode so the combine lambda doesn't need
+    // a synchronous DB read on every emission. player.state ticks ~2/sec during
+    // playback, so a synchronous lookup here would burn a Default-pool thread per tick.
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val podcastFlow =
+        episodeFlow
+            .map { it?.podcastId }
+            .distinctUntilChanged()
+            .flatMapLatest { id -> if (id != null) library.podcastFlow(id) else flowOf(null) }
+
     init {
         viewModelScope.launch {
             episodeFlow.collect { ep ->
                 val url = ep?.chaptersUrl?.takeIf { it.isNotBlank() } ?: return@collect
-                if (chapters.hasCached(episodeId)) return@collect
-                chapters.refresh(episodeId, url)
+                chapters.ensureCached(episodeId, url)
             }
         }
     }
@@ -66,6 +80,7 @@ class EpisodeDetailViewModel(
     val state: StateFlow<EpisodeDetailUiState> =
         combine(
             episodeFlow,
+            podcastFlow,
             playback.stateFlow(episodeId),
             downloads.forEpisodeFlow(episodeId),
             player.state,
@@ -74,15 +89,15 @@ class EpisodeDetailViewModel(
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             val ep = values[0] as Episode?
-            val ps = values[1] as PlaybackState?
-            val dl = values[2] as Download?
-            val playerState = values[3] as app.kofipod.playback.PlayerState
-            val chapterRows = values[4] as List<EpisodeChapter>
-            val err = values[5] as String?
-            val podcast = ep?.podcastId?.let { library.podcastNow(it) }
+            val pod = values[1] as Podcast?
+            val ps = values[2] as PlaybackState?
+            val dl = values[3] as Download?
+            val playerState = values[4] as app.kofipod.playback.PlayerState
+            val chapterRows = values[5] as List<EpisodeChapter>
+            val err = values[6] as String?
             EpisodeDetailUiState(
                 episode = ep,
-                podcast = podcast,
+                podcast = pod,
                 chapters = chapterRows,
                 isPlayingThis = playerState.episodeId == episodeId && playerState.isPlaying,
                 isCurrentEpisode = playerState.episodeId == episodeId,
@@ -120,12 +135,32 @@ class EpisodeDetailViewModel(
     }
 
     fun markPlayed() {
-        val ep = state.value.episode ?: return
+        val s = state.value
+        val ep = s.episode ?: return
+        val pod = s.podcast
         val now = Clock.System.now().toEpochMilliseconds()
+        val durationMs = ep.durationSec * 1000L
+        // Seed metadata first so episodes the user has never played carry enough context
+        // (podcastId, title, artwork, sourceUrl) for "Continue listening" and Stats
+        // queries that JOIN on those columns. Without this, markCompleted on a missing
+        // row would write empty strings for everything but the position.
+        playback.save(
+            episodeId = episodeId,
+            positionMs = durationMs,
+            durationMs = durationMs,
+            speed = 1f,
+            updatedAt = now,
+            episodeTitle = ep.title,
+            podcastId = pod?.id ?: ep.podcastId,
+            podcastTitle = pod?.title.orEmpty(),
+            artworkUrl = ep.imageUrl.ifBlank { pod?.artworkUrl.orEmpty() },
+            sourceUrl = ep.enclosureUrl,
+            episodeNumber = ep.episodeNumber?.toInt(),
+        )
         playback.markCompleted(
             episodeId = episodeId,
             nowMillis = now,
-            currentDurationMs = ep.durationSec * 1000L,
+            currentDurationMs = durationMs,
         )
     }
 
