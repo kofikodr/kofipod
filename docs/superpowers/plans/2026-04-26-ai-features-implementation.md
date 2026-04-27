@@ -339,44 +339,79 @@
 
 - [ ] **Step 4: green-check.** Commit `feat(ai): add AiSummaryRepository (transcript path)`.
 
-### Task 2.4: AI panel UI on EpisodeDetailScreen
+### Task 2.4: Tab strip + AI panel UI on EpisodeDetailScreen
 
 **Files:**
+- Create: `composeApp/src/commonMain/kotlin/app/kofipod/ui/screens/detail/EpisodeDetailTabs.kt` — pill tab row + tab enum.
 - Create: `composeApp/src/commonMain/kotlin/app/kofipod/ui/screens/detail/ai/AiSummaryPanel.kt`
 - Create: `composeApp/src/commonMain/kotlin/app/kofipod/ui/screens/detail/ai/AiSummaryViewModel.kt`
-- Modify: `composeApp/src/commonMain/kotlin/app/kofipod/ui/screens/detail/EpisodeDetailScreen.kt` — insert `AiSummaryPanel(episodeId)` between the description block (around line 213-224) and the chapters section (line 226-229).
+- Modify: `composeApp/src/commonMain/kotlin/app/kofipod/ui/screens/detail/EpisodeDetailScreen.kt` — replace the linear "description → chapters" body with description + tab strip + tab content area.
 - Modify: `composeApp/src/commonMain/kotlin/app/kofipod/di/CommonModule.kt` — `viewModel { (episodeId: String) -> AiSummaryViewModel(episodeId, get()) }`.
 
-- [ ] **Step 1: `AiSummaryViewModel(episodeId, repo)`** — thin. `state: StateFlow<AiSummaryUiState>` from `repo.observeFor(episodeId)` via `stateIn(viewModelScope, WhileSubscribed(5_000), Hidden)`. `onGenerate()` → `repo.generate(episodeId)`. (No `onCancel` in Slice 2 — transcript fetches are seconds, not minutes.)
+- [ ] **Step 1: `EpisodeDetailTabs.kt`** — declare `enum class EpisodeDetailTab { Chapters, Summary, Mentioned, Discuss }` + a stateless `EpisodeDetailTabRow(selected, onSelect, chapterCount, mentionedCount, summaryEnabled)` composable. Pills use `KofipodTheme` tokens; active = filled accent, inactive = pink-outlined. Sparkle prefix on Summary / Mentioned / Discuss; not on Chapters. Count badges only when count > 0. Tab availability:
+  - Chapters tab: visible only when `chapterCount > 0`.
+  - Summary / Mentioned / Discuss tabs: visible only when `summaryEnabled` (i.e. Gemini key configured).
+  - When neither chapters nor a key, the row hides entirely (description is the whole detail-body).
+  - Default selected: Summary if available, else Chapters.
 
-- [ ] **Step 2: `AiSummaryPanel(episodeId)`** — Composable obtains its VM via `koinViewModel { parametersOf(episodeId) }`. Renders:
-  - `Hidden`: returns nothing.
-  - `Idle(available = Transcript)`: outline button "Generate AI summary" + helper line "Uses your Gemini key. Reads this episode's published transcript."
-  - `Idle(available = null)`: disabled button + helper line "Audio summary coming in a future update." (Slice 2.5 deletes this branch.)
-  - `Generating(_)`: small linear progress indicator + label "Summarising…".
-  - `Ready(summary, stale)`: summary text (plain text, monospace fallback so HTML/markdown isn't mistakenly rendered raw); footer row with `Model: {modelName}` + relative date + "Regenerate" outline button. When `stale = true`, prepend a one-line hint "Source updated — regenerate for the latest version." above the summary.
-  - `Error(_)`: simple message + Retry. Full per-error mapping is Slice 4.
+- [ ] **Step 2: `AiSummaryViewModel(episodeId, repo)`** — `state: StateFlow<AiSummaryUiState>` from `repo.observeFor(episodeId)` via `stateIn(viewModelScope, WhileSubscribed(5_000), Hidden)`. `onGenerate()` → `repo.generate(episodeId)`. No `onCancel` in Slice 2.
 
-  Visual style: follow existing `KofipodTheme` tokens; match the chapters section's section-header treatment for consistency. Test tags `aiPanelGenerateButton`, `aiPanelRegenerateButton`, `aiPanelRetryButton` for emulator scripting.
+- [ ] **Step 3: `AiSummaryPanel(episodeId)`** — Composable obtains its VM via `koinViewModel { parametersOf(episodeId) }`. Visual: a single rounded card with surface elevation 0, accent border, internal padding 16dp. Renders:
+  - `Hidden`: returns nothing (caller already hides the Summary tab in this case).
+  - `Idle(available = Transcript)`: sparkle leading icon, headline "Generate AI Insights for this episode", subtitle "Uses your Gemini key. ~{minutes}m of audio." where `{minutes}` = `episode.durationSec / 60`, dashed-outline accent button labeled "+ Generate AI summary".
+  - `Idle(available = null)`: same card frame, headline "AI summary needs a transcript or download", subtitle "Download this episode to summarise its audio.", button hidden. (Slice 2.5 swaps this for the audio-Idle variant.)
+  - `Generating(_)`: card with sparkle icon, headline "Summarising…", small linear progress bar.
+  - `Ready(summary, stale)`: card with `AI SUMMARY` eyebrow chip, "Summary" header, summary body text (plain text — markdown rendering is a future polish), footer with `Model: {modelName} · {relative date}` + "Regenerate" text button. `stale = true` adds a one-line "Source updated — regenerate for the latest version." above the body.
+  - `Error(error)`: card matching Ready frame — `AI SUMMARY` eyebrow chip, leading icon, headline, subtitle, full-width pink Retry button. Per-error copy + button label per the spec error-card table. `KeyInvalid` button text is "Open Settings" and navigates to `Route.AiSetup`; everything else is "Retry" and re-invokes `onGenerate()`. `AudioTooLong` hides the button entirely.
 
-- [ ] **Step 3: detail screen integration.** In `EpisodeDetailScreen.EpisodeBody`, after the description block:
+  Test tags: `aiPanelIdleGenerateButton`, `aiPanelGeneratingProgress`, `aiPanelReadySummary`, `aiPanelRegenerateButton`, `aiPanelErrorRetryButton`.
+
+- [ ] **Step 4: detail screen integration.** Replace lines ~213-229 of `EpisodeDetailScreen.kt` with:
 
   ```kotlin
-  Spacer(Modifier.height(20.dp))
-  AiSummaryPanel(episodeId = episode.id)
+  // description (unchanged) ...
+
+  val summaryEnabled by aiConfig.isKeyConfigured.collectAsState()
+  val tabs = remember(state.chapters.size, summaryEnabled) {
+      buildVisibleTabs(state.chapters.size, summaryEnabled)
+  }
+  if (tabs.isNotEmpty()) {
+      var selected by rememberSaveable {
+          mutableStateOf(tabs.firstOrNull { it == EpisodeDetailTab.Summary } ?: tabs.first())
+      }
+      Spacer(Modifier.height(24.dp))
+      EpisodeDetailTabRow(
+          tabs = tabs,
+          selected = selected,
+          onSelect = { selected = it },
+          chapterCount = state.chapters.size,
+          mentionedCount = 0, // Slice 3 fills this in
+      )
+      Spacer(Modifier.height(16.dp))
+      when (selected) {
+          EpisodeDetailTab.Chapters -> ChaptersSection(...)
+          EpisodeDetailTab.Summary -> AiSummaryPanel(episodeId = episode.id)
+          EpisodeDetailTab.Mentioned -> MentionedTabPlaceholder()
+          EpisodeDetailTab.Discuss -> DiscussTabPlaceholder()
+      }
+  }
   ```
 
-  Do NOT inject AI state into `EpisodeRowData` or `EpisodeDetailUiState` — the panel is a sibling composable with its own VM, preserving the perf invariants in `CLAUDE.md`.
+  `MentionedTabPlaceholder` and `DiscussTabPlaceholder` are private composables in the same file rendering "Coming soon" copy inside a muted card. The `aiConfig.isKeyConfigured` flow needs to flow through the VM — extend `EpisodeDetailUiState` with a single `summaryEnabled: Boolean` field rather than a new flow inside the composable.
 
-- [ ] **Step 4: emulator verification.**
-  - Connect a Gemini key (Slice 1).
-  - Subscribe to a podcast that ships transcripts (e.g. a Buzzsprout-hosted show, NPR, or any Podcasting 2.0 publisher) — verify by inspecting the episode row in `Episode.sq` for a non-blank `transcriptUrl` via `adb shell run-as app.kofipod.debug sqlite3 …`.
-  - Open the episode detail → AI panel renders `Idle(Transcript)`.
-  - Tap Generate → `Generating` shows briefly → `Ready` within ~10s with a sane summary.
-  - Force-stop the app → reopen detail → summary still rendered (DB persistence).
-  - Open a podcast that does NOT publish transcripts → panel renders `Idle(available = null)` with the disabled-button hint.
+  Do NOT inject AI summary state into `EpisodeRowData` or `EpisodeDetailUiState` beyond the boolean — the panel owns its own state via its own VM.
 
-- [ ] **Step 5: green-check.** Commit `feat(ai): add AI summary panel on episode detail (transcript path)`.
+- [ ] **Step 5: emulator verification.**
+  - Without a key: open a chaptered episode → only "Chapters" pill is visible (or no pills if no chapters); description renders at full width.
+  - Connect a Gemini key.
+  - Open an episode whose feed ships a transcript → tabs row shows `Summary | Mentioned | Discuss` (plus Chapters if present); Summary is selected by default; panel renders Idle.
+  - Tap Generate → Generating → Ready in ~10s with a sane summary.
+  - Force-stop + reopen detail → summary still rendered.
+  - Tap Mentioned / Discuss tabs → "Coming soon" placeholders.
+  - Open an episode without a transcript → panel renders `Idle(available = null)`.
+  - Trigger an error (paste rate-limited key beforehand, or disconnect Wi-Fi) → see error card with correct copy + Retry.
+
+- [ ] **Step 6: green-check.** Commit `feat(ai): add tab strip + AI summary panel on episode detail (transcript path)`.
 
 ---
 
@@ -487,25 +522,11 @@
 
 ---
 
-# Slice 4 — Error states + Disconnect cleanup
+# Slice 4 — Disconnect cleanup
 
-**User-facing outcome:** Every error path from the spec § "Error UX" maps to the right user-facing copy, with deep links into Settings where applicable. Disconnect wipes both the key and every cached summary.
+**User-facing outcome:** Disconnect wipes both the key and every cached summary. (Per-error UX landed in Slice 2 — the error card design and copy were nailed down once the visual spec was clear.)
 
-### Task 4.1: Error message mapping
-
-**Files:**
-- Create: `composeApp/src/commonMain/kotlin/app/kofipod/ai/AiErrorMessage.kt`
-- Modify: `composeApp/src/commonMain/kotlin/app/kofipod/ui/screens/detail/ai/AiSummaryPanel.kt`
-
-- [ ] **Step 1: `AiErrorMessage.kt`** — a pure mapping function `aiErrorMessage(AiError): AiErrorPresentation` returning `(headline: String, actionLabel: String?, action: AiErrorAction?)` where `AiErrorAction` is `Retry | OpenAiSetup | None`. Strings exactly match the spec table.
-
-- [ ] **Step 2: panel** — replace the Slice 2 fallback string with the full mapping. The `OpenAiSetup` action navigates to `Route.AiSetup`. `Retry` re-invokes `viewModel.onGenerate()`.
-
-- [ ] **Step 3: unit tests** for the mapping (one assertion per `AiError` subtype). Pure-function tests, no fixtures.
-
-- [ ] **Step 4: green-check.** Commit `feat(ai): wire full error-state UX with deep-links into AI Setup`.
-
-### Task 4.2: Disconnect wipes summaries
+### Task 4.1: Disconnect wipes summaries
 
 **Files:**
 - Modify: `composeApp/src/commonMain/kotlin/app/kofipod/ui/screens/settings/ai/AiSetupViewModel.kt`

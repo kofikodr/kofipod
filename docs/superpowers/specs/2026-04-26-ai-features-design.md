@@ -27,7 +27,14 @@ The provider-specific bits (Gemini endpoints, model IDs, token rate, the 9.5h ce
 
 ### Episode AI panel (the only AI-bearing UI in v1)
 
-A new **AI panel** on the **Episode detail screen** (`ui/screens/detail/EpisodeDetailScreen.kt`), inserted under the description block and above the chapters section. The chapters section is already rendered by the existing detail screen (see `ChaptersRepository`); the AI panel is a sibling composable, not folded into chapter rows or `EpisodeRowData` (preserves the perf invariants in `CLAUDE.md`).
+The Episode detail screen grows a **pill tab strip** under the description: `Chapters · Summary · Mentioned · Discuss`. Tabs:
+
+- **Chapters** — feed-sourced (Podcasting 2.0 chapters JSON). Already exists, repackaged into the tab. No sparkle prefix; count badge from `state.chapters.size`.
+- **Summary** — the AI summary surface. Sparkle prefix. No count badge. Content: `Idle / Generating / Ready / Error` per the panel design below.
+- **Mentioned** — entity extraction (people / things / links). Sparkle prefix; count badge from total entity count. **Placeholder in Slice 2** (renders an empty state); fully populated in Slice 3.
+- **Discuss** — "Ask Gemini about this episode" Q&A surface (the bottom-docked input + chat). Sparkle prefix. **Placeholder in Slice 2**; lights up in a future v2 slice (currently on the futures register).
+
+Active pill is filled with the dark accent; inactive pills are pink-outlined. The AI panel is a sibling composable inside the Summary tab body, never folded into `EpisodeRowData` (preserves the perf invariants in `CLAUDE.md`).
 
 **Source selection.** The repository picks the cheapest sufficient input per episode:
 
@@ -40,11 +47,22 @@ There is no description-only or chapters-only path. If neither transcript nor (e
 
 | State | Trigger | Visual |
 |---|---|---|
-| `Hidden` | No Gemini key configured | The panel does not render at all. |
-| `Idle` | Key configured, episode not yet summarised | Single button: "Generate AI summary". Helper line: "Uses your Gemini key. ~X minutes of audio." |
-| `Generating` | Request in flight | Inline progress (upload → process → format). User can navigate away; job continues. Cancel button exits the request. |
-| `Ready` | Summary cached | Summary text, then collapsible entity sections: **People**, **Books / things mentioned**, **Links**. Footer: model name + generated date + "Regenerate" button. |
-| `Error` | Network / quota / key invalid | Plain-English message + Retry. Quota errors say "Your Gemini key is rate-limited — try again later" (do not say "Kofipod failed"). Invalid-key errors deep-link to Settings → AI. |
+| `Hidden` | No Gemini key configured | The panel does not render at all (the Summary tab itself is hidden in this case — only Chapters tab shows). |
+| `Idle` | Key configured, episode not yet summarised | Card with sparkle icon, headline "Generate AI Insights for this episode", subtitle "Uses your Gemini key. ~Xm of audio." (or "transcript" when source is text), dashed-outline accent button "+ Generate AI summary". |
+| `Generating` | Request in flight | Inline progress + label ("Summarising…"). Job continues if the user navigates away. |
+| `Ready` | Summary cached | Card with `AI SUMMARY` eyebrow chip + "Summary" header, summary body text, footer with model name + relative date + "Regenerate" link. Mentioned tab (Slice 3) carries the entity sections. |
+| `Error` | Network / quota / key invalid | Card matching the Ready frame: `AI SUMMARY` eyebrow chip, leading icon, one-line headline, one-line subtitle, full-width pink "Retry" button. Per-error copy below. |
+
+**Error card copy** (matches mock; one card per error, same template):
+
+| Error | Icon | Headline | Subtitle |
+|---|---|---|---|
+| `RateLimited` | clock | "Your Gemini key is rate-limited" | "Try again in a few minutes — Gemini's free tier resets quickly." |
+| `KeyInvalid` | key | "Your Gemini key was rejected" | "Update it in Settings → AI features." (button text "Open Settings", not Retry) |
+| `Network` | cloud-off | "Couldn't reach Gemini" | "Check your connection and try again." |
+| `TranscriptUnavailable` | document | "Couldn't fetch the transcript" | "The publisher may be having a moment. Try again." |
+| `AudioTooLong` | hourglass | "This episode is too long" | "Audio summaries are capped at 8 hours in this version." (button hidden) |
+| `Unknown` | info | "AI summary failed" | "Tap to retry." |
 
 **Entity sections format:**
 
