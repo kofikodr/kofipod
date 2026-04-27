@@ -227,6 +227,26 @@ class AiSetupViewModelTest {
     // ---- confirmDisconnect: clears repo + paste field -----------------------------
 
     @Test
+    fun cancelDisconnect_dismissesDialog_andLeavesVaultIntact() =
+        runVmTest {
+            // Tapping "Cancel" on the disconnect-confirm dialog must NOT touch
+            // the vault — otherwise a misclick on the confirmation step would
+            // silently revoke a working key. This test exists specifically to
+            // catch a wiring regression where `cancelDisconnect` accidentally
+            // calls `disconnect` (e.g. via copy-paste from `confirmDisconnect`).
+            val vault = FakeKeyVault(initial = "still-good-key")
+            val vm = newVm(vault = vault)
+            vm.requestDisconnect()
+            assertEquals(true, vm.state.value.showDisconnectConfirm, "fixture: dialog must be open before cancel")
+
+            vm.cancelDisconnect()
+            advanceUntilIdle()
+
+            assertEquals(false, vm.state.value.showDisconnectConfirm, "Dialog must close on cancel")
+            assertEquals("still-good-key", vault.stored, "Cancel must NEVER reach the vault — that would silently revoke the key")
+        }
+
+    @Test
     fun confirmDisconnect_callsRepositoryDisconnect_andClearsTransientState() =
         runVmTest {
             val vault = FakeKeyVault(initial = "existing-key")

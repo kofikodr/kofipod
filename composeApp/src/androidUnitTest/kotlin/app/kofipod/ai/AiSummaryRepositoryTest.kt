@@ -7,6 +7,7 @@ import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.db.Episode
 import app.kofipod.db.KofipodDatabase
 import app.kofipod.testing.inMemoryDatabase
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -138,6 +139,12 @@ class AiSummaryRepositoryTest {
             assertEquals(AiSourceKind.Transcript, ready.summary.sourceKind)
             assertEquals("https://example.com/t.vtt", ready.summary.sourceFingerprint)
             assertEquals(GeminiModel.Flash.apiId, ready.summary.modelId)
+            assertEquals(
+                false,
+                ready.stale,
+                "Freshly-persisted summary must NOT be flagged stale — closes the round-trip " +
+                    "so a fingerprint-comparison regression can't slip past the pipeline test",
+            )
         }
 
     @Test
@@ -178,6 +185,78 @@ class AiSummaryRepositoryTest {
             val state = repo.observeFor("ep1").first()
             val error = assertIs<AiSummaryUiState.Error>(state)
             assertEquals(AiError.RateLimited, error.error)
+        }
+
+    @Test
+    fun generate_whileAlreadyInFlight_isNoOp_andDoesNotDoubleFire() =
+        runTest {
+            // Two `generate("ep1")` calls in quick succession — e.g. a tap on
+            // Generate followed by a process-recreate that re-binds the screen
+            // and re-issues the auto-generate — must collapse to a single
+            // network round-trip. Otherwise we'd race on `upsert()` and burn
+            // double the user's quota / rate-limit budget.
+            val gate = CompletableDeferred<Result<String>>()
+            val transcripts = StubTranscriptFetcher { gate.await() }
+            val summariser = StubSummariser(returns = Result.success("done"))
+            val (repo, db) = build(initialKey = "k", transcripts = transcripts, summariser = summariser)
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "https://example.com/t.vtt")
+
+            repo.generate("ep1")
+            repo.generate("ep1") // must short-circuit on the inFlight guard
+            // Allow both launches to dispatch through the lock + register
+            // inFlight before we release the gate.
+            testScheduler.runCurrent()
+            gate.complete(Result.success("WEBVTT\n\nbody"))
+            advanceUntilIdle()
+
+            assertEquals(
+                1,
+                summariser.callCount,
+                "Synchronous double-tap must collapse to a single Gemini call — " +
+                    "otherwise concurrent upserts race and quota is wasted",
+            )
+        }
+
+    @Test
+    fun generate_clearsTransientError_whenFollowupSucceeds() =
+        runTest {
+            // First attempt returns RateLimited → UI shows Error card. User taps
+            // Retry. The retry must end in Ready, not a lingering Error — the
+            // combine() check has Error before the cached branch, so without an
+            // explicit clear on persist (or on next-run reset) the Error would
+            // win even though a fresh summary just landed in the DB.
+            var attempt = 0
+            val summariser =
+                StubSummariser {
+                    attempt += 1
+                    if (attempt == 1) {
+                        Result.failure(AiErrorException(AiError.RateLimited))
+                    } else {
+                        Result.success("Episode summary body.")
+                    }
+                }
+            val (repo, db) =
+                build(
+                    initialKey = "k",
+                    transcripts = StubTranscriptFetcher.success("plain transcript text"),
+                    summariser = summariser,
+                )
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "https://example.com/t.vtt")
+
+            repo.generate("ep1")
+            advanceUntilIdle()
+            assertIs<AiSummaryUiState.Error>(
+                repo.observeFor("ep1").first(),
+                "Fixture: first attempt must surface Error before the retry runs",
+            )
+
+            repo.generate("ep1")
+            advanceUntilIdle()
+
+            val terminal = repo.observeFor("ep1").first()
+            val ready = assertIs<AiSummaryUiState.Ready>(terminal, "Successful retry must end in Ready, got $terminal")
+            assertEquals("Episode summary body.", ready.summary.summary)
+            assertEquals(2, summariser.callCount, "Both attempts must reach Gemini — single-flight only blocks concurrent overlap")
         }
 
     @Test
@@ -295,17 +374,31 @@ private class SimpleFakeVault(initial: String?) : KeyVault {
     }
 }
 
-private class StubSummariser(private val returns: Result<String>) : TextSummariser {
+private class StubSummariser(
+    private val handler: suspend () -> Result<String>,
+) : TextSummariser {
+    constructor(returns: Result<String>) : this({ returns })
+
+    var callCount: Int = 0
+        private set
+
     override suspend fun generateFromText(
         apiKey: String,
         model: GeminiModel,
         prompt: String,
         content: String,
-    ): Result<String> = returns
+    ): Result<String> {
+        callCount += 1
+        return handler()
+    }
 }
 
-private class StubTranscriptFetcher(private val returns: Result<String>) : TranscriptFetcher {
-    override suspend fun fetch(url: String): Result<String> = returns
+private class StubTranscriptFetcher(
+    private val handler: suspend () -> Result<String>,
+) : TranscriptFetcher {
+    constructor(returns: Result<String>) : this({ returns })
+
+    override suspend fun fetch(url: String): Result<String> = handler()
 
     companion object {
         fun success(body: String): StubTranscriptFetcher = StubTranscriptFetcher(Result.success(body))

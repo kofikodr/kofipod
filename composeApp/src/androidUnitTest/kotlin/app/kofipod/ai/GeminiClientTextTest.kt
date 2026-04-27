@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -104,6 +105,96 @@ class GeminiClientTextTest {
             assertEquals(2, parts.size, "Body must carry exactly two text parts")
             assertEquals("PROMPT_TEXT", parts[0].jsonObject["text"]!!.jsonPrimitive.content)
             assertEquals("TRANSCRIPT_TEXT", parts[1].jsonObject["text"]!!.jsonPrimitive.content)
+        }
+
+    @Test
+    fun generateFromText_joinsMultipleParts_intoSingleString() =
+        runTest {
+            // Regression: long transcripts caused Gemini to split a single response
+            // across multiple `parts[*]`. The earlier implementation took only
+            // `parts.firstOrNull`, so the user saw "Inte" / "Mofac" — words
+            // sliced at the part boundary. The fix joins all non-blank parts.
+            // A future refactor that reverts to firstOrNull must fail this test.
+            val client =
+                clientThatReturns(
+                    status = HttpStatusCode.OK,
+                    body =
+                        """
+                        {
+                          "candidates": [{
+                            "content": {
+                              "parts": [
+                                { "text": "Inte" },
+                                { "text": "resting episode about " },
+                                { "text": "podcasting." }
+                              ]
+                            }
+                          }]
+                        }
+                        """.trimIndent(),
+                )
+
+            val result =
+                GeminiClient(client).generateFromText(
+                    apiKey = "k",
+                    model = GeminiModel.Flash,
+                    prompt = "P",
+                    content = "C",
+                )
+
+            assertEquals(
+                "Interesting episode about podcasting.",
+                result.getOrNull(),
+                "Multi-part responses must be joined, not truncated to the first part",
+            )
+        }
+
+    @Test
+    fun generateFromText_disablesThinkingBudget_inRequestBody() =
+        runTest {
+            // Regression: Gemini 2.5 Flash bills "thinking" (chain-of-thought)
+            // tokens against `maxOutputTokens`, and on long transcripts the
+            // entire budget would be consumed by thinking, surfacing as a
+            // truncated 2-liner cut mid-sentence. `thinkingBudget = 0`
+            // disables thinking entirely. A refactor that drops ThinkingConfig
+            // (or sets it to -1 "dynamic" / null) silently re-introduces the
+            // truncation bug — this assertion is the only thing that catches it.
+            var observed: HttpRequestData? = null
+            val handler: MockRequestHandler = { request ->
+                observed = request
+                respond(
+                    """{"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}""",
+                    HttpStatusCode.OK,
+                    headersOf("Content-Type", "application/json"),
+                )
+            }
+            val client =
+                HttpClient(MockEngine(handler)) {
+                    install(ContentNegotiation) { json(Json) }
+                }
+
+            GeminiClient(client).generateFromText(
+                apiKey = "k",
+                model = GeminiModel.Flash,
+                prompt = "P",
+                content = "C",
+            )
+
+            val request = assertNotNull(observed, "MockEngine did not capture the request")
+            val bodyText = (request.body as TextContent).text
+            val root = Json.parseToJsonElement(bodyText).jsonObject
+            val generationConfig =
+                assertNotNull(
+                    root["generationConfig"]?.jsonObject,
+                    "generationConfig must be present on the wire",
+                )
+            val thinkingBudget =
+                assertNotNull(
+                    generationConfig["thinkingConfig"]?.jsonObject?.get("thinkingBudget")?.jsonPrimitive?.int,
+                    "thinkingConfig.thinkingBudget MUST be on the wire — without it, " +
+                        "long transcripts get truncated to a 2-liner",
+                )
+            assertEquals(0, thinkingBudget, "thinkingBudget must be 0 (disabled), not -1 or any positive value")
         }
 
     @Test
