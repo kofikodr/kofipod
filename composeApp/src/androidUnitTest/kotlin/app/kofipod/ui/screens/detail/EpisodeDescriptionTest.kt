@@ -103,6 +103,17 @@ class EpisodeDescriptionTest {
         assertEquals("", renderDescription("   \n\t  ").text)
     }
 
+    @Test
+    fun returnsEmptyAnnotatedStringForHtmlOnlyInput() {
+        // RSS feeds occasionally emit "<p></p>" or "<br/>" alone. The screen
+        // gates the description block on the rendered text, so the parser must
+        // produce a blank result for tag-only inputs to keep the screen from
+        // showing an empty paragraph.
+        assertEquals("", renderDescription("<p></p>").text)
+        assertEquals("", renderDescription("<br/><br/>").text)
+        assertEquals("", renderDescription("<p>   </p>").text)
+    }
+
     // -------------------------------------------------------------------------
     // Anchor extraction → LinkAnnotation.Url.
     // -------------------------------------------------------------------------

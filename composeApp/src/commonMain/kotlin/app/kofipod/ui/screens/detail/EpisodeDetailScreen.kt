@@ -182,9 +182,11 @@ private fun EpisodeBody(
         onDownload = onDownload,
     )
 
-    if (episode.description.isNotBlank()) {
+    val description = remember(episode.description) { renderDescription(episode.description) }
+    if (description.text.isNotBlank()) {
+        // Gate on the rendered text, not raw — a description that's only HTML
+        // (e.g. "<p></p>") would otherwise render an empty paragraph block.
         Spacer(Modifier.height(20.dp))
-        val description = remember(episode.description) { renderDescription(episode.description) }
         Text(
             description,
             color = c.text,
