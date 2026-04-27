@@ -2,7 +2,11 @@
 package app.kofipod.di
 
 import app.kofipod.ai.AiConfigRepository
+import app.kofipod.ai.AiSummaryRepository
 import app.kofipod.ai.GeminiClient
+import app.kofipod.ai.HttpTranscriptFetcher
+import app.kofipod.ai.TextSummariser
+import app.kofipod.ai.TranscriptFetcher
 import app.kofipod.data.api.GithubReleasesApi
 import app.kofipod.data.api.PodcastIndexApi
 import app.kofipod.data.db.DatabaseFactory
@@ -74,10 +78,22 @@ val commonDataModule =
         // for the rationale (Gemini key travels in `?key=`; logging would leak it).
         single { GeminiClient(client = app.kofipod.ai.buildAiHttpClient()) }
         single<app.kofipod.ai.KeyValidator> { get<GeminiClient>() }
+        single<TextSummariser> { get<GeminiClient>() }
         single {
             AiConfigRepository(
                 keyVault = get(),
                 settings = get(),
+                appScope = get(org.koin.core.qualifier.named("appScope")),
+            )
+        }
+        single<TranscriptFetcher> { HttpTranscriptFetcher(get()) }
+        single {
+            AiSummaryRepository(
+                db = get(),
+                aiConfig = get(),
+                summariser = get<TextSummariser>(),
+                transcripts = get<TranscriptFetcher>(),
+                episodes = get<EpisodeSource>(),
                 appScope = get(org.koin.core.qualifier.named("appScope")),
             )
         }
