@@ -316,6 +316,7 @@ class AiSummaryRepositoryTest {
                 transcripts = transcripts,
                 episodes = DbEpisodeSource(db),
                 appScope = coroutineScope,
+                ioContext = testDispatcher,
             )
         return Fixture(repo, db)
     }

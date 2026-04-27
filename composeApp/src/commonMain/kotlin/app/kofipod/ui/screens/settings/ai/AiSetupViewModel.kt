@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.kofipod.ai.AiConfigRepository
 import app.kofipod.ai.AiError
+import app.kofipod.ai.AiSummaryRepository
 import app.kofipod.ai.GeminiModel
 import app.kofipod.ai.KeyValidator
 import app.kofipod.ai.toAiError
@@ -27,6 +28,7 @@ data class AiSetupUiState(
 class AiSetupViewModel(
     private val config: AiConfigRepository,
     private val client: KeyValidator,
+    private val summaries: AiSummaryRepository,
 ) : ViewModel() {
     private val pasteValue = MutableStateFlow("")
     private val verifying = MutableStateFlow(false)
@@ -98,7 +100,13 @@ class AiSetupViewModel(
 
     fun confirmDisconnect() =
         viewModelScope.launch {
+            // Order: clear the key first. observeFor flips to Hidden the moment
+            // isKeyConfigured() emits false, so cached summaries can no longer
+            // be rendered even if clearAll() races. Then wipe the cache so a
+            // future reconnect starts clean — Slice 4's contract is that
+            // disconnect removes both halves of the user's AI footprint.
             config.disconnect()
+            summaries.clearAll()
             showDisconnectConfirm.value = false
             pasteValue.value = ""
         }

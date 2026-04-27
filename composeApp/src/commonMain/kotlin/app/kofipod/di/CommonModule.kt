@@ -135,7 +135,7 @@ val commonDataModule =
                 aiConfig = get(),
             )
         }
-        viewModel { AiSetupViewModel(config = get(), client = get()) }
+        viewModel { AiSetupViewModel(config = get(), client = get(), summaries = get()) }
         viewModel { (episodeId: String) ->
             app.kofipod.ui.screens.detail.ai.AiSummaryViewModel(
                 episodeId = episodeId,

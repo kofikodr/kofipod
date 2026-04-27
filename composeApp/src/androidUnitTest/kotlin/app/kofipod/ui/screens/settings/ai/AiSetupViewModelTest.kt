@@ -4,15 +4,25 @@ package app.kofipod.ui.screens.settings.ai
 import app.kofipod.ai.AiConfigRepository
 import app.kofipod.ai.AiError
 import app.kofipod.ai.AiErrorException
+import app.kofipod.ai.AiSourceKind
+import app.kofipod.ai.AiSummaryRepository
 import app.kofipod.ai.GeminiModel
 import app.kofipod.ai.KeyValidator
 import app.kofipod.ai.KeyVault
+import app.kofipod.ai.TextSummariser
+import app.kofipod.ai.TranscriptFetcher
+import app.kofipod.data.repo.EpisodeSource
+import app.kofipod.data.repo.RefreshResult
 import app.kofipod.data.repo.SettingsRepository
+import app.kofipod.db.Episode
+import app.kofipod.db.KofipodDatabase
 import app.kofipod.testing.inMemoryDatabase
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -227,15 +237,17 @@ class AiSetupViewModelTest {
     // ---- confirmDisconnect: clears repo + paste field -----------------------------
 
     @Test
-    fun cancelDisconnect_dismissesDialog_andLeavesVaultIntact() =
+    fun cancelDisconnect_dismissesDialog_andLeavesVaultAndSummariesIntact() =
         runVmTest {
             // Tapping "Cancel" on the disconnect-confirm dialog must NOT touch
-            // the vault — otherwise a misclick on the confirmation step would
-            // silently revoke a working key. This test exists specifically to
-            // catch a wiring regression where `cancelDisconnect` accidentally
-            // calls `disconnect` (e.g. via copy-paste from `confirmDisconnect`).
+            // the vault OR the cached-summaries table — otherwise a misclick on
+            // the confirmation step would silently revoke a working key AND
+            // wipe every summary the user has paid Gemini to generate. This
+            // test exists specifically to catch a wiring regression where
+            // `cancelDisconnect` accidentally calls `disconnect`.
             val vault = FakeKeyVault(initial = "still-good-key")
-            val vm = newVm(vault = vault)
+            val (vm, db) = newVmWithDb(vault = vault)
+            seedSummaryRow(db, episodeId = "ep-keep")
             vm.requestDisconnect()
             assertEquals(true, vm.state.value.showDisconnectConfirm, "fixture: dialog must be open before cancel")
 
@@ -244,6 +256,36 @@ class AiSetupViewModelTest {
 
             assertEquals(false, vm.state.value.showDisconnectConfirm, "Dialog must close on cancel")
             assertEquals("still-good-key", vault.stored, "Cancel must NEVER reach the vault — that would silently revoke the key")
+            assertEquals(
+                1,
+                db.episodeAiSummaryQueries.selectByEpisode("ep-keep").executeAsList().size,
+                "Cancel must NEVER wipe cached summaries — that's confirmDisconnect's job",
+            )
+        }
+
+    @Test
+    fun confirmDisconnect_alsoWipesCachedSummaries() =
+        runVmTest {
+            // Slice 4 contract: Disconnect removes both halves of the user's AI
+            // footprint. The dialog copy promises this; the call site is the
+            // only place that wires it up. A regression here would leave
+            // summaries on disk after the key is gone — surprising and a quiet
+            // privacy footgun.
+            val vault = FakeKeyVault(initial = "to-be-revoked")
+            val (vm, db) = newVmWithDb(vault = vault)
+            seedSummaryRow(db, episodeId = "ep-1")
+            seedSummaryRow(db, episodeId = "ep-2")
+            vm.requestDisconnect()
+
+            vm.confirmDisconnect()
+            advanceUntilIdle()
+
+            assertEquals(null, vault.stored, "Confirm must clear the key")
+            assertTrue(
+                db.episodeAiSummaryQueries.selectByEpisode("ep-1").executeAsList().isEmpty() &&
+                    db.episodeAiSummaryQueries.selectByEpisode("ep-2").executeAsList().isEmpty(),
+                "Confirm must wipe ALL cached summaries — leaving any behind violates the dialog's promise",
+            )
         }
 
     @Test
@@ -268,11 +310,24 @@ class AiSetupViewModelTest {
     // Test fixtures
     // -------------------------------------------------------------------------------
 
+    private data class VmFixture(val vm: AiSetupViewModel, val db: KofipodDatabase)
+
     private fun TestScope.newVm(
         vault: FakeKeyVault = FakeKeyVault(),
         result: Result<Unit> = Result.success(Unit),
         validator: FakeKeyValidator = FakeKeyValidator(result),
-    ): AiSetupViewModel {
+    ): AiSetupViewModel = newVmWithDb(vault, result, validator).vm
+
+    /**
+     * Variant that exposes the underlying database so disconnect-cleanup tests
+     * can seed an `EpisodeAiSummary` row and assert it gets wiped. Most tests
+     * don't need the DB and use [newVm] for symmetry with the existing fixture.
+     */
+    private fun TestScope.newVmWithDb(
+        vault: FakeKeyVault = FakeKeyVault(),
+        result: Result<Unit> = Result.success(Unit),
+        validator: FakeKeyValidator = FakeKeyValidator(result),
+    ): VmFixture {
         // Use the test scheduler for SQLDelight flow emissions — without this,
         // SettingsRepository defaults to Dispatchers.Default for its flowContext
         // and `aiModel()` never emits during the test, leaving the VM's combine
@@ -280,20 +335,52 @@ class AiSetupViewModelTest {
         // depending on JVM-thread scheduling.
         val testDispatcher = UnconfinedTestDispatcher(testScheduler)
         val appScope = CoroutineScope(testDispatcher)
+        val db = inMemoryDatabase()
         val config =
             AiConfigRepository(
                 keyVault = vault,
-                settings = SettingsRepository(inMemoryDatabase(), flowContext = testDispatcher),
+                settings = SettingsRepository(db, flowContext = testDispatcher),
                 appScope = appScope,
             )
+        // Real AiSummaryRepository against the in-memory DB so confirmDisconnect's
+        // clearAll() exercises the actual SQL, not a stub. The summariser /
+        // transcripts / episodes seams are stubs because nothing in this test
+        // file calls generate() — only clearAll(), which only touches the DB.
+        val summaries =
+            AiSummaryRepository(
+                db = db,
+                aiConfig = config,
+                summariser = NoopTextSummariser,
+                transcripts = NoopTranscriptFetcher,
+                episodes = EmptyEpisodeSource,
+                appScope = appScope,
+                ioContext = testDispatcher,
+            )
         advanceUntilIdle()
-        val vm = AiSetupViewModel(config = config, client = validator)
+        val vm = AiSetupViewModel(config = config, client = validator, summaries = summaries)
         // The VM exposes `state` via stateIn(WhileSubscribed); without an active
         // collector its `.value` is frozen on the initial AiSetupUiState() and
         // assertions can't observe MutableStateFlow updates flowing through `combine`.
         backgroundScope.launch { vm.state.collect { /* keep subscription open */ } }
         advanceUntilIdle()
-        return vm
+        return VmFixture(vm, db)
+    }
+
+    private fun seedSummaryRow(
+        db: KofipodDatabase,
+        episodeId: String,
+    ) {
+        db.episodeAiSummaryQueries.upsert(
+            episodeId = episodeId,
+            generatedAtMs = 1L,
+            modelId = GeminiModel.Flash.apiId,
+            sourceKind = AiSourceKind.Transcript.wire,
+            sourceFingerprint = "https://example.com/$episodeId.vtt",
+            summary = "summary body for $episodeId",
+            peopleJson = "[]",
+            thingsJson = "[]",
+            linksJson = "[]",
+        )
     }
 
     private fun aiFailure(error: AiError): Result<Unit> = Result.failure(AiErrorException(error))
@@ -328,5 +415,37 @@ class AiSetupViewModelTest {
         override suspend fun clear() {
             stored = null
         }
+    }
+
+    /**
+     * Stubs for the [AiSummaryRepository] dependencies that this test file does
+     * not exercise. Only `clearAll()` is invoked from `confirmDisconnect`, and
+     * that goes straight to SQLDelight — never through these seams.
+     */
+    private object NoopTextSummariser : TextSummariser {
+        override suspend fun generateFromText(
+            apiKey: String,
+            model: GeminiModel,
+            prompt: String,
+            content: String,
+        ): Result<String> = error("AiSetupViewModelTest must not exercise the summariser")
+    }
+
+    private object NoopTranscriptFetcher : TranscriptFetcher {
+        override suspend fun fetch(url: String): Result<String> = error("AiSetupViewModelTest must not exercise the transcript fetcher")
+    }
+
+    private object EmptyEpisodeSource : EpisodeSource {
+        override fun episodesFlow(podcastId: String): Flow<List<Episode>> = flowOf(emptyList())
+
+        override fun episodeFlow(episodeId: String): Flow<Episode?> = flowOf(null)
+
+        override fun newEpisodeCountsFlow(): Flow<Map<String, Int>> = flowOf(emptyMap())
+
+        override suspend fun refresh(
+            podcastId: String,
+            feedId: Long,
+            nowMillis: Long,
+        ): RefreshResult = RefreshResult(emptyList(), 0)
     }
 }

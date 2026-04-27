@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
+import kotlin.coroutines.CoroutineContext
 import app.kofipod.db.EpisodeAiSummary as DbEpisodeAiSummary
 
 /**
@@ -52,6 +53,9 @@ class AiSummaryRepository(
     private val episodes: EpisodeSource,
     private val appScope: CoroutineScope,
     private val clock: Clock = Clock.System,
+    // Injected so tests can drive `clearAll()` on the test scheduler. Production
+    // uses `Dispatchers.Default`, mirroring `SettingsRepository.flowContext`.
+    private val ioContext: CoroutineContext = Dispatchers.Default,
 ) {
     /** episodeId → in-flight source kind. A second `generate()` for the same id is a no-op. */
     private val inFlight = MutableStateFlow<Map<String, AiSourceKind>>(emptyMap())
@@ -105,13 +109,13 @@ class AiSummaryRepository(
     }
 
     /**
-     * Wipes all cached summaries. Wired up by Slice 4 Disconnect. Forced onto
-     * `Dispatchers.Default` so callers from the main thread don't ANR on a
-     * sluggish on-device write — SQLDelight does not enforce off-main I/O on
-     * its own.
+     * Wipes all cached summaries. Wired up by Slice 4 Disconnect. Routed through
+     * [ioContext] (default `Dispatchers.Default`) so callers from the main
+     * thread don't ANR on a sluggish on-device write — SQLDelight does not
+     * enforce off-main I/O on its own.
      */
     suspend fun clearAll() {
-        withContext(Dispatchers.Default) {
+        withContext(ioContext) {
             db.episodeAiSummaryQueries.deleteAll()
         }
     }
