@@ -73,7 +73,10 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
                         ),
                     )
                 }
-            }.getOrElse { return Result.failure(AiErrorException(AiError.Network)) }
+            }.getOrElse {
+                logTransportFailure("validate", it)
+                return Result.failure(AiErrorException(AiError.Network))
+            }
 
         return when {
             response.status.isSuccess() -> Result.success(Unit)
@@ -120,14 +123,21 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
                         ),
                     )
                 }
-            }.getOrElse { return Result.failure(AiErrorException(AiError.Network)) }
+            }.getOrElse {
+                logTransportFailure("generateFromText", it)
+                return Result.failure(AiErrorException(AiError.Network))
+            }
 
         if (!response.status.isSuccess()) {
+            logHttpFailure("generateFromText", response.status.value)
             return Result.failure(AiErrorException(response.status.toAiError()))
         }
         val parsed =
             runCatching { response.body<GenerateContentResponse>() }
-                .getOrElse { return Result.failure(AiErrorException(AiError.Unknown(response.status.value))) }
+                .getOrElse {
+                    logParseFailure("generateFromText", it)
+                    return Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
+                }
         val text =
             parsed.candidates.firstOrNull()
                 ?.content?.parts
@@ -155,6 +165,32 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         // languages that tokenise less efficiently than English (e.g. Thai, JP).
         private const val SUMMARY_MAX_OUTPUT_TOKENS = 512
         private const val SUMMARY_TEMPERATURE = 0.4
+
+        // Diagnostic log tag. Filterable via `adb logcat -s Kofipod-AI:V`. We
+        // never log the request body, response body, or API key — only the
+        // throwable's class name and (for HTTP failures) the status code.
+        private const val LOG_TAG = "Kofipod-AI"
+
+        private fun logTransportFailure(
+            op: String,
+            throwable: Throwable,
+        ) {
+            println("$LOG_TAG: $op transport failed: ${throwable::class.simpleName}")
+        }
+
+        private fun logHttpFailure(
+            op: String,
+            status: Int,
+        ) {
+            println("$LOG_TAG: $op HTTP $status")
+        }
+
+        private fun logParseFailure(
+            op: String,
+            throwable: Throwable,
+        ) {
+            println("$LOG_TAG: $op response parse failed: ${throwable::class.simpleName}")
+        }
     }
 }
 

@@ -473,13 +473,13 @@ private fun ActionRow(
         KPButton(
             label = playButtonLabel(isPlayingThis = isPlayingThis, isCurrentEpisode = isCurrentEpisode),
             onClick = onPlay,
-            style = KPButtonStyle.SecondaryPurple,
+            style = KPButtonStyle.PrimaryPink,
             modifier = Modifier.weight(1f).testTag("episodePlayButton"),
         )
         CircleAction(
             icon = KPIconName.Check,
-            tint = if (played) c.success else c.purple,
-            background = c.purpleSoft,
+            tint = if (played) c.success else c.pink,
+            background = c.pinkSoft,
             onClick = onMarkPlayed,
             testTag = "episodeMarkPlayedButton",
         )
@@ -488,15 +488,15 @@ private fun ActionRow(
                 CircleAction(
                     icon = KPIconName.Trash,
                     tint = c.danger,
-                    background = c.purpleSoft,
+                    background = c.pinkSoft,
                     onClick = onDeleteDownload,
                     testTag = "episodeDeleteDownloadButton",
                 )
             TertiaryAction.Download ->
                 CircleAction(
                     icon = KPIconName.Download,
-                    tint = c.purple,
-                    background = c.purpleSoft,
+                    tint = c.pink,
+                    background = c.pinkSoft,
                     onClick = onDownload,
                     testTag = "episodeDownloadButton",
                 )

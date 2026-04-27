@@ -253,11 +253,17 @@ class AiSetupViewModelTest {
         result: Result<Unit> = Result.success(Unit),
         validator: FakeKeyValidator = FakeKeyValidator(result),
     ): AiSetupViewModel {
-        val appScope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        // Use the test scheduler for SQLDelight flow emissions — without this,
+        // SettingsRepository defaults to Dispatchers.Default for its flowContext
+        // and `aiModel()` never emits during the test, leaving the VM's combine
+        // parked on its initial value. Symptom: flaky null vs. expected message
+        // depending on JVM-thread scheduling.
+        val testDispatcher = UnconfinedTestDispatcher(testScheduler)
+        val appScope = CoroutineScope(testDispatcher)
         val config =
             AiConfigRepository(
                 keyVault = vault,
-                settings = SettingsRepository(inMemoryDatabase()),
+                settings = SettingsRepository(inMemoryDatabase(), flowContext = testDispatcher),
                 appScope = appScope,
             )
         advanceUntilIdle()
