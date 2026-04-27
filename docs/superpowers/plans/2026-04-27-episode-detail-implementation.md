@@ -126,3 +126,25 @@ Each slice is independently committable + emulator-verifiable.
 - This work bumps schema to 9 (Slice 1) and possibly 10 (Slice 3, if Q4=4B).
 - The AI branch's pending Slice 2 already targets `9.sqm` for `EpisodeAiSummary.sq`. Once this lands on master, the AI branch needs to be rebased and its migration retargeted to `10.sqm` or `11.sqm` depending on Q4.
 - Action: after this feature merges, rebase `feat/ai-byok-gemini` on master and retarget the migration filename in one commit before resuming Slice 2.
+
+## Slice 4 entry notes (post-compaction)
+
+State captured here so a fresh session can resume Slice 4 without losing the in-flight context that doesn't appear in commit messages.
+
+**Schema state on master**: bumped 8 → 10 (`9.sqm` adds `imageUrl/chaptersUrl/transcriptUrl` to Episode; `10.sqm` creates `EpisodeChapter`). `feat/ai-byok-gemini`'s pending Slice 2 migration must be retargeted from `9.sqm` to `11.sqm` once that branch is rebased.
+
+**Slices 1–3 plus tests landed in `7992f12..b4d4e05`.** Code review (`feature-dev:code-reviewer`) and test audit (`test-quality-auditor`) ran post-Slice 3; review issues #1–#3 fixed in `10aec85`, audit recommendations covered in `b4d4e05`.
+
+**Downloads tap-behaviour deviation.** Q8 originally said "both `PodcastDetailScreen` and `DownloadsScreen` rows tap → detail" in Slice 2. Slice 2 only changed `PodcastDetailScreen` because tap-to-play felt valuable in the Downloads context (curated content, fast-play UX). The user later asked for consistency, so `280efd2` retroactively changed Downloads too and deleted the now-orphaned `DownloadsViewModel.play()` along with its `KofipodPlayer`/`EpisodesRepository`/`PlaybackRepository` constructor params. Decision is settled — no need to revisit.
+
+**Known-bad `cleanDescription` regex.** Code-review issue #4 (deferred — not fixed in `10aec85`). The current `<[^>]+>` tag-stripping regex in `EpisodeDetailScreen.kt` will eat literal `<` characters in description text (e.g. `"speed is <3x faster"` gets corrupted up to the next `>`). The in-file KDoc says "Slice 4 may upgrade this to a small AnnotatedString renderer that preserves links". This is the upgrade that fixes both the regex bug and the missing-link-rendering deferred from Q5. Recommend doing it as the first task in Slice 4 — it's the only outstanding *correctness* issue; everything else in Slice 4 is polish.
+
+**Deferred from Slice 2 — category chip.** The pink "TECHNOLOGY" chip in the mock requires a `Podcast.primaryCategory` column (no current source for non-library podcasts). Trivial additive migration (`11.sqm` if done before AI rebase, otherwise `12.sqm`) + populate at `LibraryRepository.savePodcast` time. Open question for Slice 4 entry: land this now, or split into a separate slice? Defaulting to "land in Slice 4" is reasonable since it's a few lines.
+
+**Slice 4 task checklist (suggested order):**
+1. Replace `cleanDescription` with an `AnnotatedString` renderer that preserves paragraphs + linkifies URLs (fixes review issue #4 + Q5).
+2. Add `Podcast.primaryCategory` column + render the category chip on the detail screen.
+3. Edge cases: very long titles (>100 chars), missing description, missing podcast art (already handled by `KofipodArtwork` fallback — verify), per-episode art override vs. podcast art.
+4. Paparazzi baseline for `EpisodeDetailScreen` — needs a `*Content` split that takes `EpisodeDetailUiState` as a parameter (matches existing screen-snapshot pattern). Two baselines (light/dark), three configurations (downloaded + chapters / not-downloaded + no-chapters / mid-download).
+5. Compose UI test in `commonTest` for the action-row state machine (Play / Pause / Resume label transitions, Mark-played idempotence, Delete-vs-Download swap on download state change).
+6. Final lint sweep: `./gradlew :composeApp:ktlintFormat :composeApp:detekt :composeApp:testDebugUnitTest :composeApp:verifyPaparazziDebug :composeApp:compileKotlinIosSimulatorArm64`.
