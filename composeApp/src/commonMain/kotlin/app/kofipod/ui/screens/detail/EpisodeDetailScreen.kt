@@ -408,12 +408,7 @@ private fun ActionRow(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         KPButton(
-            label =
-                when {
-                    isPlayingThis -> "Pause"
-                    isCurrentEpisode -> "Resume"
-                    else -> "Play episode"
-                },
+            label = playButtonLabel(isPlayingThis = isPlayingThis, isCurrentEpisode = isCurrentEpisode),
             onClick = onPlay,
             style = KPButtonStyle.SecondaryPurple,
             modifier = Modifier.weight(1f).testTag("episodePlayButton"),
@@ -421,29 +416,62 @@ private fun ActionRow(
         CircleAction(
             icon = KPIconName.Check,
             tint = if (played) c.success else c.purple,
-            background = if (played) c.purpleSoft else c.purpleSoft,
+            background = c.purpleSoft,
             onClick = onMarkPlayed,
             testTag = "episodeMarkPlayedButton",
         )
-        if (downloaded) {
-            CircleAction(
-                icon = KPIconName.Trash,
-                tint = c.danger,
-                background = c.purpleSoft,
-                onClick = onDeleteDownload,
-                testTag = "episodeDeleteDownloadButton",
-            )
-        } else if (canDownload) {
-            CircleAction(
-                icon = KPIconName.Download,
-                tint = c.purple,
-                background = c.purpleSoft,
-                onClick = onDownload,
-                testTag = "episodeDownloadButton",
-            )
+        when (tertiaryAction(downloaded = downloaded, canDownload = canDownload)) {
+            TertiaryAction.Delete ->
+                CircleAction(
+                    icon = KPIconName.Trash,
+                    tint = c.danger,
+                    background = c.purpleSoft,
+                    onClick = onDeleteDownload,
+                    testTag = "episodeDeleteDownloadButton",
+                )
+            TertiaryAction.Download ->
+                CircleAction(
+                    icon = KPIconName.Download,
+                    tint = c.purple,
+                    background = c.purpleSoft,
+                    onClick = onDownload,
+                    testTag = "episodeDownloadButton",
+                )
+            TertiaryAction.Hidden -> Unit
         }
     }
 }
+
+/**
+ * Resolves the play button's label from the player + current-episode state. Pure so
+ * [EpisodeDetailActionRowTest] can pin all three branches without a composition.
+ */
+internal fun playButtonLabel(
+    isPlayingThis: Boolean,
+    isCurrentEpisode: Boolean,
+): String =
+    when {
+        isPlayingThis -> "Pause"
+        isCurrentEpisode -> "Resume"
+        else -> "Play episode"
+    }
+
+/**
+ * The rightmost action-row circle has three states: Trash if the user has a local
+ * download to remove, Download if there's a fetchable enclosure but no local copy,
+ * or hidden when neither applies (e.g. an episode whose feed lacks an enclosure URL).
+ */
+internal enum class TertiaryAction { Delete, Download, Hidden }
+
+internal fun tertiaryAction(
+    downloaded: Boolean,
+    canDownload: Boolean,
+): TertiaryAction =
+    when {
+        downloaded -> TertiaryAction.Delete
+        canDownload -> TertiaryAction.Download
+        else -> TertiaryAction.Hidden
+    }
 
 @Composable
 private fun CircleAction(
