@@ -81,12 +81,16 @@ internal fun AiSummaryPanelContent(
     onGenerate: () -> Unit,
     onOpenAiSetup: () -> Unit,
     modifier: Modifier = Modifier,
+    // Injectable so Paparazzi snapshots can pin the "X ago" footer to a stable
+    // bucket. Production keeps the default — the relative caption updates on
+    // every recomposition, which is what the user expects on a long-lived screen.
+    nowMs: Long = Clock.System.now().toEpochMilliseconds(),
 ) {
     when (state) {
         AiSummaryUiState.Hidden -> Unit
         is AiSummaryUiState.Idle -> IdleCard(state, audioMinutes, onGenerate, modifier)
         is AiSummaryUiState.Generating -> GeneratingCard(modifier)
-        is AiSummaryUiState.Ready -> ReadyCard(state.summary, state.stale, onGenerate, modifier)
+        is AiSummaryUiState.Ready -> ReadyCard(state.summary, state.stale, onGenerate, nowMs, modifier)
         is AiSummaryUiState.Error -> ErrorCard(state.error, onGenerate, onOpenAiSetup, modifier)
     }
 }
@@ -174,6 +178,7 @@ private fun ReadyCard(
     summary: AiSummary,
     stale: Boolean,
     onRegenerate: () -> Unit,
+    nowMs: Long,
     modifier: Modifier,
 ) {
     val c = LocalKofipodColors.current
@@ -205,7 +210,7 @@ private fun ReadyCard(
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "${displayName(summary.modelId)} · ${formatRelative(summary.generatedAtMs)}",
+                "${displayName(summary.modelId)} · ${formatRelative(summary.generatedAtMs, nowMs)}",
                 color = c.textMute,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
@@ -459,9 +464,11 @@ private fun errorPresentation(error: AiError): ErrorPresentation =
 
 private fun displayName(modelApiId: String): String = GeminiModel.fromApiId(modelApiId).displayName
 
-private fun formatRelative(epochMs: Long): String {
-    val now = Clock.System.now().toEpochMilliseconds()
-    val deltaSec = (now - epochMs) / 1000
+private fun formatRelative(
+    epochMs: Long,
+    nowMs: Long,
+): String {
+    val deltaSec = (nowMs - epochMs) / 1000
     return when {
         deltaSec < 60 -> "just now"
         deltaSec < 3600 -> "${deltaSec / 60}m ago"
