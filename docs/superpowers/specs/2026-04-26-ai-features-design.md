@@ -144,7 +144,7 @@ CREATE TABLE EpisodeAiSummary (
 );
 ```
 
-Schema migration: current schema version on disk is **8** (the For You recommendations feature added 7.sqm + 8.sqm via cherry-pick onto this branch). Add `migrations/9.sqm` that creates the new table. Do not edit existing tables.
+Schema migration: current schema version on disk is **11** after rebasing onto master (the episode-detail Slice 4 work added `9.sqm` for Episode chapters/transcript URLs, `10.sqm` for `EpisodeChapter`, and `11.sqm` for `Podcast.primaryCategory`). Add `migrations/12.sqm` that creates the new AI table. Do not edit existing tables.
 
 The `audioBytes` column is the cache-invalidation signal — if the file was redownloaded and its size changed, the cached summary is stale and the UI offers Regenerate. (Hash would be more accurate but materially slower on a 100MB file; size is sufficient for v1.)
 
@@ -217,7 +217,7 @@ No error message ever blames Kofipod for what is in fact a user-key issue. No er
 ## Heads-up for the implementation plan (not a design directive)
 
 - New dependency: `androidx.security:security-crypto` — `androidMain` only; add `androidx.security.crypto.*` to `config/detekt/detekt.yml` `ForbiddenImport` list.
-- Bump SQLDelight schema version: 8 → 9; add `composeApp/src/commonMain/sqldelight/app/kofipod/db/migrations/9.sqm`. CLAUDE.md is already at 8 (separate commit) — Slice 2 only nudges the line to 9.
+- Bump SQLDelight schema version: 11 → 12; add `composeApp/src/commonMain/sqldelight/app/kofipod/db/migrations/12.sqm`. CLAUDE.md is already at 11 (master after episode-detail Slice 4) — Slice 2 only nudges the line to 12.
 - Update `backup_rules.xml` and `backup_rules_legacy.xml` to exclude the `kofipod_secure` shared-prefs file by name.
 - Koin `viewModel { ... }` factories per `CLAUDE.md` — keep positional arity in lockstep.
 - Verify `./gradlew :composeApp:compileKotlinIosSimulatorArm64` after every commit that touches `commonMain` per `CLAUDE.md`.
