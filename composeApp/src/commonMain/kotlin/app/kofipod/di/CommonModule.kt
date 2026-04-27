@@ -79,6 +79,19 @@ val commonDataModule =
         single { GeminiClient(client = app.kofipod.ai.buildAiHttpClient()) }
         single<app.kofipod.ai.KeyValidator> { get<GeminiClient>() }
         single<TextSummariser> { get<GeminiClient>() }
+        // The AudioSummariser binding bridges from the path-based seam the
+        // repository expects to GeminiClient's channel-based primitive — file
+        // opening lives at the boundary so the seam itself stays free of
+        // platform I/O concerns and unit tests don't need to fake file reads.
+        single<app.kofipod.ai.AudioSummariser> {
+            val gemini = get<GeminiClient>()
+            app.kofipod.ai.AudioSummariser { apiKey, model, prompt, localPath, mimeType, sizeBytes, displayName ->
+                runCatching {
+                    val channel = app.kofipod.ai.openLocalFileChannel(localPath)
+                    gemini.summariseAudio(apiKey, model, prompt, channel, mimeType, sizeBytes, displayName).getOrThrow()
+                }
+            }
+        }
         single {
             AiConfigRepository(
                 keyVault = get(),
@@ -87,13 +100,19 @@ val commonDataModule =
             )
         }
         single<TranscriptFetcher> { HttpTranscriptFetcher(get()) }
+        single<app.kofipod.ai.DownloadSource> {
+            val downloads = get<DownloadRepository>()
+            app.kofipod.ai.DownloadSource(downloads::forEpisodeFlow)
+        }
         single {
             AiSummaryRepository(
                 db = get(),
                 aiConfig = get(),
                 summariser = get<TextSummariser>(),
+                audio = get<app.kofipod.ai.AudioSummariser>(),
                 transcripts = get<TranscriptFetcher>(),
                 episodes = get<EpisodeSource>(),
+                downloads = get<app.kofipod.ai.DownloadSource>(),
                 appScope = get(org.koin.core.qualifier.named("appScope")),
             )
         }

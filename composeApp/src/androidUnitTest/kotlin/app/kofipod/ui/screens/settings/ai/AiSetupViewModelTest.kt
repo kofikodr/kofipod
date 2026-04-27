@@ -6,6 +6,8 @@ import app.kofipod.ai.AiError
 import app.kofipod.ai.AiErrorException
 import app.kofipod.ai.AiSourceKind
 import app.kofipod.ai.AiSummaryRepository
+import app.kofipod.ai.AudioSummariser
+import app.kofipod.ai.DownloadSource
 import app.kofipod.ai.GeminiModel
 import app.kofipod.ai.KeyValidator
 import app.kofipod.ai.KeyVault
@@ -351,8 +353,10 @@ class AiSetupViewModelTest {
                 db = db,
                 aiConfig = config,
                 summariser = NoopTextSummariser,
+                audio = NoopAudioSummariser,
                 transcripts = NoopTranscriptFetcher,
                 episodes = EmptyEpisodeSource,
+                downloads = EmptyDownloadSource,
                 appScope = appScope,
                 ioContext = testDispatcher,
             )
@@ -431,8 +435,24 @@ class AiSetupViewModelTest {
         ): Result<String> = error("AiSetupViewModelTest must not exercise the summariser")
     }
 
+    private object NoopAudioSummariser : AudioSummariser {
+        override suspend fun summariseAudio(
+            apiKey: String,
+            model: GeminiModel,
+            prompt: String,
+            localPath: String,
+            mimeType: String,
+            sizeBytes: Long,
+            displayName: String,
+        ): Result<String> = error("AiSetupViewModelTest must not exercise the audio summariser")
+    }
+
     private object NoopTranscriptFetcher : TranscriptFetcher {
         override suspend fun fetch(url: String): Result<String> = error("AiSetupViewModelTest must not exercise the transcript fetcher")
+    }
+
+    private object EmptyDownloadSource : DownloadSource {
+        override fun forEpisodeFlow(episodeId: String): Flow<app.kofipod.db.Download?> = flowOf(null)
     }
 
     private object EmptyEpisodeSource : EpisodeSource {

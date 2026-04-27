@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.ai
 
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToOneOrNull
 import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.data.repo.RefreshResult
 import app.kofipod.data.repo.SettingsRepository
+import app.kofipod.db.Download
 import app.kofipod.db.Episode
 import app.kofipod.db.KofipodDatabase
 import app.kofipod.testing.inMemoryDatabase
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -95,6 +99,90 @@ class AiSummaryRepositoryTest {
         }
 
     @Test
+    fun observeFor_returnsIdleAudio_whenNoTranscript_butEpisodeIsDownloaded() =
+        runTest {
+            // Audio fallback (Slice 2.5) widens the previous "Idle(null)" branch:
+            // a downloaded episode without a publisher transcript can still be
+            // summarised by sending the audio file to Gemini's Files API.
+            val (repo, db) = build(initialKey = "k")
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "")
+            insertCompletedDownload(db, episodeId = "ep1", localPath = "/tmp/ep1.mp3", downloadedBytes = 12_345)
+
+            val state = repo.observeFor("ep1").first()
+
+            assertEquals(AiSummaryUiState.Idle(AiSourceKind.Audio), state)
+        }
+
+    @Test
+    fun observeFor_returnsIdleNull_whenAudioFallbackDisabled_onIosLikePlatform() =
+        runTest {
+            // iOS does not yet wire `openLocalFileChannel`. The repo must NOT
+            // surface Idle(Audio) on platforms where the pipeline can't run —
+            // otherwise the user gets a Generate button that always fails.
+            val (repo, db) = build(initialKey = "k", audioFallbackEnabled = false)
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "")
+            insertCompletedDownload(db, episodeId = "ep1", localPath = "/tmp/ep1.mp3", downloadedBytes = 1_000)
+
+            val state = repo.observeFor("ep1").first()
+
+            assertEquals(AiSummaryUiState.Idle(available = null), state)
+        }
+
+    @Test
+    fun observeFor_returnsIdleNull_whenDownloadIsNotCompleted() =
+        runTest {
+            // Partial / paused / errored downloads aren't summarisable — Gemini
+            // would receive a truncated file and emit a 400 INVALID_ARGUMENT.
+            // pickSource must keep the Generate button hidden until the file
+            // is fully on disk.
+            val (repo, db) = build(initialKey = "k")
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "")
+            db.downloadQueries.upsert(
+                episodeId = "ep1",
+                state = "Downloading",
+                localPath = "/tmp/ep1.partial",
+                downloadedBytes = 500,
+                totalBytes = 12_345,
+                source = "manual",
+                startedAt = 0L,
+                completedAt = null,
+                errorMessage = null,
+            )
+
+            val state = repo.observeFor("ep1").first()
+
+            assertEquals(AiSummaryUiState.Idle(available = null), state)
+        }
+
+    @Test
+    fun observeFor_returnsReadyStale_whenAudioByteCountChanged() =
+        runTest {
+            // Re-downloading the same episode (publisher re-encoded, partial
+            // repair, etc.) lands a different byte count. The cached audio
+            // summary covers the old bytes — UI must surface Regenerate.
+            val (repo, db) = build(initialKey = "k")
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "")
+            insertCompletedDownload(db, episodeId = "ep1", localPath = "/tmp/ep1.mp3", downloadedBytes = 99_999)
+            db.episodeAiSummaryQueries.upsert(
+                episodeId = "ep1",
+                generatedAtMs = 100L,
+                modelId = GeminiModel.Flash.apiId,
+                sourceKind = AiSourceKind.Audio.wire,
+                // 12345 = pre-redownload byte count; current download lands at 99999 → must be stale.
+                sourceFingerprint = "12345",
+                summary = "S",
+                peopleJson = "[]",
+                thingsJson = "[]",
+                linksJson = "[]",
+            )
+
+            val state = repo.observeFor("ep1").first()
+
+            val ready = assertIs<AiSummaryUiState.Ready>(state)
+            assertEquals(true, ready.stale, "Different downloadedBytes must flag the cached audio summary as stale")
+        }
+
+    @Test
     fun observeFor_returnsReadyStale_whenTranscriptUrlChanged() =
         runTest {
             // The publisher swapped the transcript URL — the cached summary covers the
@@ -145,6 +233,78 @@ class AiSummaryRepositoryTest {
                 "Freshly-persisted summary must NOT be flagged stale — closes the round-trip " +
                     "so a fingerprint-comparison regression can't slip past the pipeline test",
             )
+        }
+
+    @Test
+    fun generate_audioPath_persistsAudioSummary_andClearsTransientError() =
+        runTest {
+            // Audio happy path: no transcript URL, episode is downloaded → repo
+            // routes through AudioSummariser, persists with sourceKind=Audio
+            // and the byte-count fingerprint, and ends in Ready (not stale).
+            // Pins the load-bearing wiring: AudioSummariser receives the right
+            // path / mime / size, the persisted row keeps the fingerprint we
+            // just summarised, and the source kind is preserved.
+            val audio = StubAudioSummariser(returns = Result.success("Audio episode summary."))
+            val (repo, db) = build(initialKey = "k", audio = audio)
+            insertEpisode(
+                db,
+                episodeId = "ep1",
+                transcriptUrl = "",
+                // 30 min — well under the 8h soft cap.
+                durationSec = 1800L,
+                enclosureMimeType = "audio/x-m4a",
+            )
+            insertCompletedDownload(db, episodeId = "ep1", localPath = "/tmp/ep1.m4a", downloadedBytes = 9_876_543)
+
+            repo.generate("ep1")
+            advanceUntilIdle()
+
+            assertEquals(1, audio.calls.size, "Audio path must reach AudioSummariser exactly once")
+            val call = audio.calls[0]
+            assertEquals("k", call.apiKey)
+            assertEquals("/tmp/ep1.m4a", call.localPath)
+            assertEquals("audio/x-m4a", call.mimeType)
+            assertEquals(9_876_543L, call.sizeBytes)
+
+            val state = repo.observeFor("ep1").first()
+            val ready = assertIs<AiSummaryUiState.Ready>(state, "Audio happy path must end in Ready, got $state")
+            assertEquals("Audio episode summary.", ready.summary.summary)
+            assertEquals(AiSourceKind.Audio, ready.summary.sourceKind)
+            assertEquals(
+                "9876543",
+                ready.summary.sourceFingerprint,
+                "Audio fingerprint must be the decimal byte count — drives stale detection on re-download",
+            )
+            assertEquals(false, ready.stale, "Freshly-persisted audio summary must NOT be stale")
+        }
+
+    @Test
+    fun generate_audioPath_emitsAudioTooLong_when8hCap() =
+        runTest {
+            // A 12-hour episode would survive the upload only to be rejected by
+            // Gemini for exceeding the context window. We fail fast here so the
+            // user doesn't pay 30s of wait + bandwidth for an inevitable error.
+            val audio = StubAudioSummariser(returns = Result.success("never called"))
+            val (repo, db) = build(initialKey = "k", audio = audio)
+            insertEpisode(
+                db,
+                episodeId = "ep1",
+                transcriptUrl = "",
+                // 12 hours — past the 8h soft cap.
+                durationSec = 12L * 3600,
+            )
+            insertCompletedDownload(db, episodeId = "ep1", localPath = "/tmp/ep1.mp3", downloadedBytes = 1_000_000)
+
+            repo.generate("ep1")
+            advanceUntilIdle()
+
+            assertTrue(
+                audio.calls.isEmpty(),
+                "Episodes past the 8h cap must not reach the upload step — burns user quota for no gain",
+            )
+            val state = repo.observeFor("ep1").first()
+            val error = assertIs<AiSummaryUiState.Error>(state)
+            assertEquals(AiError.AudioTooLong, error.error)
         }
 
     @Test
@@ -296,6 +456,8 @@ class AiSummaryRepositoryTest {
         initialKey: String?,
         transcripts: TranscriptFetcher = StubTranscriptFetcher.success(""),
         summariser: TextSummariser = StubSummariser(returns = Result.success("default")),
+        audio: AudioSummariser = StubAudioSummariser(returns = Result.success("audio default")),
+        audioFallbackEnabled: Boolean = true,
     ): Fixture {
         // Use the test scheduler for SQLDelight flow emissions too — without this,
         // SettingsRepository's `Dispatchers.Default` flowContext prevents
@@ -313,10 +475,13 @@ class AiSummaryRepositoryTest {
                 db = db,
                 aiConfig = aiConfig,
                 summariser = summariser,
+                audio = audio,
                 transcripts = transcripts,
                 episodes = DbEpisodeSource(db),
+                downloads = DbDownloadSource(db),
                 appScope = coroutineScope,
                 ioContext = testDispatcher,
+                audioFallbackEnabled = audioFallbackEnabled,
             )
         return Fixture(repo, db)
     }
@@ -325,6 +490,8 @@ class AiSummaryRepositoryTest {
         db: KofipodDatabase,
         episodeId: String,
         transcriptUrl: String,
+        durationSec: Long = 600L,
+        enclosureMimeType: String = "audio/mpeg",
     ) {
         // Prerequisite: a Podcast row, since Episode FKs into it.
         db.podcastQueries.insert(
@@ -348,15 +515,34 @@ class AiSummaryRepositoryTest {
             title = "T",
             description = "D",
             publishedAt = 0L,
-            durationSec = 600L,
+            durationSec = durationSec,
             enclosureUrl = "https://example.com/audio.mp3",
-            enclosureMimeType = "audio/mpeg",
+            enclosureMimeType = enclosureMimeType,
             fileSizeBytes = 0L,
             seasonNumber = null,
             episodeNumber = null,
             imageUrl = "",
             chaptersUrl = null,
             transcriptUrl = transcriptUrl.takeIf { it.isNotBlank() },
+        )
+    }
+
+    private fun insertCompletedDownload(
+        db: KofipodDatabase,
+        episodeId: String,
+        localPath: String,
+        downloadedBytes: Long,
+    ) {
+        db.downloadQueries.upsert(
+            episodeId = episodeId,
+            state = "Completed",
+            localPath = localPath,
+            downloadedBytes = downloadedBytes,
+            totalBytes = downloadedBytes,
+            source = "manual",
+            startedAt = 0L,
+            completedAt = 0L,
+            errorMessage = null,
         )
     }
 }
@@ -392,6 +578,43 @@ private class StubSummariser(
         callCount += 1
         return handler()
     }
+}
+
+private class StubAudioSummariser(
+    private val handler: suspend (StubAudioCall) -> Result<String>,
+) : AudioSummariser {
+    constructor(returns: Result<String>) : this({ returns })
+
+    val calls: MutableList<StubAudioCall> = mutableListOf()
+
+    override suspend fun summariseAudio(
+        apiKey: String,
+        model: GeminiModel,
+        prompt: String,
+        localPath: String,
+        mimeType: String,
+        sizeBytes: Long,
+        displayName: String,
+    ): Result<String> {
+        val call = StubAudioCall(apiKey, model, prompt, localPath, mimeType, sizeBytes, displayName)
+        calls += call
+        return handler(call)
+    }
+}
+
+private data class StubAudioCall(
+    val apiKey: String,
+    val model: GeminiModel,
+    val prompt: String,
+    val localPath: String,
+    val mimeType: String,
+    val sizeBytes: Long,
+    val displayName: String,
+)
+
+private class DbDownloadSource(private val db: KofipodDatabase) : DownloadSource {
+    override fun forEpisodeFlow(episodeId: String): Flow<Download?> =
+        db.downloadQueries.selectByEpisode(episodeId).asFlow().mapToOneOrNull(Dispatchers.Unconfined)
 }
 
 private class StubTranscriptFetcher(

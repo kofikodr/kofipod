@@ -54,6 +54,24 @@ fun interface TextSummariser {
 }
 
 /**
+ * Seam over the audio-summarisation pipeline (upload → poll → generate → delete)
+ * so [AiSummaryRepository] can be unit-tested against a synchronous fake. The
+ * production wiring (in `CommonModule`) opens the local audio file via the
+ * [openLocalFileChannel] expect-fun, then delegates to [GeminiClient.summariseAudio].
+ */
+fun interface AudioSummariser {
+    suspend fun summariseAudio(
+        apiKey: String,
+        model: GeminiModel,
+        prompt: String,
+        localPath: String,
+        mimeType: String,
+        sizeBytes: Long,
+        displayName: String,
+    ): Result<String>
+}
+
+/**
  * Files API uploaded-file metadata. Returned by [GeminiClient.uploadAudio] and
  * [GeminiClient.pollUntilActive]; passed through to [GeminiClient.generateFromAudio]
  * (we read [uri] + [mimeType]) and [GeminiClient.deleteFile] (we read [name]).
@@ -404,6 +422,38 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
             Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
         } else {
             Result.success(text)
+        }
+    }
+
+    /**
+     * Orchestrates the full audio pipeline: [uploadAudio] → [pollUntilActive] →
+     * [generateFromAudio] → best-effort [deleteFile]. This is the path
+     * [AiSummaryRepository] takes for the audio fallback; tests can use the
+     * primitive methods directly via [GeminiClientAudioTest].
+     *
+     * The cleanup runs in `finally` so the uploaded file is removed even when
+     * generation fails — otherwise a failed retry could leave duplicates lying
+     * around for 48h until Gemini's auto-purge kicks in.
+     */
+    suspend fun summariseAudio(
+        apiKey: String,
+        model: GeminiModel,
+        prompt: String,
+        fileChannel: ByteReadChannel,
+        mimeType: String,
+        sizeBytes: Long,
+        displayName: String,
+    ): Result<String> {
+        val uploaded =
+            uploadAudio(apiKey, fileChannel, mimeType, sizeBytes, displayName)
+                .getOrElse { return Result.failure(it) }
+        return try {
+            val active =
+                pollUntilActive(apiKey, uploaded.name)
+                    .getOrElse { return Result.failure(it) }
+            generateFromAudio(apiKey, model, active.uri, active.mimeType, prompt)
+        } finally {
+            deleteFile(apiKey, uploaded.name)
         }
     }
 
