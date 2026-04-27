@@ -104,7 +104,7 @@ val commonDataModule =
                 updateActions = get<UpdateActionPort>(),
             )
         }
-        viewModel { DownloadsViewModel(get(), get(), get(), get()) }
+        viewModel { DownloadsViewModel(get()) }
         viewModel { SchedulerInfoViewModel(get()) }
         viewModel { (podcastId: String) ->
             PodcastDetailViewModel(podcastId, get(), get(), get(), get(), get(), get(), get(), get())

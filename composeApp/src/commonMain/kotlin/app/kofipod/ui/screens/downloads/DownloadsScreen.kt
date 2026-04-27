@@ -57,7 +57,7 @@ private const val BYTES_PER_MB: Double = 1024.0 * 1024.0
 @Composable
 fun DownloadsScreen(
     viewModel: DownloadsViewModel = koinViewModel(),
-    onOpenPlayer: () -> Unit = {},
+    onOpenEpisode: (String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val c = LocalKofipodColors.current
@@ -116,10 +116,11 @@ fun DownloadsScreen(
                 )
             }
             items(state.downloading, key = { "dl-${it.episodeId}" }) { d ->
-                InProgressRow(d, onCancel = { viewModel.cancel(d.episodeId) }, onPlay = {
-                    viewModel.play(d.episodeId)
-                    onOpenPlayer()
-                })
+                InProgressRow(
+                    d,
+                    onCancel = { viewModel.cancel(d.episodeId) },
+                    onClick = { onOpenEpisode(d.episodeId) },
+                )
             }
         }
 
@@ -127,10 +128,7 @@ fun DownloadsScreen(
         if (state.queued.isNotEmpty()) {
             item { SectionLabel(title = "Up next \u00B7 ${state.queued.size}") }
             items(state.queued, key = { "up-${it.episodeId}" }) { d ->
-                QueuedRow(d, onPlay = {
-                    viewModel.play(d.episodeId)
-                    onOpenPlayer()
-                })
+                QueuedRow(d, onClick = { onOpenEpisode(d.episodeId) })
             }
         }
 
@@ -159,10 +157,11 @@ fun DownloadsScreen(
                 )
             }
             items(state.completed, key = { "done-${it.episodeId}" }) { d ->
-                CompletedRow(d, onDelete = { viewModel.delete(d.episodeId) }, onPlay = {
-                    viewModel.play(d.episodeId)
-                    onOpenPlayer()
-                })
+                CompletedRow(
+                    d,
+                    onDelete = { viewModel.delete(d.episodeId) },
+                    onClick = { onOpenEpisode(d.episodeId) },
+                )
             }
         }
 
@@ -170,10 +169,11 @@ fun DownloadsScreen(
         if (state.failed.isNotEmpty()) {
             item { SectionLabel(title = "Failed \u00B7 ${state.failed.size}") }
             items(state.failed, key = { "fail-${it.episodeId}" }) { d ->
-                CompletedRow(d, onDelete = { viewModel.delete(d.episodeId) }, onPlay = {
-                    viewModel.play(d.episodeId)
-                    onOpenPlayer()
-                })
+                CompletedRow(
+                    d,
+                    onDelete = { viewModel.delete(d.episodeId) },
+                    onClick = { onOpenEpisode(d.episodeId) },
+                )
             }
         }
 
@@ -322,7 +322,7 @@ private fun ProgressRing(
 private fun InProgressRow(
     d: DownloadRow,
     onCancel: () -> Unit,
-    onPlay: () -> Unit,
+    onClick: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
     val progress: Float =
@@ -335,7 +335,7 @@ private fun InProgressRow(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onPlay)
+                .clickable(onClick = onClick)
                 .padding(vertical = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -404,14 +404,14 @@ private fun InProgressRow(
 @Composable
 private fun QueuedRow(
     d: DownloadRow,
-    onPlay: () -> Unit,
+    onClick: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onPlay)
+                .clickable(onClick = onClick)
                 .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -459,7 +459,7 @@ private fun QueuedRow(
 private fun CompletedRow(
     d: DownloadRow,
     onDelete: () -> Unit,
-    onPlay: () -> Unit,
+    onClick: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Row(
@@ -467,7 +467,7 @@ private fun CompletedRow(
             Modifier
                 .fillMaxWidth()
                 .combinedClickable(
-                    onClick = onPlay,
+                    onClick = onClick,
                     onLongClick = onDelete,
                 )
                 .padding(vertical = 10.dp),
