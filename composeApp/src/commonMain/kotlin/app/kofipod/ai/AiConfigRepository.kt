@@ -27,9 +27,18 @@ class AiConfigRepository(
 
     init {
         // Hydrate once on startup. Reads from EncryptedSharedPreferences are I/O-bound,
-        // so we don't block construction.
+        // so we don't block construction. EncryptedSharedPreferences.create() can throw
+        // on first init (Keystore locked, fresh boot, key rotation race) — swallow
+        // silently means `keyConfigured` stays false and the user sees an unconnected
+        // state with no path forward. Log the class name so a logcat trace is enough
+        // to diagnose without leaking the key or any preference contents.
         appScope.launch {
-            keyConfigured.value = !keyVault.get().isNullOrBlank()
+            keyConfigured.value =
+                runCatching { !keyVault.get().isNullOrBlank() }
+                    .getOrElse {
+                        println("Kofipod-AI: keyVault hydration failed: ${it::class.simpleName}")
+                        false
+                    }
         }
     }
 

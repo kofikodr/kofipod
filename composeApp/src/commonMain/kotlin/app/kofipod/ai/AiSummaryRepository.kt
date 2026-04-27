@@ -12,10 +12,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import app.kofipod.db.EpisodeAiSummary as DbEpisodeAiSummary
 
@@ -83,6 +85,13 @@ class AiSummaryRepository(
                 return@combine AiSummaryUiState.Ready(mapped, stale)
             }
             AiSummaryUiState.Idle(available)
+        }.onCompletion {
+            // Once the last subscriber for this episode goes away, drop the
+            // transient error. Otherwise a stale `AiError.Network` from yesterday
+            // would re-render the moment the user reopens the episode, even
+            // though the connection has since recovered. The flag is rebuilt by
+            // the next `generate()` call if the failure repeats.
+            transientErrors.update { it - episodeId }
         }
     }
 
@@ -95,9 +104,16 @@ class AiSummaryRepository(
         appScope.launch { runGenerate(episodeId) }
     }
 
-    /** Wipes all cached summaries. Wired up by Slice 4 Disconnect. */
+    /**
+     * Wipes all cached summaries. Wired up by Slice 4 Disconnect. Forced onto
+     * `Dispatchers.Default` so callers from the main thread don't ANR on a
+     * sluggish on-device write — SQLDelight does not enforce off-main I/O on
+     * its own.
+     */
     suspend fun clearAll() {
-        db.episodeAiSummaryQueries.deleteAll()
+        withContext(Dispatchers.Default) {
+            db.episodeAiSummaryQueries.deleteAll()
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -106,20 +122,23 @@ class AiSummaryRepository(
 
     private suspend fun runGenerate(episodeId: String) {
         // Acquire the lock for the eligibility check + in-flight registration as one
-        // atomic step. The actual network call happens outside the lock so other
-        // episodes can summarise concurrently.
-        val source: AiSourceKind =
+        // atomic step, AND capture the episode snapshot used for the request body
+        // here. Reading the episode again outside the lock would open a TOCTOU
+        // window: the feed could refresh between the two reads, leaving us
+        // sending a request keyed to a `transcriptUrl` that no longer matches the
+        // `pickSource()` decision the caller made. The actual network call happens
+        // outside the lock so other episodes can summarise concurrently.
+        val (source, episode) =
             generateLock.withLock {
                 if (inFlight.value.containsKey(episodeId)) return
-                val episode = episodes.episodeFlow(episodeId).first()
-                val available = pickSource(episode) ?: return surface(episodeId, AiError.TranscriptUnavailable)
+                val ep = episodes.episodeFlow(episodeId).first() ?: return
+                val available = pickSource(ep) ?: return surface(episodeId, AiError.TranscriptUnavailable)
                 inFlight.update { it + (episodeId to available) }
                 transientErrors.update { it - episodeId }
-                available
+                available to ep
             }
 
         try {
-            val episode = episodes.episodeFlow(episodeId).first() ?: return
             when (source) {
                 AiSourceKind.Transcript -> runTranscript(episode.id, episode.transcriptUrl.orEmpty())
                 AiSourceKind.Audio -> {
@@ -153,7 +172,7 @@ class AiSummaryRepository(
                 return
             }
 
-        val prompt = AiPrompts.episodeSummaryPrompt(localeTag = "en-US")
+        val prompt = AiPrompts.episodeSummaryPrompt(localeTag = currentLocaleTag())
         val summary: String =
             summariser.generateFromText(
                 apiKey = key,
@@ -176,6 +195,10 @@ class AiSummaryRepository(
             thingsJson = "[]",
             linksJson = "[]",
         )
+        // Persisted successfully — drop any error left over from a previous
+        // failed attempt for this episode so the UI doesn't briefly flash the
+        // old error card before the cached summary lands.
+        transientErrors.update { it - episodeId }
     }
 
     private fun surface(
