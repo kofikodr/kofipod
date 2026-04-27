@@ -1,0 +1,13 @@
+-- Cached Podcasting 2.0 chapters per episode. See EpisodeChapter.sq for shape.
+CREATE TABLE EpisodeChapter (
+    episodeId TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    startMs INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    imageUrl TEXT NOT NULL DEFAULT '',
+    linkUrl TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (episodeId, seq),
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
+);
+
+CREATE INDEX EpisodeChapter_byEpisode ON EpisodeChapter(episodeId, startMs);

@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kofipod.db.Episode
+import app.kofipod.db.EpisodeChapter
 import app.kofipod.db.Podcast
 import app.kofipod.ui.primitives.KPButton
 import app.kofipod.ui.primitives.KPButtonStyle
@@ -77,6 +78,7 @@ fun EpisodeDetailScreen(
                 EpisodeBody(
                     episode = state.episode!!,
                     podcast = state.podcast,
+                    chapters = state.chapters,
                     isPlayingThis = state.isPlayingThis,
                     isCurrentEpisode = state.isCurrentEpisode,
                     downloaded = state.downloaded,
@@ -88,6 +90,10 @@ fun EpisodeDetailScreen(
                     onMarkPlayed = viewModel::markPlayed,
                     onDeleteDownload = viewModel::deleteDownload,
                     onDownload = viewModel::download,
+                    onChapterTap = { startMs ->
+                        viewModel.seekToChapter(startMs)
+                        if (!state.isCurrentEpisode) onOpenPlayer()
+                    },
                 )
             }
         }
@@ -128,6 +134,7 @@ private fun IconBox(
 private fun EpisodeBody(
     episode: Episode,
     podcast: Podcast?,
+    chapters: List<EpisodeChapter>,
     isPlayingThis: Boolean,
     isCurrentEpisode: Boolean,
     downloaded: Boolean,
@@ -136,6 +143,7 @@ private fun EpisodeBody(
     onMarkPlayed: () -> Unit,
     onDeleteDownload: () -> Unit,
     onDownload: () -> Unit,
+    onChapterTap: (Long) -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Spacer(Modifier.height(8.dp))
@@ -177,8 +185,95 @@ private fun EpisodeBody(
         )
     }
 
-    // Chapters section is intentionally not rendered in this slice. Slice 3 fetches and
-    // persists Podcasting 2.0 chapters JSON when episode.chaptersUrl is non-null.
+    if (chapters.isNotEmpty()) {
+        Spacer(Modifier.height(24.dp))
+        ChaptersSection(chapters = chapters, onChapterTap = onChapterTap)
+    }
+}
+
+@Composable
+private fun ChaptersSection(
+    chapters: List<EpisodeChapter>,
+    onChapterTap: (Long) -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "CHAPTERS",
+            color = c.pink,
+            fontWeight = FontWeight.Bold,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            chapters.size.toString(),
+            color = c.textMute,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+    }
+    Spacer(Modifier.height(8.dp))
+    Column(Modifier.fillMaxWidth()) {
+        chapters.forEachIndexed { idx, chapter ->
+            ChapterRow(chapter = chapter, onClick = { onChapterTap(chapter.startMs) })
+            if (idx != chapters.lastIndex) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(c.border),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChapterRow(
+    chapter: EpisodeChapter,
+    onClick: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            formatChapterTime(chapter.startMs),
+            color = c.textMute,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            modifier = Modifier.width(56.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            chapter.title,
+            color = c.text,
+            fontSize = 14.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+private fun formatChapterTime(ms: Long): String {
+    val totalSec = (ms / 1000).coerceAtLeast(0L)
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    return if (h > 0) {
+        h.toString().padStart(2, '0') + ":" +
+            m.toString().padStart(2, '0') + ":" +
+            s.toString().padStart(2, '0')
+    } else {
+        m.toString().padStart(2, '0') + ":" + s.toString().padStart(2, '0')
+    }
 }
 
 @Composable

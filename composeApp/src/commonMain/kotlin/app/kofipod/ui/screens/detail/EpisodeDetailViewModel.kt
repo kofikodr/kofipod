@@ -3,12 +3,14 @@ package app.kofipod.ui.screens.detail
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.kofipod.data.repo.ChaptersRepository
 import app.kofipod.data.repo.DownloadRepository
 import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.data.repo.LibraryRepository
 import app.kofipod.data.repo.PlaybackRepository
 import app.kofipod.db.Download
 import app.kofipod.db.Episode
+import app.kofipod.db.EpisodeChapter
 import app.kofipod.db.PlaybackState
 import app.kofipod.db.Podcast
 import app.kofipod.downloads.DownloadJob
@@ -27,6 +29,7 @@ import kotlinx.datetime.Clock
 data class EpisodeDetailUiState(
     val episode: Episode? = null,
     val podcast: Podcast? = null,
+    val chapters: List<EpisodeChapter> = emptyList(),
     val isPlayingThis: Boolean = false,
     val isCurrentEpisode: Boolean = false,
     val downloaded: Boolean = false,
@@ -43,10 +46,22 @@ class EpisodeDetailViewModel(
     private val downloads: DownloadRepository,
     private val player: KofipodPlayer,
     private val sharer: Sharer,
+    private val chapters: ChaptersRepository,
 ) : ViewModel() {
     private val error = MutableStateFlow<String?>(null)
 
     private val episodeFlow = episodes.episodeFlow(episodeId)
+    private val chaptersFlow = chapters.chaptersFlow(episodeId)
+
+    init {
+        viewModelScope.launch {
+            episodeFlow.collect { ep ->
+                val url = ep?.chaptersUrl?.takeIf { it.isNotBlank() } ?: return@collect
+                if (chapters.hasCached(episodeId)) return@collect
+                chapters.refresh(episodeId, url)
+            }
+        }
+    }
 
     val state: StateFlow<EpisodeDetailUiState> =
         combine(
@@ -54,12 +69,21 @@ class EpisodeDetailViewModel(
             playback.stateFlow(episodeId),
             downloads.forEpisodeFlow(episodeId),
             player.state,
+            chaptersFlow,
             error,
-        ) { ep, ps, dl, playerState, err ->
+        ) { values ->
+            @Suppress("UNCHECKED_CAST")
+            val ep = values[0] as Episode?
+            val ps = values[1] as PlaybackState?
+            val dl = values[2] as Download?
+            val playerState = values[3] as app.kofipod.playback.PlayerState
+            val chapterRows = values[4] as List<EpisodeChapter>
+            val err = values[5] as String?
             val podcast = ep?.podcastId?.let { library.podcastNow(it) }
             EpisodeDetailUiState(
                 episode = ep,
                 podcast = podcast,
+                chapters = chapterRows,
                 isPlayingThis = playerState.episodeId == episodeId && playerState.isPlaying,
                 isCurrentEpisode = playerState.episodeId == episodeId,
                 downloaded = dl.isDownloaded(),
@@ -120,6 +144,32 @@ class EpisodeDetailViewModel(
             fileName = downloadFileName(ep.id, ep.enclosureMimeType),
             source = DownloadJob.Source.Manual,
         )
+    }
+
+    fun seekToChapter(startMs: Long) {
+        val s = state.value
+        if (s.isCurrentEpisode) {
+            player.seekTo(startMs)
+            if (!s.isPlayingThis) player.resume()
+            return
+        }
+        val ep = s.episode ?: return
+        val pod = s.podcast ?: return
+        viewModelScope.launch {
+            val sourceUrl = downloads.resolvedSourceUrl(episodeId, ep.enclosureUrl) ?: return@launch
+            player.play(
+                PlayableEpisode(
+                    episodeId = episodeId,
+                    podcastId = pod.id,
+                    podcastTitle = pod.title,
+                    title = ep.title,
+                    artworkUrl = ep.imageUrl.ifBlank { pod.artworkUrl },
+                    sourceUrl = sourceUrl,
+                    startPositionMs = startMs,
+                    episodeNumber = ep.episodeNumber?.toInt(),
+                ),
+            )
+        }
     }
 
     fun share() {

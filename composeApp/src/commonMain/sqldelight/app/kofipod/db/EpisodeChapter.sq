@@ -1,0 +1,37 @@
+-- Cached Podcasting 2.0 chapters per episode. We only fetch chapters JSON when an
+-- episode opens the detail screen and chaptersUrl is non-null; results are persisted
+-- so subsequent opens stay offline-friendly. Cascade with Episode so chapters are
+-- collected when the parent row goes away.
+CREATE TABLE EpisodeChapter (
+    episodeId TEXT NOT NULL,
+    -- Order within the episode (matches the array index in the source JSON). Used as
+    -- the secondary key so multiple chapters with identical startSec stay stable.
+    seq INTEGER NOT NULL,
+    -- Start time in milliseconds. The Podcasting 2.0 spec is seconds-as-number
+    -- (which can be fractional); we round to ms during ingest to keep arithmetic
+    -- with the player's positionMs cheap.
+    startMs INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    -- Optional chapter art URL (per-chapter override). Empty when the source omits it.
+    imageUrl TEXT NOT NULL DEFAULT '',
+    -- Optional outbound link (e.g. show-notes URL for the chapter). Empty when absent.
+    linkUrl TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (episodeId, seq),
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
+);
+
+CREATE INDEX EpisodeChapter_byEpisode ON EpisodeChapter(episodeId, startMs);
+
+selectByEpisode:
+SELECT * FROM EpisodeChapter WHERE episodeId = ? ORDER BY seq ASC;
+
+countByEpisode:
+SELECT COUNT(*) AS c FROM EpisodeChapter WHERE episodeId = ?;
+
+insert:
+INSERT OR REPLACE INTO EpisodeChapter
+(episodeId, seq, startMs, title, imageUrl, linkUrl)
+VALUES (?, ?, ?, ?, ?, ?);
+
+deleteByEpisode:
+DELETE FROM EpisodeChapter WHERE episodeId = ?;

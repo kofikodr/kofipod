@@ -12,6 +12,7 @@ import app.kofipod.data.recommend.RecommendationsRepository
 import app.kofipod.data.recommend.RecommendationsSource
 import app.kofipod.data.repo.CategoriesRepository
 import app.kofipod.data.repo.CategoriesSource
+import app.kofipod.data.repo.ChaptersRepository
 import app.kofipod.data.repo.DiscoveryRepository
 import app.kofipod.data.repo.DiscoverySource
 import app.kofipod.data.repo.DownloadRepository
@@ -55,6 +56,7 @@ val commonDataModule =
         single { DiscoveryRepository(get()) }
         single<DiscoverySource> { get<DiscoveryRepository>() }
         single { CategoriesRepository() }
+        single { ChaptersRepository(db = get(), http = get()) }
         single<CategoriesSource> { get<CategoriesRepository>() }
         single<RecommendationApi> { PodcastIndexRecommendationApi(get()) }
         single { RecommendationsRepository(db = get(), api = get()) }
@@ -116,6 +118,7 @@ val commonDataModule =
                 downloads = get(),
                 player = get(),
                 sharer = get(),
+                chapters = get(),
             )
         }
         viewModel { PlayerViewModel(get(), get(), get(), get(), get(), get()) }
