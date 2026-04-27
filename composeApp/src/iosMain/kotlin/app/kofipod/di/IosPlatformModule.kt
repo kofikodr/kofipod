@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.di
 
+import app.kofipod.ai.IosKeyVaultStub
+import app.kofipod.ai.KeyVault
 import app.kofipod.network.IosNetworkMonitor
 import app.kofipod.network.NetworkMonitor
 import app.kofipod.ui.palette.IosPalettePort
@@ -24,4 +26,5 @@ val iosPlatformModule =
         single<PalettePort> { IosPalettePort() }
         single<LocalApkPathStore> { IosLocalApkPathStore() }
         single { UpdateChecker() }
+        single<KeyVault> { IosKeyVaultStub() }
     }

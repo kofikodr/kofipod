@@ -70,7 +70,10 @@ val commonDataModule =
         single { StatsRepository(get(), get()) }
         single { UpdateRepository(settings = get(), localApk = get()) }
         single { GithubReleasesApi(get()) }
-        single { GeminiClient(get()) }
+        // Use the dedicated AI HttpClient — never the shared one. See AiHttpClient.kt
+        // for the rationale (Gemini key travels in `?key=`; logging would leak it).
+        single { GeminiClient(client = app.kofipod.ai.buildAiHttpClient()) }
+        single<app.kofipod.ai.KeyValidator> { get<GeminiClient>() }
         single {
             AiConfigRepository(
                 keyVault = get(),

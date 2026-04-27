@@ -5,8 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.kofipod.ai.AiConfigRepository
 import app.kofipod.ai.AiError
-import app.kofipod.ai.GeminiClient
 import app.kofipod.ai.GeminiModel
+import app.kofipod.ai.KeyValidator
 import app.kofipod.ai.toAiError
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -26,7 +26,7 @@ data class AiSetupUiState(
 
 class AiSetupViewModel(
     private val config: AiConfigRepository,
-    private val client: GeminiClient,
+    private val client: KeyValidator,
 ) : ViewModel() {
     private val pasteValue = MutableStateFlow("")
     private val verifying = MutableStateFlow(false)
@@ -63,6 +63,11 @@ class AiSetupViewModel(
         }
 
     fun connect() {
+        // Guard against double-submission. The Compose UI also gates on `state.verifying`,
+        // but two synchronous taps on the Main thread can both observe `verifying = false`
+        // before either coroutine reaches its first suspension point — without this guard
+        // we'd race on `setKey(raw)` and burn two validation requests.
+        if (verifying.value) return
         val raw = pasteValue.value.trim()
         if (raw.isEmpty()) {
             errorMessage.value = "Paste your Gemini API key first."
@@ -97,14 +102,21 @@ class AiSetupViewModel(
             showDisconnectConfirm.value = false
             pasteValue.value = ""
         }
-
-    private fun errorCopy(error: AiError): String =
-        when (error) {
-            AiError.KeyInvalid -> "That key was rejected. Double-check it in Google AI Studio."
-            AiError.RateLimited -> "Google rate-limited the validation request. Try again in a minute."
-            AiError.Network -> "Couldn't reach Google. Check your connection and retry."
-            AiError.NoKey -> "Paste your Gemini API key first."
-            AiError.AudioTooLong -> "Unexpected error during validation."
-            is AiError.Unknown -> "Validation failed (status ${error.statusCode ?: "unknown"})."
-        }
 }
+
+/**
+ * Maps [AiError] variants to the user-facing copy shown under the paste field.
+ * Lifted out of [AiSetupViewModel] so it's directly unit-testable — the VM
+ * itself only needs `errorCopy(error)` and the indirection caused tests to need
+ * a full `viewModelScope` to assert one branch. Internal so the test suite can
+ * see it without exposing it on the public surface.
+ */
+internal fun errorCopy(error: AiError): String =
+    when (error) {
+        AiError.KeyInvalid -> "That key was rejected. Double-check it in Google AI Studio."
+        AiError.RateLimited -> "Google rate-limited the validation request. Try again in a minute."
+        AiError.Network -> "Couldn't reach Google. Check your connection and retry."
+        AiError.NoKey -> "Paste your Gemini API key first."
+        AiError.AudioTooLong -> "Unexpected error during validation."
+        is AiError.Unknown -> "Validation failed (status ${error.statusCode ?: "unknown"})."
+    }

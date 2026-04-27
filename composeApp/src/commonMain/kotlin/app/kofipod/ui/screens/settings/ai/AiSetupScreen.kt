@@ -146,7 +146,7 @@ private fun DisclosureCard() {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "When these features are used, only the audio is uploaded to Google." +
+            "When these features are used, only the audio is uploaded to Google. " +
                 "Your key stays only on this phone, it is " +
                 "never synced or sent anywhere else.",
             color = c.text,

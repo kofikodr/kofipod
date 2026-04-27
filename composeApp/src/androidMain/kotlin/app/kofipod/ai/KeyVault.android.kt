@@ -10,7 +10,12 @@ import kotlinx.coroutines.withContext
 private const val PREFS_FILE = "kofipod_secure"
 private const val KEY_GEMINI_API_KEY = "gemini_api_key"
 
-actual class KeyVault(private val context: Context) {
+/**
+ * EncryptedSharedPreferences-backed [KeyVault] implementation. The prefs file
+ * (`kofipod_secure`) is also excluded from Auto Backup via `backup_rules.xml`
+ * so the key never leaves this device.
+ */
+class AndroidKeyVault(private val context: Context) : KeyVault {
     private val prefs by lazy {
         val masterKey =
             MasterKey.Builder(context)
@@ -25,17 +30,17 @@ actual class KeyVault(private val context: Context) {
         )
     }
 
-    actual suspend fun get(): String? =
+    override suspend fun get(): String? =
         withContext(Dispatchers.IO) {
             prefs.getString(KEY_GEMINI_API_KEY, null)?.takeIf { it.isNotBlank() }
         }
 
-    actual suspend fun set(value: String) =
+    override suspend fun set(value: String) =
         withContext(Dispatchers.IO) {
             prefs.edit().putString(KEY_GEMINI_API_KEY, value).apply()
         }
 
-    actual suspend fun clear() =
+    override suspend fun clear() =
         withContext(Dispatchers.IO) {
             prefs.edit().remove(KEY_GEMINI_API_KEY).apply()
         }

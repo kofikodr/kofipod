@@ -12,6 +12,19 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.Serializable
 
 /**
+ * Tiny seam over the "validate this API key" call so [AiSetupViewModel] can be
+ * unit-tested against a synchronous fake without standing up Ktor's MockEngine
+ * (whose internal dispatcher doesn't compose with `runTest`'s virtual scheduler).
+ * The production [GeminiClient] is the only real implementation today.
+ */
+fun interface KeyValidator {
+    suspend fun validate(
+        apiKey: String,
+        model: GeminiModel,
+    ): Result<Unit>
+}
+
+/**
  * Thin wrapper over the Gemini Developer API (`generativelanguage.googleapis.com`).
  *
  * Slice 1 ships only [validate]: a near-zero-cost `generateContent` round-trip that
@@ -21,7 +34,7 @@ import kotlinx.serialization.Serializable
  * The API key is passed at request scope (the `?key=` query param), never persisted
  * into the client, so the same instance survives a key rotation without rebuild.
  */
-class GeminiClient(private val client: HttpClient) {
+class GeminiClient(private val client: HttpClient) : KeyValidator {
     /**
      * Issues a 4-token completion request. Returns [Result.success] on HTTP 200 and
      * [Result.failure] wrapping an [AiError] otherwise.
@@ -29,7 +42,7 @@ class GeminiClient(private val client: HttpClient) {
      * Network failures surface as [AiError.Network]. We never log the key, the prompt,
      * or the response body — only the HTTP status code on non-2xx responses.
      */
-    suspend fun validate(
+    override suspend fun validate(
         apiKey: String,
         model: GeminiModel,
     ): Result<Unit> {
