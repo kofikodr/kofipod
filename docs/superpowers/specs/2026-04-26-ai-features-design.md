@@ -27,7 +27,14 @@ The provider-specific bits (Gemini endpoints, model IDs, token rate, the 9.5h ce
 
 ### Episode AI panel (the only AI-bearing UI in v1)
 
-A new **AI panel** on the **Episode detail screen** (under the description, above any existing chapter list).
+A new **AI panel** on the **Episode detail screen** (`ui/screens/detail/EpisodeDetailScreen.kt`), inserted under the description block and above the chapters section. The chapters section is already rendered by the existing detail screen (see `ChaptersRepository`); the AI panel is a sibling composable, not folded into chapter rows or `EpisodeRowData` (preserves the perf invariants in `CLAUDE.md`).
+
+**Source selection.** The repository picks the cheapest sufficient input per episode:
+
+1. **Transcript path** — `episode.transcriptUrl` non-blank. Fetch the raw bytes (no auth, just `HttpClient.get`), pass them verbatim into Gemini as a `text` part along with the prompt. Format detection is the model's job: VTT, SRT, JSON, plain text, anything Podcasting 2.0 publishers ship today — the prompt instructs Gemini to ignore cue numbering, timestamps, and speaker labels and produce clean prose. ~50–200× cheaper than audio for the same episode and orders of magnitude faster.
+2. **Audio path** — fallback used when `transcriptUrl` is null/blank. Files API resumable upload, then `generateContent` referencing the uploaded `fileUri`. Same prompt, same output shape. **Slice 2.5** in the implementation plan.
+
+There is no description-only or chapters-only path. If neither transcript nor (eventually) audio is available, the panel surfaces an error rather than producing a low-quality summary from show notes alone.
 
 **States:**
 
@@ -92,12 +99,13 @@ All AI code lives under `app/kofipod/ai/`. Detekt's existing `ForbiddenImport` r
 ```
 ai/
 ├── KeyVault.kt              // expect class. Android: EncryptedSharedPreferences; iOS: TODO.
-├── GeminiClient.kt          // commonMain. Ktor-based. Files API upload + generateContent.
+├── AiHttpClient.kt          // expect/actual. Dedicated key-bearing client; no Logging plugin.
+├── GeminiClient.kt          // commonMain. Ktor-based. text + audio generateContent paths.
 ├── GeminiModels.kt          // enum: Flash, FlashLite. Model IDs + display names.
 ├── AiPrompts.kt             // single prompt template for v1 episode-summary use case.
-├── AiSummaryRepository.kt   // commonMain. Orchestrates: read key → upload → call → persist.
-├── AiSummaryDto.kt          // domain types: AiSummary, Person, MentionedThing, MentionedLink.
-└── AiError.kt               // sealed class: NoKey, KeyInvalid, RateLimited, AudioTooLong, Network, Unknown.
+├── AiSummaryRepository.kt   // commonMain. Source selection (transcript→audio) + persist.
+├── AiSummaryDto.kt          // domain types: AiSummary, MentionedLink, AiSourceKind.
+└── AiError.kt               // sealed class: NoKey, KeyInvalid, RateLimited, AudioTooLong, Network, TranscriptUnavailable, Unknown.
 ```
 
 **Why no abstraction over providers in v1.** The KISS reading: one provider, one shape, one prompt. If a second provider ever ships, the seam is "split `GeminiClient` into an interface" — a one-commit refactor. Premature abstractions burn complexity now to save imagined work later.
@@ -110,18 +118,32 @@ ai/
 
 ### Networking
 
-Reuse the existing Ktor `HttpClient` from `data/net/buildHttpClient`. Configure a separate `GeminiHttpClient` with its own JSON config and base URL `https://generativelanguage.googleapis.com/v1beta/`. Auth is `?key=<apiKey>` query param injected at the request level (not at client init), so the same client survives a key rotation without rebuild.
+Two distinct HTTP clients — never share:
 
-### Files API flow
+- `data/net/buildHttpClient` — the existing app-wide client. Used to **fetch transcript bytes** (`HttpClient.get(transcriptUrl).bodyAsText()`). No auth, no API key, public URLs only.
+- `ai/AiHttpClient` — dedicated key-bearing client (already in tree). **No `Logging` plugin** so the `?key=` query param can never reach a sink. Base URL `https://generativelanguage.googleapis.com`. Auth is `?key=<apiKey>` injected at the request level so the same client survives a key rotation without rebuild.
 
-For an audio file:
+### Source selection (transcript path → audio fallback)
 
-1. `POST /upload/v1beta/files?key=…&uploadType=resumable` — start session, get upload URL.
-2. `PUT <uploadUrl>` — stream the file body. (Ktor `OutgoingContent.WriteChannelContent` from a `RandomAccessFile`-backed source on Android; v1 uses streaming `readChannel()` over the file path. We are uploading already-downloaded local files only.)
-3. `POST /v1beta/models/<model>:generateContent?key=…` — body references the uploaded `fileUri`. One shot, non-streaming for v1.
-4. `DELETE /v1beta/files/<id>?key=…` — best-effort cleanup. Ignore failures (server expires in 48h regardless).
+Per episode, `AiSummaryRepository.generate()` picks the cheapest available input:
 
-Inline upload (`<20MB`) is **not** implemented in v1. Even short podcasts at low bitrate routinely exceed 20MB once you account for prompt overhead.
+**Transcript path (Slice 2)** — when `episode.transcriptUrl` is non-blank:
+
+1. `GET <transcriptUrl>` via the app-wide `HttpClient`. Read body as text.
+2. `POST /v1beta/models/<model>:generateContent?key=…` with two `parts`: `{text: <prompt>}` and `{text: <transcript body>}`. The prompt instructs Gemini to ignore cue numbers, timestamps, and speaker prefixes and to produce clean prose — format detection (VTT/SRT/JSON/plain) is the model's job, not ours.
+3. Persist with `sourceKind = 'transcript'`, `sourceFingerprint = transcriptUrl`.
+
+A transcript fetch that returns non-2xx surfaces `AiError.TranscriptUnavailable` (offers retry; does not auto-fall-back to the audio path — that's a v2 decision and risks silent quota burn).
+
+**Audio path (Slice 2.5)** — when `transcriptUrl` is null/blank, and the user has the episode downloaded:
+
+1. `POST /upload/v1beta/files?key=…&uploadType=resumable` — start session, get `X-Goog-Upload-URL`.
+2. `PUT <uploadUrl>` — stream the file body via Ktor `OutgoingContent.WriteChannelContent` from a path-backed source. We only upload already-downloaded local files; if the episode isn't downloaded the panel shows a single-line hint ("Download this episode to summarise it.") and disables Generate.
+3. Poll `GET /v1beta/files/<name>?key=…` until `state == "ACTIVE"` (cap 30s).
+4. `POST /v1beta/models/<model>:generateContent?key=…` — body references the uploaded `fileUri`. Persist with `sourceKind = 'audio'`, `sourceFingerprint = <byte count>`.
+5. `DELETE /v1beta/files/<name>?key=…` — best-effort cleanup. Server expires in 48h regardless.
+
+Inline upload (`<20MB`) is **not** implemented in v1.
 
 ### Lifecycle
 
@@ -133,20 +155,21 @@ New SQLDelight table `EpisodeAiSummary.sq` under `composeApp/src/commonMain/sqld
 
 ```
 CREATE TABLE EpisodeAiSummary (
-    episodeId       TEXT NOT NULL PRIMARY KEY,
-    generatedAtMs   INTEGER NOT NULL,
-    modelId         TEXT NOT NULL,
-    audioBytes      INTEGER NOT NULL,    -- size of the source file at generation time
-    summary         TEXT NOT NULL,        -- markdown body
-    peopleJson      TEXT NOT NULL,        -- JSON array of strings
-    thingsJson      TEXT NOT NULL,        -- JSON array of strings
-    linksJson       TEXT NOT NULL         -- JSON array of {label, url}
+    episodeId         TEXT NOT NULL PRIMARY KEY,
+    generatedAtMs     INTEGER NOT NULL,
+    modelId           TEXT NOT NULL,
+    sourceKind        TEXT NOT NULL,        -- 'transcript' | 'audio'
+    sourceFingerprint TEXT NOT NULL,        -- transcript: the URL; audio: byte count as string
+    summary           TEXT NOT NULL,        -- markdown body
+    peopleJson        TEXT NOT NULL DEFAULT '[]',  -- populated in Slice 3
+    thingsJson        TEXT NOT NULL DEFAULT '[]',  -- populated in Slice 3
+    linksJson         TEXT NOT NULL DEFAULT '[]'   -- populated in Slice 3
 );
 ```
 
 Schema migration: current schema version on disk is **11** after rebasing onto master (the episode-detail Slice 4 work added `9.sqm` for Episode chapters/transcript URLs, `10.sqm` for `EpisodeChapter`, and `11.sqm` for `Podcast.primaryCategory`). Add `migrations/12.sqm` that creates the new AI table. Do not edit existing tables.
 
-The `audioBytes` column is the cache-invalidation signal — if the file was redownloaded and its size changed, the cached summary is stale and the UI offers Regenerate. (Hash would be more accurate but materially slower on a 100MB file; size is sufficient for v1.)
+The `(sourceKind, sourceFingerprint)` pair is the cache-invalidation signal. If the cached row's `sourceKind` differs from the currently best-available source for the episode (e.g. publisher added a transcript after we summarised the audio), or the fingerprint differs (transcript URL changed; the audio file was redownloaded with a different byte count), the UI surfaces Regenerate. Hash-based fingerprints would be more accurate but materially slower on a 100MB audio file; for v1, URL-equality and byte-count equality are sufficient.
 
 ### Koin wiring
 
@@ -181,6 +204,7 @@ Per `CLAUDE.md`'s ViewModel-factory rule: any new constructor parameter must be 
 | `RateLimited` | "Your Gemini key is rate-limited. Try again in a few minutes." |
 | `AudioTooLong` | "This episode is too long for AI summary." |
 | `Network` | "Couldn't reach Google. Check your connection." |
+| `TranscriptUnavailable` | "Couldn't fetch the transcript. Try again, or wait — the publisher may be having a moment." |
 | `Unknown` | "AI summary failed. Tap to retry." |
 
 No error message ever blames Kofipod for what is in fact a user-key issue. No error message ever shows raw HTTP bodies or stack traces.
@@ -194,10 +218,11 @@ No error message ever blames Kofipod for what is in fact a user-key issue. No er
 - Default model `gemini-2.5-flash`; Flash-Lite alt; no Pro.
 - Disclosure copy is mandatory and worldwide; no region detection.
 - Key in `EncryptedSharedPreferences`, excluded from Auto Backup, never logged.
-- Files API path; no inline.
-- 8-hour soft cap.
-- Cache by `episodeId` keyed on `audioBytes`; surface Regenerate when stale.
-- Schema version bump to 6 via a new `6.sqm`.
+- Source ladder: transcript (Slice 2) → audio Files API (Slice 2.5). No description-only or chapters-only path. No runtime auto-fall-back from transcript to audio (failed transcript fetch surfaces an error, not a silent quota burn).
+- Files API path for audio; no inline upload.
+- 8-hour soft cap (audio path only — transcripts have no comparable token-rate ceiling but the same 1M-token model context).
+- Cache key is `(sourceKind, sourceFingerprint)`; surface Regenerate when either differs from current best-available source.
+- Schema migration `12.sqm` adds `EpisodeAiSummary` (current schema is 11 after the episode-detail Slice 4 work added 9–11.sqm).
 - Job runs on existing `"appScope"`; no new scope.
 - Disconnect wipes both key and cached summaries.
 - iOS: stub `KeyVault` only. Compile must stay green.
@@ -225,10 +250,11 @@ No error message ever blames Kofipod for what is in fact a user-key issue. No er
 
 ## Slice plan (suggested for the implementation doc)
 
-1. **Slice 1 — Settings entry only.** Setup screen, `KeyVault` Android impl + iOS stub, key validation request, disclosure copy. No episode UI yet. Verifiable: paste a real key, see "Connected".
-2. **Slice 2 — Episode summary panel, happy path.** New table + migration, `GeminiClient`, `AiSummaryRepository`, the panel in Idle/Generating/Ready states. No entity extraction yet — just summary text. Verifiable on emulator: Generate on a downloaded episode, get summary back.
-3. **Slice 3 — Entity extraction.** Extend the prompt + DTO + UI to render People / Things / Links. Cache invalidation via `audioBytes`.
-4. **Slice 4 — Error states + Disconnect path.** Wire all six error messages; Disconnect wipes key + summaries.
-5. **Slice 5 — Paparazzi baselines + detekt forbidden-import update.** Snapshot the panel in all five states light/dark; add `androidx.security.crypto.*` to the forbidden list.
+1. **Slice 1 — Settings entry only.** Setup screen, `KeyVault` Android impl + iOS stub, key validation request, disclosure copy. **Done.**
+2. **Slice 2 — Episode summary panel, transcript path.** New table + migration, `GeminiClient.generateFromText`, transcript fetch via the app-wide `HttpClient`, `AiSummaryRepository` with source-selection (transcript-only in this slice), panel in Idle/Generating/Ready states embedded in `EpisodeDetailScreen`. No entity extraction yet — summary text only. Verifiable on emulator: open an episode whose feed ships a transcript, tap Generate, see the summary in seconds.
+3. **Slice 2.5 — Audio fallback.** Files API resumable upload, audio `generateContent`, polling for `ACTIVE`, best-effort `deleteFile`. Repository's source selector now picks audio when `transcriptUrl` is null. Same panel; no UI changes beyond the disabled-Generate hint when the episode is not yet downloaded.
+4. **Slice 3 — Entity extraction.** Extend the prompt to ask for structured JSON (`responseMimeType: application/json` + `responseSchema`); UI renders People / Things / Links sections under the summary.
+5. **Slice 4 — Error states + Disconnect path.** Wire all error messages (including `TranscriptUnavailable`); Disconnect wipes key + summaries.
+6. **Slice 5 — Paparazzi baselines + final hardening.** Snapshot the panel in each state, light/dark.
 
 Each slice ends green: compile + ktlintFormat + detekt + unit tests + iOS simulator-arm64 compile + emulator interaction where the slice has a UI surface.

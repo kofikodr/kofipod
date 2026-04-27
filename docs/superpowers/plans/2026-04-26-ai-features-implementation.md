@@ -198,11 +198,11 @@
 
 ---
 
-# Slice 2 — Episode summary panel, happy path
+# Slice 2 — Episode summary panel, transcript path
 
-**User-facing outcome:** On the episode detail screen, a new AI panel appears below the description (only when a key is configured). Tap "Generate AI summary" → progress → markdown summary appears and persists. No entity extraction yet.
+**User-facing outcome:** On the episode detail screen, a new AI panel appears below the description (only when a key is configured AND the episode's feed publishes a Podcasting 2.0 transcript). Tap "Generate AI summary" → fetch the transcript → Gemini returns a clean prose summary → it persists across app restarts. No entity extraction, no audio upload — that's Slice 2.5.
 
-**Verifiable on emulator:** Download an episode → open detail → tap Generate → see summary in <90s (depending on episode length and network) → kill app → reopen detail → summary is still there.
+**Verifiable on emulator:** Open an episode whose feed ships a transcript (e.g. a Buzzsprout-hosted show or any Podcasting-2.0-friendly publisher) → tap Generate → see summary in ≤15s → kill app → reopen detail → summary is still there. Episodes without a transcript show a hint ("Audio summary coming in a future update.") with Generate disabled.
 
 ### Task 2.1: SQLDelight table + schema bump
 
@@ -215,14 +215,15 @@
 
   ```sql
   CREATE TABLE EpisodeAiSummary (
-      episodeId       TEXT NOT NULL PRIMARY KEY,
-      generatedAtMs   INTEGER NOT NULL,
-      modelId         TEXT NOT NULL,
-      audioBytes      INTEGER NOT NULL,
-      summary         TEXT NOT NULL,
-      peopleJson      TEXT NOT NULL DEFAULT '[]',
-      thingsJson      TEXT NOT NULL DEFAULT '[]',
-      linksJson       TEXT NOT NULL DEFAULT '[]'
+      episodeId         TEXT NOT NULL PRIMARY KEY,
+      generatedAtMs     INTEGER NOT NULL,
+      modelId           TEXT NOT NULL,
+      sourceKind        TEXT NOT NULL,                 -- 'transcript' | 'audio'
+      sourceFingerprint TEXT NOT NULL,                 -- transcript: URL; audio: byte count
+      summary           TEXT NOT NULL,
+      peopleJson        TEXT NOT NULL DEFAULT '[]',
+      thingsJson        TEXT NOT NULL DEFAULT '[]',
+      linksJson         TEXT NOT NULL DEFAULT '[]'
   );
 
   selectByEpisode:
@@ -230,8 +231,8 @@
 
   upsert:
   INSERT OR REPLACE INTO EpisodeAiSummary
-      (episodeId, generatedAtMs, modelId, audioBytes, summary, peopleJson, thingsJson, linksJson)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+      (episodeId, generatedAtMs, modelId, sourceKind, sourceFingerprint, summary, peopleJson, thingsJson, linksJson)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
   deleteByEpisode:
   DELETE FROM EpisodeAiSummary WHERE episodeId = ?;
@@ -240,7 +241,7 @@
   DELETE FROM EpisodeAiSummary;
   ```
 
-  The entity-JSON columns ship empty (`'[]'`) in Slice 2 and get populated in Slice 3.
+  The entity-JSON columns ship empty (`'[]'`) in Slice 2 and get populated in Slice 3. `(sourceKind, sourceFingerprint)` is the cache-invalidation key — see the spec for the rules.
 
 - [ ] **Step 2: `12.sqm`** — exactly the `CREATE TABLE` block above (no other changes).
 
@@ -248,27 +249,163 @@
 
 - [ ] **Step 4: green-check.** SQLDelight code-gen happens during `compileDebugKotlinAndroid`. Commit `feat(ai): add EpisodeAiSummary table (schema v12)`.
 
-### Task 2.2: GeminiClient — Files API upload + generateContent for audio
+### Task 2.2: AiPrompts + GeminiClient.generateFromText
 
 **Files:**
 - Create: `composeApp/src/commonMain/kotlin/app/kofipod/ai/AiPrompts.kt`
 - Modify: `composeApp/src/commonMain/kotlin/app/kofipod/ai/GeminiClient.kt`
+- Modify: `composeApp/src/commonMain/kotlin/app/kofipod/ai/AiError.kt` — add `data object TranscriptUnavailable : AiError()`
 
-- [ ] **Step 1: `AiPrompts.kt`** — single function `episodeSummaryPrompt(localeTag: String): String` returning a stable prompt. The Slice 2 prompt asks for **summary only** (markdown body, ~200 words, no headers); entity extraction comes in Slice 3. Prompt explicitly instructs the model to output the summary in the language matching `localeTag` and to omit any preamble.
+- [ ] **Step 1: `AiPrompts.kt`** — `episodeSummaryPrompt(localeTag: String): String`. The prompt MUST:
+  - Tell the model the input may be VTT, SRT, JSON, or plain text — and to ignore cue numbers, timestamps, speaker prefixes, and HTML tags. Format detection is its job.
+  - Request a markdown body, ~200 words, no headers, no preamble, no code fences.
+  - Instruct output language to match `localeTag` (BCP-47, e.g. `en-US`).
+  - Be a single, stable string — change-management is via prompt-version, not interpolation.
 
-- [ ] **Step 2: `GeminiClient` — add `uploadAudio(...)` method.** Resumable upload to the Files API:
-  1. `POST https://generativelanguage.googleapis.com/upload/v1beta/files?key=…&uploadType=resumable` with `X-Goog-Upload-Protocol: resumable`, `X-Goog-Upload-Command: start`, `X-Goog-Upload-Header-Content-Length: <fileSize>`, `X-Goog-Upload-Header-Content-Type: audio/mpeg`, body `{"file": {"display_name": "<episodeId>.mp3"}}`. Capture `X-Goog-Upload-URL` from the response headers.
-  2. `PUT <uploadUrl>` with headers `X-Goog-Upload-Command: upload, finalize`, `X-Goog-Upload-Offset: 0`, `Content-Length: <fileSize>`. Body is a Ktor `OutgoingContent.WriteChannelContent` that streams from a KMP `okio.FileSystem.SOURCE` (or use the existing `kotlinx-io` source already in the project — match what `DownloadRepository` uses).
-  3. Parse the JSON response into `UploadedFile(name: String, uri: String, mimeType: String, sizeBytes: Long, state: String)`.
-  4. Poll `GET /v1beta/files/{name}?key=…` until `state == "ACTIVE"` (audio files take a few seconds to process). Cap at 30s; on timeout map to `AiError.Unknown`.
+- [ ] **Step 2: `GeminiClient.generateFromText(apiKey, model, prompt, content): Result<String>`.** Two `text` parts in one `Content`: first the prompt, second the `content` (the transcript body verbatim — no preprocessing). `generationConfig` = `{ temperature: 0.4, maxOutputTokens: 512 }`. Parse `candidates[0].content.parts[0].text` and return as the summary string. Same `AiHttpClient` already in tree.
 
-- [ ] **Step 3: `GeminiClient` — add `generateSummary(...)` method.** Posts to `/v1beta/models/{model}:generateContent?key=…` with body:
+- [ ] **Step 3: error mapping.** Status 400/401/403 → `KeyInvalid`. 429 → `RateLimited`. IOException → `Network`. Else → `Unknown(statusCode)`. (`AudioTooLong` is reserved for the Slice 2.5 audio path; transcript inputs that overflow the 1M context map to `Unknown` for now — extreme rarity.)
+
+- [ ] **Step 4: unit tests.**
+  - `AiPromptsTest` — locale-tag substitution + presence of the format-agnostic instruction (snapshot-style assertion on the rendered prompt).
+  - `GeminiClientTextTest` — using a fake `KeyValidator`-style seam (the test pattern from Slice 1's `GeminiClientTest`), assert the request body shape and the `200 → Result.success(text)` / error mappings. No live network.
+
+- [ ] **Step 5: green-check.** Commit `feat(ai): add generateFromText + transcript-aware prompt`.
+
+### Task 2.3: AiSummaryRepository (transcript path only)
+
+**Files:**
+- Create: `composeApp/src/commonMain/kotlin/app/kofipod/ai/AiSummaryDto.kt`
+- Create: `composeApp/src/commonMain/kotlin/app/kofipod/ai/AiSummaryRepository.kt`
+- Modify: `composeApp/src/commonMain/kotlin/app/kofipod/di/CommonModule.kt` — `single { AiSummaryRepository(...) }` with deps: `KofipodDatabase`, `AiConfigRepository`, `GeminiClient`, app-wide `HttpClient` (transcript fetch), `EpisodesRepository`, named `"appScope"`.
+
+- [ ] **Step 1: `AiSummaryDto.kt`** — domain types:
+
+  ```kotlin
+  enum class AiSourceKind(val wire: String) {
+      Transcript("transcript"),
+      Audio("audio"),
+  }
+
+  data class AiSummary(
+      val episodeId: String,
+      val generatedAtMs: Long,
+      val modelId: String,
+      val sourceKind: AiSourceKind,
+      val sourceFingerprint: String,
+      val summary: String,
+      val people: List<String> = emptyList(),
+      val things: List<String> = emptyList(),
+      val links: List<MentionedLink> = emptyList(),
+  )
+
+  data class MentionedLink(val label: String, val url: String)
+
+  sealed interface AiSummaryUiState {
+      data object Hidden : AiSummaryUiState                // no key configured
+      data class Idle(val available: AiSourceKind?) : AiSummaryUiState   // null = neither input available
+      data class Generating(val sourceKind: AiSourceKind) : AiSummaryUiState
+      data class Ready(val summary: AiSummary, val stale: Boolean) : AiSummaryUiState
+      data class Error(val error: AiError) : AiSummaryUiState
+  }
+  ```
+
+- [ ] **Step 2: `AiSummaryRepository.kt`** — Slice 2 only handles the transcript path; the audio branch is a TODO that emits `Idle(available = null)` when the episode has no transcript. Public surface:
+  - `observeFor(episodeId: String): Flow<AiSummaryUiState>` — combines: `aiConfig.isKeyConfigured`, `episodesRepo.episodeFlow(episodeId)`, the cached-summary row Flow (`db.episodeAiSummaryQueries.selectByEpisode`), and the in-flight job state (a `MutableStateFlow<Map<String, AiSourceKind>>` keyed by episodeId). Resolution rules:
+    - No key → `Hidden`.
+    - In-flight → `Generating(sourceKind)`.
+    - Cached row exists → `Ready(summary, stale = sourceFingerprintMismatch)`.
+    - No cached row, transcriptUrl present → `Idle(available = Transcript)`.
+    - No cached row, no transcript → `Idle(available = null)` for now (Slice 2.5 changes this branch to `Audio` when downloaded).
+  - `fun generate(episodeId: String)` — non-suspending; launches on `"appScope"`. Pipeline:
+    1. Resolve key via `aiConfig.currentKey()`; if null emit `Error(NoKey)` and return.
+    2. Resolve `episode = episodesRepo.byId(episodeId)`; if null bail silently.
+    3. Pick source — Slice 2: only transcript. If `transcriptUrl` is blank emit `Error(TranscriptUnavailable)` (Slice 2.5 swaps in audio).
+    4. Mark in-flight (`Generating(Transcript)`).
+    5. `appHttp.get(transcriptUrl).bodyAsText()`. Non-2xx → `Error(TranscriptUnavailable)`.
+    6. `geminiClient.generateFromText(key, model, prompt, body)`. Map failure to the right `AiError`.
+    7. Upsert with `sourceKind = 'transcript'`, `sourceFingerprint = transcriptUrl`, `peopleJson = thingsJson = linksJson = '[]'`.
+    8. Clear in-flight.
+  - `suspend fun clearAll()` — wipes the table. Wired up in Slice 4.
+  - Idempotency: a second `generate(id)` while one is in-flight is a no-op (look up the in-flight map).
+
+- [ ] **Step 3: unit tests.** `AiSummaryRepositoryTest` covering:
+  - No key → `Hidden`.
+  - Cached row, fingerprint matches → `Ready(stale = false)`.
+  - Cached row, fingerprint mismatches → `Ready(stale = true)`.
+  - No cache, transcript URL present → `Idle(Transcript)`.
+  - `generate` happy path — fake `GeminiClient` + fake `HttpClient` (use Ktor `MockEngine` on the app-side client, and the existing fake-`KeyValidator` pattern for Gemini; or extract a tiny `TextGenerator fun interface` for clean unit test seams).
+  - `generate` with blank `transcriptUrl` → `Error(TranscriptUnavailable)`.
+
+- [ ] **Step 4: green-check.** Commit `feat(ai): add AiSummaryRepository (transcript path)`.
+
+### Task 2.4: AI panel UI on EpisodeDetailScreen
+
+**Files:**
+- Create: `composeApp/src/commonMain/kotlin/app/kofipod/ui/screens/detail/ai/AiSummaryPanel.kt`
+- Create: `composeApp/src/commonMain/kotlin/app/kofipod/ui/screens/detail/ai/AiSummaryViewModel.kt`
+- Modify: `composeApp/src/commonMain/kotlin/app/kofipod/ui/screens/detail/EpisodeDetailScreen.kt` — insert `AiSummaryPanel(episodeId)` between the description block (around line 213-224) and the chapters section (line 226-229).
+- Modify: `composeApp/src/commonMain/kotlin/app/kofipod/di/CommonModule.kt` — `viewModel { (episodeId: String) -> AiSummaryViewModel(episodeId, get()) }`.
+
+- [ ] **Step 1: `AiSummaryViewModel(episodeId, repo)`** — thin. `state: StateFlow<AiSummaryUiState>` from `repo.observeFor(episodeId)` via `stateIn(viewModelScope, WhileSubscribed(5_000), Hidden)`. `onGenerate()` → `repo.generate(episodeId)`. (No `onCancel` in Slice 2 — transcript fetches are seconds, not minutes.)
+
+- [ ] **Step 2: `AiSummaryPanel(episodeId)`** — Composable obtains its VM via `koinViewModel { parametersOf(episodeId) }`. Renders:
+  - `Hidden`: returns nothing.
+  - `Idle(available = Transcript)`: outline button "Generate AI summary" + helper line "Uses your Gemini key. Reads this episode's published transcript."
+  - `Idle(available = null)`: disabled button + helper line "Audio summary coming in a future update." (Slice 2.5 deletes this branch.)
+  - `Generating(_)`: small linear progress indicator + label "Summarising…".
+  - `Ready(summary, stale)`: summary text (plain text, monospace fallback so HTML/markdown isn't mistakenly rendered raw); footer row with `Model: {modelName}` + relative date + "Regenerate" outline button. When `stale = true`, prepend a one-line hint "Source updated — regenerate for the latest version." above the summary.
+  - `Error(_)`: simple message + Retry. Full per-error mapping is Slice 4.
+
+  Visual style: follow existing `KofipodTheme` tokens; match the chapters section's section-header treatment for consistency. Test tags `aiPanelGenerateButton`, `aiPanelRegenerateButton`, `aiPanelRetryButton` for emulator scripting.
+
+- [ ] **Step 3: detail screen integration.** In `EpisodeDetailScreen.EpisodeBody`, after the description block:
+
+  ```kotlin
+  Spacer(Modifier.height(20.dp))
+  AiSummaryPanel(episodeId = episode.id)
+  ```
+
+  Do NOT inject AI state into `EpisodeRowData` or `EpisodeDetailUiState` — the panel is a sibling composable with its own VM, preserving the perf invariants in `CLAUDE.md`.
+
+- [ ] **Step 4: emulator verification.**
+  - Connect a Gemini key (Slice 1).
+  - Subscribe to a podcast that ships transcripts (e.g. a Buzzsprout-hosted show, NPR, or any Podcasting 2.0 publisher) — verify by inspecting the episode row in `Episode.sq` for a non-blank `transcriptUrl` via `adb shell run-as app.kofipod.debug sqlite3 …`.
+  - Open the episode detail → AI panel renders `Idle(Transcript)`.
+  - Tap Generate → `Generating` shows briefly → `Ready` within ~10s with a sane summary.
+  - Force-stop the app → reopen detail → summary still rendered (DB persistence).
+  - Open a podcast that does NOT publish transcripts → panel renders `Idle(available = null)` with the disabled-button hint.
+
+- [ ] **Step 5: green-check.** Commit `feat(ai): add AI summary panel on episode detail (transcript path)`.
+
+---
+
+# Slice 2.5 — Audio fallback (Files API)
+
+**User-facing outcome:** Episodes without a publisher-supplied transcript can now be summarised too — provided they're already downloaded. The same panel, same prompt, same output; only the input pipeline changes.
+
+**Verifiable on emulator:** Subscribe to a podcast without transcripts → download an episode → open detail → panel renders `Idle(Audio)` → tap Generate → upload progress → summary in ~30–90s depending on length.
+
+### Task 2.5.1: GeminiClient — Files API methods
+
+**Files:**
+- Modify: `composeApp/src/commonMain/kotlin/app/kofipod/ai/GeminiClient.kt`
+- Modify: `composeApp/src/commonMain/kotlin/app/kofipod/ai/AiError.kt` — confirm `AudioTooLong` mapping reused.
+
+- [ ] **Step 1: `uploadAudio(apiKey, model, fileSource, mimeType, sizeBytes, displayName): Result<UploadedFile>`.** Resumable upload:
+  1. `POST /upload/v1beta/files?key=…&uploadType=resumable` with `X-Goog-Upload-Protocol: resumable`, `X-Goog-Upload-Command: start`, `X-Goog-Upload-Header-Content-Length: <sizeBytes>`, `X-Goog-Upload-Header-Content-Type: <mimeType>`. Body: `{"file": {"display_name": "<displayName>"}}`. Capture `X-Goog-Upload-URL` from response headers.
+  2. `PUT <uploadUrl>` with `X-Goog-Upload-Command: upload, finalize`, `X-Goog-Upload-Offset: 0`, `Content-Length: <sizeBytes>`. Body: a Ktor `OutgoingContent.WriteChannelContent` over the file source — match what `DownloadRepository` already uses for streaming.
+  3. Parse JSON into `UploadedFile(name, uri, mimeType, sizeBytes, state)`.
+
+- [ ] **Step 2: `pollUntilActive(apiKey, name): Result<UploadedFile>`.** `GET /v1beta/files/{name}?key=…` every 1s until `state == "ACTIVE"`. Cap at 30s; on timeout map to `AiError.Unknown(null)`. (Bumping to 60s is a pre-approved follow-up if 30s proves tight in practice — see risk register.)
+
+- [ ] **Step 3: `generateFromAudio(apiKey, model, fileUri, mimeType, prompt): Result<String>`.** Request body:
 
   ```json
   {
     "contents": [{
       "parts": [
-        { "fileData": { "mimeType": "audio/mpeg", "fileUri": "<uri>" }},
+        { "fileData": { "mimeType": "<mimeType>", "fileUri": "<fileUri>" }},
         { "text": "<prompt>" }
       ]
     }],
@@ -276,76 +413,46 @@
   }
   ```
 
-  Parse `candidates[0].content.parts[0].text` out as the summary.
+  Parse `candidates[0].content.parts[0].text`.
 
-- [ ] **Step 4: `GeminiClient` — add `deleteFile(name)` for cleanup** (best-effort; ignore failures).
+- [ ] **Step 4: `deleteFile(apiKey, name)`** — `DELETE /v1beta/files/{name}?key=…`. Best-effort; ignore failures.
 
-- [ ] **Step 5: error mapping.** Status 429 → `RateLimited`. 400 with `INVALID_ARGUMENT` containing "exceeds the maximum" or token-budget messaging → `AudioTooLong`. 401/403 → `KeyInvalid`. IOException → `Network`. Else `Unknown(statusCode)`.
+- [ ] **Step 5: error mapping.** Same as text path PLUS: 400 with `INVALID_ARGUMENT` containing "exceeds the maximum" or token-budget messaging → `AudioTooLong`.
 
-- [ ] **Step 6: unit test.** `AiPromptsTest` covering the locale tag substitution. No live-network test in this slice.
+- [ ] **Step 6: unit tests.** Mirror Slice 2's `GeminiClientTextTest` for the audio request shapes. Don't unit-test the resumable upload happy path with a real file — just assert request headers + body marshalling against a canned response.
 
-- [ ] **Step 7: green-check.** Commit `feat(ai): add Files API upload + generateContent for audio`.
+- [ ] **Step 7: green-check.** Commit `feat(ai): add Files API upload + audio generateContent`.
 
-### Task 2.3: AiSummaryRepository
-
-**Files:**
-- Create: `composeApp/src/commonMain/kotlin/app/kofipod/ai/AiSummaryDto.kt`
-- Create: `composeApp/src/commonMain/kotlin/app/kofipod/ai/AiSummaryRepository.kt`
-- Modify: `composeApp/src/commonMain/kotlin/app/kofipod/di/CommonModule.kt` — `single { AiSummaryRepository(get(), get(), get(), get(named("appScope"))) }`
-
-- [ ] **Step 1: `AiSummaryDto.kt`** — domain types only (no JSON shape):
-
-  ```kotlin
-  data class AiSummary(
-      val episodeId: String,
-      val generatedAtMs: Long,
-      val modelId: String,
-      val audioBytes: Long,
-      val summary: String,
-      val people: List<String> = emptyList(),
-      val things: List<String> = emptyList(),
-      val links: List<MentionedLink> = emptyList(),
-  )
-  data class MentionedLink(val label: String, val url: String)
-  ```
-
-- [ ] **Step 2: `AiSummaryRepository.kt`** — exposes:
-  - `observeFor(episodeId: String): Flow<AiSummaryUiState>` where `AiSummaryUiState` is one of `Hidden, Idle, Generating, Ready(AiSummary), Error(AiError)`.
-  - `suspend fun generate(episodeId: String)` — orchestrates: read key (KeyVault) → if absent emit `Hidden`; resolve local file path (delegate to `EpisodesRepository` / `DownloadRepository`); check duration → if >8h emit `Error(AudioTooLong)`; upload → wait for `ACTIVE` → call `generateSummary` → persist via `EpisodeAiSummaryQueries.upsert` → delete remote file. The whole pipeline runs on the named `"appScope"` scope; `generate` returns immediately and the UI tracks the persisted state via `observeFor`.
-  - `suspend fun clearAll()` — wipes the entire `EpisodeAiSummary` table. Wired up by Slice 4 Disconnect.
-  - Cache invalidation: `observeFor` emits `Idle` when `cached.audioBytes != currentFileSize` (i.e. file was redownloaded). The UI shows a "Regenerate" affordance in that branch.
-  - `generate` is idempotent per episode while a job is in flight — second invocation returns the existing job.
-
-- [ ] **Step 3: green-check.** Commit `feat(ai): add AiSummaryRepository orchestrating upload→generate→persist`.
-
-### Task 2.4: AI panel UI on episode detail
+### Task 2.5.2: AiSummaryRepository — audio branch
 
 **Files:**
-- Create: `composeApp/src/commonMain/kotlin/app/kofipod/ui/screens/detail/ai/AiSummaryPanel.kt`
-- Create: `composeApp/src/commonMain/kotlin/app/kofipod/ui/screens/detail/ai/AiSummaryViewModel.kt`
-- Modify: `composeApp/src/commonMain/kotlin/app/kofipod/ui/screens/detail/PodcastDetailScreen.kt` (or wherever the episode detail / row pane lives) — embed `AiSummaryPanel(episodeId)` under the description.
-- Modify: `composeApp/src/commonMain/kotlin/app/kofipod/di/CommonModule.kt` — `viewModel { AiSummaryViewModel(get(), get<EpisodesRepository>()) }`
+- Modify: `composeApp/src/commonMain/kotlin/app/kofipod/ai/AiSummaryRepository.kt`
+- Modify: `composeApp/src/commonMain/kotlin/app/kofipod/di/CommonModule.kt` — repo now also depends on `DownloadRepository` for `localPathFor(episodeId)`.
 
-- [ ] **Step 1: `AiSummaryViewModel`** — thin: collects `repo.observeFor(episodeId)` into a `StateFlow<AiSummaryUiState>`; `onGenerate()` calls `repo.generate(episodeId)`; `onCancel()` cancels the in-flight job.
+- [ ] **Step 1: source selector.** Update `pickSource(episode, downloaded): AiSourceKind?`:
+  - `transcriptUrl` non-blank → `Transcript` (unchanged).
+  - else if `downloaded.localPath` non-blank → `Audio`.
+  - else → `null` (panel shows the "download to summarise" hint).
 
-- [ ] **Step 2: `AiSummaryPanel`** — renders the five states from spec § V1 feature surface → "Episode AI panel". Slice 2 implementation:
-  - `Hidden`: returns nothing (`Box {}` short-circuit).
-  - `Idle`: outline button "Generate AI summary" + helper line.
-  - `Generating`: progress indicator + label ("Uploading audio…", "Summarising…" once upload finishes — repository emits sub-state). Cancel button.
-  - `Ready`: render `state.summary` as plain text (Slice 2 — markdown rendering can wait); footer with model name + relative date + Regenerate.
-  - `Error(AiError.AudioTooLong)`: disabled button + helper line per spec.
-  - All other errors: simple message + Retry button (full per-error mapping lands in Slice 4; Slice 2 can use a single fallback string).
+- [ ] **Step 2: audio pipeline.** When the selector picks `Audio`:
+  1. `episode.durationSec > 8 * 3600` → `Error(AudioTooLong)` (soft-cap from spec).
+  2. `geminiClient.uploadAudio(...)` with the local file size + path-backed source.
+  3. `geminiClient.pollUntilActive(...)`.
+  4. `geminiClient.generateFromAudio(...)`.
+  5. Persist with `sourceKind = Audio`, `sourceFingerprint = <bytes>` (decimal string, matches the spec's "byte count" rule).
+  6. Best-effort `geminiClient.deleteFile(...)` (ignore result).
 
-- [ ] **Step 3: detail screen integration.** Insert `AiSummaryPanel(episodeId)` under the description, above the existing chapter / episode-list block. Honour the perf invariants in `CLAUDE.md`: do NOT inject AI state into `EpisodeRowData`; the panel is a sibling composable, not part of the row list.
+- [ ] **Step 3: panel update.** `AiSummaryPanel`'s `Idle(available = Audio)` branch now renders the active Generate button (delete the disabled-hint dead branch from Slice 2; keep `Idle(available = null)` for the "neither" case where audio is not yet downloaded).
 
 - [ ] **Step 4: emulator verification.**
-  - Connect a Gemini key (Slice 1).
-  - Download a 5-minute test episode (use any short podcast — e.g. a daily news flash).
-  - Open detail → AI panel renders Idle.
-  - Tap Generate → Generating progresses → Ready within ~30s with a sane summary.
-  - Force-stop the app → reopen detail → summary still rendered (DB persistence proven).
+  - Subscribe to a podcast known to NOT publish transcripts.
+  - Download a 5-minute episode.
+  - Open detail → `Idle(Audio)`.
+  - Tap Generate → `Generating(Audio)` for ~30–90s → `Ready` with sane summary.
+  - Force-stop + reopen → still there.
+  - Try a >8h episode → see disabled button + `AudioTooLong` copy.
 
-- [ ] **Step 5: green-check.** Commit `feat(ai): add AI summary panel on episode detail (happy path)`.
+- [ ] **Step 5: green-check.** Commit `feat(ai): add audio fallback path via Files API`.
 
 ---
 
@@ -422,7 +529,7 @@
 - Create: `composeApp/src/test/kotlin/app/kofipod/screenshots/AiSummaryPanelSnapshots.kt`
 - Snapshot images under `composeApp/src/test/snapshots/images/` (record via `recordPaparazziDebug`)
 
-- [ ] **Step 1: snapshot test class.** Match the existing `TokensSnapshots` pattern. One snapshot per state × theme = 10 baselines: `Idle / Generating / Ready / Error.RateLimited / Error.AudioTooLong` × `light / dark`. Use fake state — never go through a real `AiSummaryRepository`. The "Ready" state uses a baked fixture summary.
+- [ ] **Step 1: snapshot test class.** Match the existing `TokensSnapshots` pattern. One snapshot per state × theme — 12 baselines: `Idle(Transcript) / Idle(available = null) / Generating / Ready / Error.RateLimited / Error.AudioTooLong` × `light / dark`. Use fake state — never go through a real `AiSummaryRepository`. The "Ready" state uses a baked fixture summary.
 
 - [ ] **Step 2: record.** `./gradlew :composeApp:recordPaparazziDebug --tests "app.kofipod.screenshots.AiSummaryPanelSnapshots"` — commit the resulting PNGs.
 
