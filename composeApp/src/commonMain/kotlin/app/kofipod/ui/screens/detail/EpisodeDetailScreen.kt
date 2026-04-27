@@ -23,7 +23,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +45,7 @@ import app.kofipod.ui.primitives.KPButtonStyle
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.primitives.KofipodArtwork
+import app.kofipod.ui.screens.detail.ai.AiSummaryPanel
 import app.kofipod.ui.theme.LocalKofipodColors
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
@@ -51,6 +55,7 @@ fun EpisodeDetailScreen(
     episodeId: String,
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
+    onOpenAiSetup: () -> Unit,
     viewModel: EpisodeDetailViewModel = koinViewModel(parameters = { parametersOf(episodeId) }),
 ) {
     val state by viewModel.state.collectAsState()
@@ -69,6 +74,7 @@ fun EpisodeDetailScreen(
             viewModel.seekToChapter(startMs)
             if (!state.isCurrentEpisode) onOpenPlayer()
         },
+        onOpenAiSetup = onOpenAiSetup,
     )
 }
 
@@ -87,6 +93,7 @@ internal fun EpisodeDetailContent(
     onDeleteDownload: () -> Unit,
     onDownload: () -> Unit,
     onChapterTap: (Long) -> Unit,
+    onOpenAiSetup: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
 
@@ -114,6 +121,7 @@ internal fun EpisodeDetailContent(
                     episode = state.episode,
                     podcast = state.podcast,
                     chapters = state.chapters,
+                    summaryEnabled = state.summaryEnabled,
                     isPlayingThis = state.isPlayingThis,
                     isCurrentEpisode = state.isCurrentEpisode,
                     downloaded = state.downloaded,
@@ -123,6 +131,7 @@ internal fun EpisodeDetailContent(
                     onDeleteDownload = onDeleteDownload,
                     onDownload = onDownload,
                     onChapterTap = onChapterTap,
+                    onOpenAiSetup = onOpenAiSetup,
                 )
             }
         }
@@ -164,6 +173,7 @@ private fun EpisodeBody(
     episode: Episode,
     podcast: Podcast?,
     chapters: List<EpisodeChapter>,
+    summaryEnabled: Boolean,
     isPlayingThis: Boolean,
     isCurrentEpisode: Boolean,
     downloaded: Boolean,
@@ -173,6 +183,7 @@ private fun EpisodeBody(
     onDeleteDownload: () -> Unit,
     onDownload: () -> Unit,
     onChapterTap: (Long) -> Unit,
+    onOpenAiSetup: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Spacer(Modifier.height(8.dp))
@@ -223,9 +234,61 @@ private fun EpisodeBody(
         )
     }
 
-    if (chapters.isNotEmpty()) {
+    val visibleTabs =
+        remember(chapters.size, summaryEnabled) {
+            buildVisibleTabs(chapterCount = chapters.size, summaryEnabled = summaryEnabled)
+        }
+    if (visibleTabs.isNotEmpty()) {
         Spacer(Modifier.height(24.dp))
-        ChaptersSection(chapters = chapters, onChapterTap = onChapterTap)
+        var selected by rememberSaveable {
+            mutableStateOf(
+                visibleTabs.firstOrNull { it == EpisodeDetailTab.Summary } ?: visibleTabs.first(),
+            )
+        }
+        // The tab list shrinks dynamically (e.g. user disconnects key while screen is up).
+        // Snap selection back to a still-present tab so we don't render an empty content area.
+        if (selected !in visibleTabs) {
+            selected = visibleTabs.first()
+        }
+        EpisodeDetailTabRow(
+            tabs = visibleTabs,
+            selected = selected,
+            onSelect = { selected = it },
+            chapterCount = chapters.size,
+            // Slice 3 fills this in.
+            mentionedCount = 0,
+        )
+        Spacer(Modifier.height(16.dp))
+        when (selected) {
+            EpisodeDetailTab.Chapters -> ChaptersSection(chapters = chapters, onChapterTap = onChapterTap)
+            EpisodeDetailTab.Summary ->
+                AiSummaryPanel(
+                    episodeId = episode.id,
+                    audioMinutes = (episode.durationSec / 60).toInt(),
+                    onOpenAiSetup = onOpenAiSetup,
+                )
+            EpisodeDetailTab.Mentioned -> ComingSoonCard(label = "Mentioned guests, books, and links land in a future update.")
+            EpisodeDetailTab.Discuss -> ComingSoonCard(label = "Ask Gemini about this episode — coming soon.")
+        }
+    }
+}
+
+@Composable
+private fun ComingSoonCard(label: String) {
+    val c = LocalKofipodColors.current
+    androidx.compose.foundation.layout.Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(c.surface)
+            .padding(20.dp),
+    ) {
+        Text(
+            label,
+            color = c.textMute,
+            fontSize = 13.sp,
+            lineHeight = 18.sp,
+        )
     }
 }
 

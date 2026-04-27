@@ -82,6 +82,7 @@ private fun Render(state: EpisodeDetailUiState) {
         onDeleteDownload = {},
         onDownload = {},
         onChapterTap = {},
+        onOpenAiSetup = {},
     )
 }
 

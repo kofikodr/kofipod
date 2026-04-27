@@ -112,7 +112,11 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
                     setBody(
                         GenerateContentRequest(
                             contents = listOf(Content(listOf(Part(prompt), Part(content)))),
-                            generationConfig = GenerationConfig(maxOutputTokens = SUMMARY_MAX_OUTPUT_TOKENS, temperature = SUMMARY_TEMPERATURE),
+                            generationConfig =
+                                GenerationConfig(
+                                    maxOutputTokens = SUMMARY_MAX_OUTPUT_TOKENS,
+                                    temperature = SUMMARY_TEMPERATURE,
+                                ),
                         ),
                     )
                 }

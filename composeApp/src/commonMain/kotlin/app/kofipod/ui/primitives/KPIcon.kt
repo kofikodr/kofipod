@@ -47,6 +47,9 @@ enum class KPIconName {
     Chart,
     CoffeeCup,
     Refresh,
+
+    /** Four-point sparkle / "AI" indicator. */
+    Sparkle,
 }
 
 @Composable
@@ -407,6 +410,23 @@ private fun buildKPIconPath(
                 moveTo(20f * scale, 4f * scale)
                 lineTo(20f * scale, 9f * scale)
                 lineTo(15f * scale, 9f * scale)
+            }
+        KPIconName.Sparkle ->
+            Path().apply {
+                // Four-point star: vertical and horizontal arms meeting at centre (12, 12).
+                // Concave-curved sides give the classic "magic"/"AI" look. We render two
+                // rotated diamonds (large + small) so the strokeJoin produces the soft
+                // pinched corners regardless of strokeWidth.
+                val cx = 12f * scale
+                val cy = 12f * scale
+                val long = 9f * scale
+                val short = 3f * scale
+                moveTo(cx, cy - long)
+                cubicTo(cx, cy - short, cx + short, cy - short, cx + long, cy)
+                cubicTo(cx + short, cy + short, cx, cy + short, cx, cy + long)
+                cubicTo(cx, cy + short, cx - short, cy + short, cx - long, cy)
+                cubicTo(cx - short, cy - short, cx, cy - short, cx, cy - long)
+                close()
             }
     }
 }

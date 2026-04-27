@@ -106,6 +106,7 @@ fun KofipodNavHost(navController: NavHostController) {
                         NavOptions.Builder().setLaunchSingleTop(true).build(),
                     )
                 },
+                onOpenAiSetup = { navController.navigate(Route.AiSetup) },
             )
         }
         composable<Route.Player>(

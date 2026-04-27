@@ -43,13 +43,14 @@ class GeminiClientTextTest {
             val client =
                 clientThatReturns(
                     status = HttpStatusCode.OK,
-                    body = """
+                    body =
+                        """
                         {
                           "candidates": [{
                             "content": { "parts": [{ "text": "  Episode summary body.  " }] }
                           }]
                         }
-                    """.trimIndent(),
+                        """.trimIndent(),
                 )
 
             val result =
