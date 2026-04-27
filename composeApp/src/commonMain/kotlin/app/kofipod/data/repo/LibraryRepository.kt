@@ -44,6 +44,7 @@ class LibraryRepository(private val db: KofipodDatabase) {
             notifyNewEpisodesEnabled = 1,
             lastCheckedAt = null,
             addedAt = now,
+            primaryCategory = summary.category,
         )
     }
 

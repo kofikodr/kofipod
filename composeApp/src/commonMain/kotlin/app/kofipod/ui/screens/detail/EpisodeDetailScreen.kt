@@ -151,6 +151,12 @@ private fun EpisodeBody(
 
     PodcastStrip(podcast = podcast, episodeNumber = episode.episodeNumber?.toInt())
 
+    val category = podcast?.primaryCategory?.takeIf { it.isNotBlank() }
+    if (category != null) {
+        Spacer(Modifier.height(12.dp))
+        CategoryChip(label = category)
+    }
+
     Spacer(Modifier.height(12.dp))
     Text(
         episode.title,
@@ -275,6 +281,26 @@ private fun formatChapterTime(ms: Long): String {
             s.toString().padStart(2, '0')
     } else {
         m.toString().padStart(2, '0') + ":" + s.toString().padStart(2, '0')
+    }
+}
+
+@Composable
+private fun CategoryChip(label: String) {
+    val c = LocalKofipodColors.current
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .border(1.dp, c.pink, RoundedCornerShape(999.dp))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label.uppercase(),
+            color = c.pink,
+            fontWeight = FontWeight.Bold,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+        )
     }
 }
 

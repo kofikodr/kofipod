@@ -1,0 +1,5 @@
+-- Adds the primary category label that backs the Episode Detail chip.
+-- Populated by LibraryRepository.savePodcast from PodcastSummary.category;
+-- existing rows from earlier installs get '' until they're re-saved (e.g. after
+-- the next list-membership move). Empty string means "no chip rendered" at the UI.
+ALTER TABLE Podcast ADD COLUMN primaryCategory TEXT NOT NULL DEFAULT '';

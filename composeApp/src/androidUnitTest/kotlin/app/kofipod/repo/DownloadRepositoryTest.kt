@@ -270,6 +270,7 @@ class DownloadRepositoryTest {
                 notifyNewEpisodesEnabled = 1L,
                 lastCheckedAt = 0L,
                 addedAt = 0L,
+                primaryCategory = "",
             )
             db.episodeQueries.insert(
                 id = id,

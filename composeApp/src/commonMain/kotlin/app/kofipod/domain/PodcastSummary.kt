@@ -60,4 +60,5 @@ fun Podcast.toSummary(): PodcastSummary =
         description = description,
         artworkUrl = artworkUrl,
         feedUrl = feedUrl,
+        category = primaryCategory,
     )

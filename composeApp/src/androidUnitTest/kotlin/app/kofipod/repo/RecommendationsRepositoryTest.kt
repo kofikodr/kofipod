@@ -403,6 +403,7 @@ class RecommendationsRepositoryTest {
             notifyNewEpisodesEnabled = 1,
             lastCheckedAt = null,
             addedAt = 0L,
+            primaryCategory = "",
         )
     }
 
