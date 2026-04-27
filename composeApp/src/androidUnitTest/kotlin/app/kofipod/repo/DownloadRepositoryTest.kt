@@ -284,6 +284,9 @@ class DownloadRepositoryTest {
                 fileSizeBytes = 0L,
                 seasonNumber = null,
                 episodeNumber = null,
+                imageUrl = "",
+                chaptersUrl = null,
+                transcriptUrl = null,
             )
         }
 

@@ -1,0 +1,8 @@
+-- Persist Podcasting 2.0 episode-level fields we previously dropped on the floor.
+-- chaptersUrl and transcriptUrl are nullable because the majority of feeds don't
+-- ship them. imageUrl is NOT NULL with empty-string default so existing rows pass
+-- the constraint without a backfill query (callers fall back to podcast art when
+-- the column is blank).
+ALTER TABLE Episode ADD COLUMN imageUrl TEXT NOT NULL DEFAULT '';
+ALTER TABLE Episode ADD COLUMN chaptersUrl TEXT;
+ALTER TABLE Episode ADD COLUMN transcriptUrl TEXT;

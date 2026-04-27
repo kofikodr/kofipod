@@ -78,6 +78,9 @@ class EpisodesRepository(
                 fileSizeBytes = ep.enclosureLength.toLong(),
                 seasonNumber = ep.season?.toLong(),
                 episodeNumber = ep.episode?.toLong(),
+                imageUrl = ep.image,
+                chaptersUrl = ep.chaptersUrl,
+                transcriptUrl = ep.transcriptUrl,
             )
             insertedIds += id
         }

@@ -11,6 +11,15 @@ CREATE TABLE Episode (
     fileSizeBytes INTEGER NOT NULL,
     seasonNumber INTEGER,
     episodeNumber INTEGER,
+    -- Per-episode artwork (Podcasting 2.0 / itunes:image). Falls back to the podcast's
+    -- art when blank. NOT NULL with empty-string default so existing rows are valid
+    -- after the migration without a UPDATE pass.
+    imageUrl TEXT NOT NULL DEFAULT '',
+    -- Podcasting 2.0 chapters JSON URL. Most feeds don't provide one.
+    chaptersUrl TEXT,
+    -- Podcasting 2.0 transcript URL. Reserved for future use; persisted now to
+    -- avoid a follow-up migration.
+    transcriptUrl TEXT,
     FOREIGN KEY (podcastId) REFERENCES Podcast(id) ON DELETE CASCADE
 );
 
@@ -19,8 +28,8 @@ CREATE UNIQUE INDEX episode_podcastGuid ON Episode(podcastId, guid);
 
 insert:
 INSERT OR IGNORE INTO Episode
-(id, podcastId, guid, title, description, publishedAt, durationSec, enclosureUrl, enclosureMimeType, fileSizeBytes, seasonNumber, episodeNumber)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+(id, podcastId, guid, title, description, publishedAt, durationSec, enclosureUrl, enclosureMimeType, fileSizeBytes, seasonNumber, episodeNumber, imageUrl, chaptersUrl, transcriptUrl)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 selectByPodcast:
 SELECT * FROM Episode WHERE podcastId = ? ORDER BY publishedAt DESC;
