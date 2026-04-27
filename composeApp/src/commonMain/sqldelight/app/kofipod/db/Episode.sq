@@ -37,6 +37,9 @@ SELECT * FROM Episode WHERE podcastId = ? ORDER BY publishedAt DESC;
 selectById:
 SELECT * FROM Episode WHERE id = ?;
 
+selectByIdFlow:
+SELECT * FROM Episode WHERE id = ?;
+
 selectGuidsByPodcast:
 SELECT guid FROM Episode WHERE podcastId = ?;
 

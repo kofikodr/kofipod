@@ -3,6 +3,7 @@ package app.kofipod.data.repo
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
+import app.cash.sqldelight.coroutines.mapToOneOrNull
 import app.kofipod.db.Download
 import app.kofipod.db.KofipodDatabase
 import app.kofipod.db.SelectAllWithMeta
@@ -144,6 +145,9 @@ class DownloadRepository(
     }
 
     fun all(): Flow<List<Download>> = db.downloadQueries.selectAll().asFlow().mapToList(Dispatchers.Default)
+
+    fun forEpisodeFlow(episodeId: String): Flow<Download?> =
+        db.downloadQueries.selectByEpisode(episodeId).asFlow().mapToOneOrNull(Dispatchers.Default)
 
     /** Raw filesystem path for the completed local file for [episodeId], or null. */
     fun localPathFor(episodeId: String): String? = db.downloadQueries.localPathFor(episodeId).executeAsOneOrNull()?.localPath

@@ -3,6 +3,7 @@ package app.kofipod.data.repo
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
+import app.cash.sqldelight.coroutines.mapToOneOrNull
 import app.kofipod.data.api.PodcastIndexApi
 import app.kofipod.db.Episode
 import app.kofipod.db.KofipodDatabase
@@ -12,6 +13,8 @@ import kotlinx.coroutines.flow.map
 
 interface EpisodeSource {
     fun episodesFlow(podcastId: String): Flow<List<Episode>>
+
+    fun episodeFlow(episodeId: String): Flow<Episode?>
 
     /**
      * podcastId → count of "new" episodes (never-started AND published after the podcast
@@ -39,6 +42,9 @@ class EpisodesRepository(
 ) : EpisodeSource {
     override fun episodesFlow(podcastId: String): Flow<List<Episode>> =
         db.episodeQueries.selectByPodcast(podcastId).asFlow().mapToList(Dispatchers.Default)
+
+    override fun episodeFlow(episodeId: String): Flow<Episode?> =
+        db.episodeQueries.selectByIdFlow(episodeId).asFlow().mapToOneOrNull(Dispatchers.Default)
 
     fun episodesNow(podcastId: String): List<Episode> = db.episodeQueries.selectByPodcast(podcastId).executeAsList()
 

@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.data.repo
 
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToOneOrNull
 import app.kofipod.db.KofipodDatabase
 import app.kofipod.db.PlaybackState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 
 data class InProgressEpisode(
     val episodeId: String,
@@ -49,6 +53,12 @@ class PlaybackRepository(private val db: KofipodDatabase) {
             .selectByEpisode(episodeId)
             .executeAsOneOrNull()
             ?.positionMs ?: 0L
+
+    fun stateFlow(episodeId: String): Flow<PlaybackState?> =
+        db.playbackStateQueries
+            .selectByEpisode(episodeId)
+            .asFlow()
+            .mapToOneOrNull(Dispatchers.Default)
 
     fun mostRecentIncomplete(): PlaybackState? =
         db.playbackStateQueries

@@ -47,9 +47,6 @@ import app.kofipod.ui.primitives.LoadMoreRow
 import app.kofipod.ui.theme.LocalKofipodColors
 import app.kofipod.ui.theme.LocalKofipodRadii
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.datetime.Instant
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
 
@@ -61,6 +58,7 @@ fun PodcastDetailScreen(
     podcastId: String,
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
+    onOpenEpisode: (String) -> Unit,
     viewModel: PodcastDetailViewModel = koinViewModel { parametersOf(podcastId) },
 ) {
     val state by viewModel.state.collectAsState()
@@ -218,7 +216,7 @@ fun PodcastDetailScreen(
                         canDownload = inLibrary,
                         activePlaybackFlow = activePlaybackFlow,
                         viewModel = viewModel,
-                        onOpenPlayer = onOpenPlayer,
+                        onOpenEpisode = onOpenEpisode,
                     )
                 }
                 if (hasMore) {
@@ -563,7 +561,7 @@ private fun EpisodeRow(
     canDownload: Boolean,
     activePlaybackFlow: StateFlow<ActivePlayback>,
     viewModel: PodcastDetailViewModel,
-    onOpenPlayer: () -> Unit,
+    onOpenEpisode: (String) -> Unit,
 ) {
     val c = LocalKofipodColors.current
     val playable = ep.playable
@@ -572,13 +570,7 @@ private fun EpisodeRow(
         Modifier
             .fillMaxWidth()
             .combinedClickable(
-                enabled = playable,
-                onClick = {
-                    if (playable) {
-                        viewModel.play(id)
-                        onOpenPlayer()
-                    }
-                },
+                onClick = { onOpenEpisode(id) },
                 onLongClick = { viewModel.shareEpisode(id) },
             )
             .padding(horizontal = 20.dp, vertical = 10.dp),
@@ -725,37 +717,6 @@ private fun StateIndicator(
             }
         }
     }
-}
-
-private fun episodeMetaLine(
-    publishedAt: Long,
-    durationSec: Int,
-    fileSizeBytes: Long,
-): String {
-    val parts = mutableListOf<String>()
-    if (publishedAt > 0) parts += formatDate(publishedAt)
-    if (durationSec > 0) parts += formatDuration(durationSec)
-    if (fileSizeBytes > 0) parts += formatMb(fileSizeBytes)
-    return if (parts.isEmpty()) "—" else parts.joinToString("  ·  ")
-}
-
-private fun formatDate(epochMs: Long): String {
-    val ld =
-        Instant.fromEpochMilliseconds(epochMs)
-            .toLocalDateTime(TimeZone.currentSystemDefault()).date
-    val months = arrayOf("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
-    return "${months[ld.monthNumber - 1]} ${ld.dayOfMonth.toString().padStart(2, '0')}"
-}
-
-private fun formatDuration(sec: Int): String {
-    val h = sec / 3600
-    val m = (sec % 3600) / 60
-    return if (h > 0) "${h}h ${m.toString().padStart(2, '0')}m" else "${m}m"
-}
-
-private fun formatMb(bytes: Long): String {
-    val mb = bytes / (1024.0 * 1024.0)
-    return "${mb.toInt()} MB"
 }
 
 @Composable

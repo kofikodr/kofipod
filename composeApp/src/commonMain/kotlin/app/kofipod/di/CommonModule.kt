@@ -25,6 +25,7 @@ import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.data.repo.StatsRepository
 import app.kofipod.data.repo.UpdateRepository
 import app.kofipod.ui.palette.PaletteCache
+import app.kofipod.ui.screens.detail.EpisodeDetailViewModel
 import app.kofipod.ui.screens.detail.PodcastDetailViewModel
 import app.kofipod.ui.screens.downloads.DownloadsViewModel
 import app.kofipod.ui.screens.library.LibraryDetailViewModel
@@ -105,6 +106,17 @@ val commonDataModule =
         viewModel { SchedulerInfoViewModel(get()) }
         viewModel { (podcastId: String) ->
             PodcastDetailViewModel(podcastId, get(), get(), get(), get(), get(), get(), get(), get())
+        }
+        viewModel { (episodeId: String) ->
+            EpisodeDetailViewModel(
+                episodeId = episodeId,
+                episodes = get<EpisodeSource>(),
+                library = get(),
+                playback = get(),
+                downloads = get(),
+                player = get(),
+                sharer = get(),
+            )
         }
         viewModel { PlayerViewModel(get(), get(), get(), get(), get(), get()) }
         viewModel { StatsViewModel(get()) }
