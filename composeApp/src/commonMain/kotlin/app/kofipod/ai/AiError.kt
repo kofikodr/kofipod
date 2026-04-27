@@ -16,5 +16,8 @@ sealed class AiError {
 
     data object Network : AiError()
 
+    /** Transcript fetch returned non-2xx or threw before reaching Gemini. */
+    data object TranscriptUnavailable : AiError()
+
     data class Unknown(val statusCode: Int? = null) : AiError()
 }

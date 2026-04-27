@@ -118,5 +118,6 @@ internal fun errorCopy(error: AiError): String =
         AiError.Network -> "Couldn't reach Google. Check your connection and retry."
         AiError.NoKey -> "Paste your Gemini API key first."
         AiError.AudioTooLong -> "Unexpected error during validation."
+        AiError.TranscriptUnavailable -> "Unexpected error during validation."
         is AiError.Unknown -> "Validation failed (status ${error.statusCode ?: "unknown"})."
     }
