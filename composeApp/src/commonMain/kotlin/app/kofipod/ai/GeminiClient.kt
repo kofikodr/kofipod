@@ -119,6 +119,11 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
                                 GenerationConfig(
                                     maxOutputTokens = SUMMARY_MAX_OUTPUT_TOKENS,
                                     temperature = SUMMARY_TEMPERATURE,
+                                    // Disable Flash 2.5's chain-of-thought tokens.
+                                    // Reasoning is billed against maxOutputTokens, and on
+                                    // long transcripts it can burn the whole budget,
+                                    // leaving the visible response cut off mid-sentence.
+                                    thinkingConfig = ThinkingConfig(thinkingBudget = 0),
                                 ),
                         ),
                     )
@@ -138,12 +143,23 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
                     logParseFailure("generateFromText", it)
                     return Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
                 }
+        val candidate = parsed.candidates.firstOrNull()
+        // Gemini can split a single response across multiple `parts` (e.g. one
+        // per stream chunk). Joining all non-blank text preserves words that
+        // would otherwise be sliced at the part boundary.
         val text =
-            parsed.candidates.firstOrNull()
+            candidate
                 ?.content?.parts
-                ?.firstOrNull { it.text.isNotBlank() }
-                ?.text
+                ?.mapNotNull { it.text.takeIf { t -> t.isNotBlank() } }
+                ?.joinToString(separator = "")
                 ?.trim()
+        // If the model stopped for a non-natural reason (MAX_TOKENS, SAFETY,
+        // RECITATION) we surface what we got but log the cause so a future
+        // truncation report has a forensic breadcrumb.
+        val reason = candidate?.finishReason
+        if (reason != null && reason != "STOP") {
+            logFinishReason("generateFromText", reason)
+        }
         return if (text.isNullOrBlank()) {
             Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
         } else {
@@ -161,9 +177,12 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
     companion object {
         const val BASE_URL = "https://generativelanguage.googleapis.com"
 
-        // Slice 2 prompt asks for ~200 words; 512 tokens leaves headroom for
-        // languages that tokenise less efficiently than English (e.g. Thai, JP).
-        private const val SUMMARY_MAX_OUTPUT_TOKENS = 512
+        // Slice 2 prompt asks for ~200 words. 1024 tokens covers ~600-800
+        // words across most languages, giving enough headroom that languages
+        // tokenising less efficiently than English (Thai, JP, CJK) don't run
+        // dry mid-sentence — and leaving room if the model decides to be
+        // slightly more verbose than the prompt asked for, which is fine.
+        private const val SUMMARY_MAX_OUTPUT_TOKENS = 1024
         private const val SUMMARY_TEMPERATURE = 0.4
 
         // Diagnostic log tag. Filterable via `adb logcat -s Kofipod-AI:V`. We
@@ -190,6 +209,13 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
             throwable: Throwable,
         ) {
             println("$LOG_TAG: $op response parse failed: ${throwable::class.simpleName}")
+        }
+
+        private fun logFinishReason(
+            op: String,
+            reason: String,
+        ) {
+            println("$LOG_TAG: $op finished with reason=$reason (response may be truncated)")
         }
     }
 }
@@ -226,7 +252,19 @@ private data class Part(val text: String = "")
 private data class GenerationConfig(
     val maxOutputTokens: Int,
     val temperature: Double,
+    val thinkingConfig: ThinkingConfig? = null,
 )
+
+/**
+ * Gemini 2.5 Flash bills "thinking" (chain-of-thought) tokens against
+ * `maxOutputTokens`. For a summary task we don't need reasoning — silence it,
+ * otherwise long transcripts can burn the whole budget and surface as a
+ * truncated 2-liner with no visible cause.
+ *
+ * `thinkingBudget = 0` disables thinking entirely. -1 means "dynamic" (default).
+ */
+@Serializable
+private data class ThinkingConfig(val thinkingBudget: Int)
 
 // --------------------------------------------------------------------------
 // Response DTOs (only the fields we actually read — Gemini returns much more).
@@ -238,4 +276,7 @@ private data class GenerateContentResponse(
 )
 
 @Serializable
-private data class Candidate(val content: Content = Content(emptyList()))
+private data class Candidate(
+    val content: Content = Content(emptyList()),
+    val finishReason: String? = null,
+)
