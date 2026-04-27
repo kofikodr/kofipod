@@ -5,6 +5,7 @@ import app.kofipod.data.repo.PlaybackRepository
 import app.kofipod.testing.inMemoryDatabase
 import org.junit.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
 class PlaybackRepositoryTest {
@@ -55,6 +56,52 @@ class PlaybackRepositoryTest {
         assertEquals(0L, row.positionMs, "positionMs falls back to currentDurationMs (0) with no prior row")
         assertEquals(0L, row.durationMs, "durationMs falls back to currentDurationMs (0) with no prior row")
         assertEquals(500L, row.completedAt, "completedAt should still be stamped")
+    }
+
+    @Test
+    fun saveThenMarkCompleted_preservesMetadata_forNeverPlayedEpisode() {
+        // This pins the contract that EpisodeDetailViewModel.markPlayed relies on:
+        // a save() that seeds metadata immediately followed by markCompleted() must
+        // leave the row in a "completed AND queryable" state. Without the save() seed,
+        // markCompleted on a missing row writes empty strings for podcastId / title /
+        // artworkUrl / sourceUrl, which orphans the row from JOIN-based queries used
+        // by Continue Listening and the Stats screen.
+        val db = inMemoryDatabase()
+        val repo = PlaybackRepository(db)
+
+        val durationMs = 90L * 60L * 1000L // 90 min
+        val now = 1_700_000_000_000L
+
+        repo.save(
+            episodeId = "ep-mark-played",
+            positionMs = durationMs,
+            durationMs = durationMs,
+            speed = 1f,
+            updatedAt = now,
+            episodeTitle = "Compiler ergonomics",
+            podcastId = "pod-42",
+            podcastTitle = "Signal & Noise",
+            artworkUrl = "https://art.example/ep-mark-played.jpg",
+            sourceUrl = "https://audio.example/ep-mark-played.mp3",
+            episodeNumber = 214,
+        )
+        repo.markCompleted(
+            episodeId = "ep-mark-played",
+            nowMillis = now,
+            currentDurationMs = durationMs,
+        )
+
+        val row = db.playbackStateQueries.selectByEpisode("ep-mark-played").executeAsOne()
+        assertEquals("Compiler ergonomics", row.episodeTitle, "episodeTitle must survive the markCompleted call")
+        assertEquals("pod-42", row.podcastId, "podcastId is what JOIN queries depend on; losing it orphans the row")
+        assertEquals("Signal & Noise", row.podcastTitle)
+        assertEquals("https://art.example/ep-mark-played.jpg", row.artworkUrl)
+        assertEquals("https://audio.example/ep-mark-played.mp3", row.sourceUrl)
+        assertEquals(214L, row.episodeNumber)
+        assertEquals(durationMs, row.positionMs)
+        assertEquals(durationMs, row.durationMs)
+        assertNotNull(row.completedAt, "completedAt must be stamped after markCompleted")
+        assertEquals(now, row.completedAt)
     }
 
     @Test

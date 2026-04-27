@@ -111,6 +111,7 @@ kotlin {
                 implementation(kotlin("test"))
                 implementation(libs.sqldelight.sqlite.driver)
                 implementation(libs.kotlinx.coroutines.test)
+                implementation(libs.ktor.client.mock)
             }
         }
     }

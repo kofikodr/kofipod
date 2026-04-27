@@ -72,19 +72,7 @@ class ChaptersRepository(
                     error("HTTP ${response.status.value}")
                 }
                 val body = response.bodyAsText()
-                val parsed = kofipodJson.decodeFromString<ChaptersJson>(body)
-                val rows =
-                    parsed.chapters.orEmpty().mapIndexedNotNull { index, chapter ->
-                        val title = chapter.title?.takeIf { it.isNotBlank() } ?: return@mapIndexedNotNull null
-                        EpisodeChapter(
-                            episodeId = episodeId,
-                            seq = index.toLong(),
-                            startMs = (chapter.startTime ?: 0.0).coerceAtLeast(0.0).times(1000.0).roundToLong(),
-                            title = title,
-                            imageUrl = chapter.img.orEmpty(),
-                            linkUrl = chapter.url.orEmpty(),
-                        )
-                    }
+                val rows = parseChapters(episodeId, body)
                 db.episodeChapterQueries.transaction {
                     db.episodeChapterQueries.deleteByEpisode(episodeId)
                     rows.forEach {
@@ -116,3 +104,33 @@ private data class ChapterEntry(
     @SerialName("img") val img: String? = null,
     @SerialName("url") val url: String? = null,
 )
+
+/**
+ * Pure conversion: chapters JSON → DB rows for [episodeId]. Internal so the test suite
+ * can exercise the rounding / null / blank-title branches without an HTTP layer.
+ *
+ * Invariants:
+ *  - `startTime` is converted from float seconds to Long milliseconds via [roundToLong];
+ *    negative values are clamped to 0 (the spec is non-negative but defensive).
+ *  - Chapters with a null or blank title are dropped — the spec says title is required,
+ *    and we'd rather hide a chapter than render an empty row.
+ *  - `seq` is the source-array index, not the post-filter index, so dropped chapters
+ *    create gaps. The DB ordering uses `seq ASC`, so this is fine.
+ */
+internal fun parseChapters(
+    episodeId: String,
+    json: String,
+): List<EpisodeChapter> {
+    val parsed = kofipodJson.decodeFromString<ChaptersJson>(json)
+    return parsed.chapters.orEmpty().mapIndexedNotNull { index, chapter ->
+        val title = chapter.title?.takeIf { it.isNotBlank() } ?: return@mapIndexedNotNull null
+        EpisodeChapter(
+            episodeId = episodeId,
+            seq = index.toLong(),
+            startMs = (chapter.startTime ?: 0.0).coerceAtLeast(0.0).times(1000.0).roundToLong(),
+            title = title,
+            imageUrl = chapter.img.orEmpty(),
+            linkUrl = chapter.url.orEmpty(),
+        )
+    }
+}
