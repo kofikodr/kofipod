@@ -54,6 +54,40 @@ fun EpisodeDetailScreen(
     viewModel: EpisodeDetailViewModel = koinViewModel(parameters = { parametersOf(episodeId) }),
 ) {
     val state by viewModel.state.collectAsState()
+    EpisodeDetailContent(
+        state = state,
+        onBack = onBack,
+        onShare = viewModel::share,
+        onPlay = {
+            viewModel.togglePlay()
+            if (!state.isCurrentEpisode) onOpenPlayer()
+        },
+        onMarkPlayed = viewModel::markPlayed,
+        onDeleteDownload = viewModel::deleteDownload,
+        onDownload = viewModel::download,
+        onChapterTap = { startMs ->
+            viewModel.seekToChapter(startMs)
+            if (!state.isCurrentEpisode) onOpenPlayer()
+        },
+    )
+}
+
+/**
+ * Pure-state rendering of the Episode Detail screen. Lives separately from
+ * [EpisodeDetailScreen] so paparazzi snapshots can drive the screen with
+ * hand-rolled [EpisodeDetailUiState] instances without standing up Koin.
+ */
+@Composable
+internal fun EpisodeDetailContent(
+    state: EpisodeDetailUiState,
+    onBack: () -> Unit,
+    onShare: () -> Unit,
+    onPlay: () -> Unit,
+    onMarkPlayed: () -> Unit,
+    onDeleteDownload: () -> Unit,
+    onDownload: () -> Unit,
+    onChapterTap: (Long) -> Unit,
+) {
     val c = LocalKofipodColors.current
 
     Column(
@@ -64,7 +98,7 @@ fun EpisodeDetailScreen(
             .padding(horizontal = 20.dp)
             .padding(top = 8.dp, bottom = 32.dp),
     ) {
-        TopBar(onBack = onBack, onShare = viewModel::share)
+        TopBar(onBack = onBack, onShare = onShare)
 
         when {
             state.episode == null && !state.loading -> {
@@ -77,24 +111,18 @@ fun EpisodeDetailScreen(
             }
             state.episode != null -> {
                 EpisodeBody(
-                    episode = state.episode!!,
+                    episode = state.episode,
                     podcast = state.podcast,
                     chapters = state.chapters,
                     isPlayingThis = state.isPlayingThis,
                     isCurrentEpisode = state.isCurrentEpisode,
                     downloaded = state.downloaded,
                     played = state.played,
-                    onPlay = {
-                        viewModel.togglePlay()
-                        if (!state.isCurrentEpisode) onOpenPlayer()
-                    },
-                    onMarkPlayed = viewModel::markPlayed,
-                    onDeleteDownload = viewModel::deleteDownload,
-                    onDownload = viewModel::download,
-                    onChapterTap = { startMs ->
-                        viewModel.seekToChapter(startMs)
-                        if (!state.isCurrentEpisode) onOpenPlayer()
-                    },
+                    onPlay = onPlay,
+                    onMarkPlayed = onMarkPlayed,
+                    onDeleteDownload = onDeleteDownload,
+                    onDownload = onDownload,
+                    onChapterTap = onChapterTap,
                 )
             }
         }
@@ -258,7 +286,9 @@ private fun ChapterRow(
             color = c.textMute,
             fontFamily = FontFamily.Monospace,
             fontSize = 12.sp,
-            modifier = Modifier.width(56.dp),
+            // 64dp fits HH:MM:SS at 12sp monospace; the previous 56dp wrapped
+            // at the 1-hour mark and split "01:00:00" across two lines.
+            modifier = Modifier.width(64.dp),
         )
         Spacer(Modifier.width(12.dp))
         Text(
