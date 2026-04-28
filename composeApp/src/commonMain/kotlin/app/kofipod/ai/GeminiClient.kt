@@ -485,9 +485,16 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
 
     /**
      * Audio variant of [toAiError]. A 400 with `INVALID_ARGUMENT` and a message
-     * mentioning the token / size cap is Gemini's way of saying "this audio is
-     * past my context window". Anything else falls through to the same mapping
-     * the text path uses — a malformed key still surfaces as KeyInvalid.
+     * announcing the size cap is Gemini's way of saying "this audio is past my
+     * context window". Anything else falls through to the same mapping the
+     * text path uses — a malformed or rejected key still surfaces as KeyInvalid.
+     *
+     * The heuristic is deliberately narrow: `"exceeds the maximum"` is the
+     * specific phrase Gemini uses for context-window overflows. Earlier drafts
+     * also matched on the bare substring `"token"`, but that's far too broad —
+     * a key-auth error like `"invalid authentication token"` would have been
+     * misclassified as AudioTooLong, showing the user "this episode is too
+     * long" with no retry action when their actual problem is a bad key.
      */
     private fun HttpStatusCode.toAudioAiError(body: String): AiError {
         if (this != HttpStatusCode.BadRequest) return toAiError()
@@ -496,10 +503,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         val message = parsed?.get("message")?.jsonPrimitive?.content.orEmpty()
         val tooLong =
             status == "INVALID_ARGUMENT" &&
-                (
-                    message.contains("exceeds the maximum", ignoreCase = true) ||
-                        message.contains("token", ignoreCase = true)
-                )
+                message.contains("exceeds the maximum", ignoreCase = true)
         return if (tooLong) AiError.AudioTooLong else AiError.KeyInvalid
     }
 

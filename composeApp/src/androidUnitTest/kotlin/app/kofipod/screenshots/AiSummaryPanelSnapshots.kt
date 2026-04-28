@@ -25,17 +25,20 @@ import org.junit.Test
 /**
  * Visual baselines for the Summary tab panel. We snapshot the stateless
  * [AiSummaryPanelContent] so the tests don't depend on Koin or the real
- * repository. Seven configurations cover every visually-distinct branch
- * the panel renders today:
+ * repository. Each configuration covers a visually-distinct branch:
  *
- *  - idleTranscript / idleNoSource: the two `available` branches in [IdleCard].
- *    Pins the dashed-Generate button presence (Transcript) vs absence (null).
+ *  - idleTranscript / idleAudio / idleNoSource: the three `available`
+ *    branches in [IdleCard]. Pins the subtitle copy variants (transcript
+ *    explainer vs audio-with-minutes vs no-source hint) and the
+ *    dashed-Generate button presence (Transcript / Audio) vs absence (null).
  *  - generating: the `Summarising…` row + linear progress.
  *  - readyFresh / readyStale: the cached-summary card with and without the
  *    "Source updated" stale chip + Regenerate button.
  *  - errorRateLimited / errorKeyInvalid: two visually-distinct error cards —
  *    different icon, different headline, and different action wiring
  *    (Retry vs Open Settings).
+ *  - errorAudioTooLong: the only error variant with NO action button —
+ *    pins the "this episode is too long" copy + missing CTA.
  *
  * Per-error copy variants for `Network`/`TranscriptUnavailable`/`Unknown`
  * share the same ErrorCard shell — those variants are pinned by unit tests
@@ -54,6 +57,12 @@ class AiSummaryPanelSnapshots {
 
     @Test
     fun aiSummary_idleTranscript_dark() = paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Dark) { Render(idleTranscript()) } }
+
+    @Test
+    fun aiSummary_idleAudio_light() = paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Light) { Render(idleAudio()) } }
+
+    @Test
+    fun aiSummary_idleAudio_dark() = paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Dark) { Render(idleAudio()) } }
 
     @Test
     fun aiSummary_idleNoSource_light() = paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Light) { Render(idleNoSource()) } }
@@ -90,6 +99,12 @@ class AiSummaryPanelSnapshots {
 
     @Test
     fun aiSummary_errorKeyInvalid_dark() = paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Dark) { Render(errorKeyInvalid()) } }
+
+    @Test
+    fun aiSummary_errorAudioTooLong_light() = paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Light) { Render(errorAudioTooLong()) } }
+
+    @Test
+    fun aiSummary_errorAudioTooLong_dark() = paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Dark) { Render(errorAudioTooLong()) } }
 }
 
 @Composable
@@ -128,6 +143,8 @@ private fun ThemedPanel(
 
 private fun idleTranscript(): AiSummaryUiState = AiSummaryUiState.Idle(AiSourceKind.Transcript)
 
+private fun idleAudio(): AiSummaryUiState = AiSummaryUiState.Idle(AiSourceKind.Audio)
+
 private fun idleNoSource(): AiSummaryUiState = AiSummaryUiState.Idle(available = null)
 
 private fun generating(): AiSummaryUiState = AiSummaryUiState.Generating(AiSourceKind.Transcript)
@@ -139,6 +156,8 @@ private fun readyStale(): AiSummaryUiState = AiSummaryUiState.Ready(sampleSummar
 private fun errorRateLimited(): AiSummaryUiState = AiSummaryUiState.Error(AiError.RateLimited)
 
 private fun errorKeyInvalid(): AiSummaryUiState = AiSummaryUiState.Error(AiError.KeyInvalid)
+
+private fun errorAudioTooLong(): AiSummaryUiState = AiSummaryUiState.Error(AiError.AudioTooLong)
 
 private fun sampleSummary(): AiSummary =
     AiSummary(

@@ -279,6 +279,55 @@ class AiSummaryRepositoryTest {
         }
 
     @Test
+    fun generate_audioPath_surfacesError_whenSummariserFails() =
+        runTest {
+            // The runAudio `getOrElse { surface(...) }` block is the only path
+            // that takes the repository from Generating → Error on the audio
+            // side. Without this test, a regression that drops or rewires the
+            // error surfacing would leave the panel stuck in Generating
+            // forever (no exception, no error card, no retry).
+            val audio =
+                StubAudioSummariser(
+                    returns = Result.failure(AiErrorException(AiError.RateLimited)),
+                )
+            val (repo, db) = build(initialKey = "k", audio = audio)
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "", durationSec = 1800L)
+            insertCompletedDownload(db, episodeId = "ep1", localPath = "/tmp/ep1.mp3", downloadedBytes = 1_000_000)
+
+            repo.generate("ep1")
+            advanceUntilIdle()
+
+            val state = repo.observeFor("ep1").first()
+            val error = assertIs<AiSummaryUiState.Error>(state, "Audio summariser failure must surface as Error, got $state")
+            assertEquals(AiError.RateLimited, error.error)
+        }
+
+    @Test
+    fun generate_audioPath_allowsExactly8h_atTheBoundary() =
+        runTest {
+            // The cap uses strict `>`, so an episode of exactly 8h must be
+            // allowed through to the summariser. Pins the boundary so a
+            // refactor flipping `>` to `>=` doesn't silently exclude
+            // 8-hour-on-the-nose episodes the spec says are permitted.
+            val audio = StubAudioSummariser(returns = Result.success("Boundary summary."))
+            val (repo, db) = build(initialKey = "k", audio = audio)
+            insertEpisode(
+                db,
+                episodeId = "ep1",
+                transcriptUrl = "",
+                durationSec = 8L * 3600,
+            )
+            insertCompletedDownload(db, episodeId = "ep1", localPath = "/tmp/ep1.mp3", downloadedBytes = 1_000_000)
+
+            repo.generate("ep1")
+            advanceUntilIdle()
+
+            assertEquals(1, audio.calls.size, "8h-on-the-nose must be allowed — strict-greater-than boundary")
+            val state = repo.observeFor("ep1").first()
+            assertIs<AiSummaryUiState.Ready>(state, "Boundary case must complete to Ready, got $state")
+        }
+
+    @Test
     fun generate_audioPath_emitsAudioTooLong_when8hCap() =
         runTest {
             // A 12-hour episode would survive the upload only to be rejected by
@@ -420,6 +469,50 @@ class AiSummaryRepositoryTest {
         }
 
     @Test
+    fun clearAll_cancelsInFlightGeneration_andDoesNotPersistRevokedRow() =
+        runTest {
+            // Disconnect race: a long upload is mid-flight when the user hits
+            // Disconnect. Without explicit cancel + a key re-check before
+            // upsert, the job would complete after `clearAll()` had wiped the
+            // table and silently insert a row generated under the old key.
+            // On the next `connect()` with a different key, that row would
+            // resurface — content from key K1 visible under key K2.
+            val gate = CompletableDeferred<Result<String>>()
+            val audio = StubAudioSummariser { gate.await() }
+            val fixture =
+                build(
+                    initialKey = "k",
+                    audio = audio,
+                )
+            val (repo, db, aiConfig) = fixture
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "", durationSec = 1800L)
+            insertCompletedDownload(db, episodeId = "ep1", localPath = "/tmp/ep1.mp3", downloadedBytes = 1_000_000)
+
+            repo.generate("ep1")
+            // Let the pipeline reach `audio.summariseAudio`, where it parks on
+            // the gate awaiting Disconnect — without `runCurrent` the launch
+            // hasn't dispatched yet and clearAll has nothing to cancel.
+            testScheduler.runCurrent()
+
+            // User taps Disconnect → AiConfigRepository wipes the vault, then
+            // AiSummaryRepository.clearAll cancels jobs + wipes the table.
+            // This is the order AiSetupViewModel.confirmDisconnect uses.
+            aiConfig.disconnect()
+            repo.clearAll()
+            // Release the gate AFTER clearAll has returned. Any upsert behind
+            // it must be a no-op — either because the job was cancelled, or
+            // because the in-pipeline currentKey() check sees a null vault.
+            gate.complete(Result.success("LATE summary that must NOT be persisted"))
+            advanceUntilIdle()
+
+            val rows = db.episodeAiSummaryQueries.selectByEpisode("ep1").executeAsList()
+            assertTrue(
+                rows.isEmpty(),
+                "clearAll must cancel in-flight pipelines so a late upsert can't leak old-key content past Disconnect",
+            )
+        }
+
+    @Test
     fun clearAll_emptiesAllCachedSummaries() =
         runTest {
             // Slice 4 wires Disconnect to call this. Verifying the contract here so
@@ -450,6 +543,7 @@ class AiSummaryRepositoryTest {
     private data class Fixture(
         val repo: AiSummaryRepository,
         val db: KofipodDatabase,
+        val aiConfig: AiConfigRepository,
     )
 
     private fun TestScope.build(
@@ -483,7 +577,7 @@ class AiSummaryRepositoryTest {
                 ioContext = testDispatcher,
                 audioFallbackEnabled = audioFallbackEnabled,
             )
-        return Fixture(repo, db)
+        return Fixture(repo, db, aiConfig)
     }
 
     private fun insertEpisode(

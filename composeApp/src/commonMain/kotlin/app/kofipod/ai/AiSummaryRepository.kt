@@ -8,6 +8,7 @@ import app.kofipod.db.Download
 import app.kofipod.db.KofipodDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -80,6 +82,15 @@ class AiSummaryRepository(
     private val transientErrors = MutableStateFlow<Map<String, AiError>>(emptyMap())
 
     /**
+     * episodeId → live coroutine `Job` for the in-flight pipeline so [clearAll]
+     * can cancel + drain them on Disconnect. Without this, a long audio upload
+     * that finishes after `clearAll()` would land an `upsert(...)` against the
+     * just-wiped table and the row would resurface the next time the user
+     * connects with a different key.
+     */
+    private val activeJobs = MutableStateFlow<Map<String, Job>>(emptyMap())
+
+    /**
      * Single-flight guard around the in-flight + DB write window. The repository is
      * reused across the app, so two coroutines on different screens calling
      * `generate(id)` simultaneously must not double-fire the network request.
@@ -132,16 +143,33 @@ class AiSummaryRepository(
      * while a job is in flight.
      */
     fun generate(episodeId: String) {
-        appScope.launch { runGenerate(episodeId) }
+        val job = appScope.launch { runGenerate(episodeId) }
+        activeJobs.update { it + (episodeId to job) }
+        job.invokeOnCompletion { activeJobs.update { it - episodeId } }
     }
 
     /**
-     * Wipes all cached summaries. Wired up by Slice 4 Disconnect. Routed through
-     * [ioContext] (default `Dispatchers.Default`) so callers from the main
-     * thread don't ANR on a sluggish on-device write — SQLDelight does not
-     * enforce off-main I/O on its own.
+     * Wipes all cached summaries. Wired up by Slice 4 Disconnect.
+     *
+     * Cancels in-flight pipelines first so a long audio upload finishing after
+     * the wipe can't insert a row against the just-cleared table — that would
+     * leak content generated under the old key into a session keyed to the
+     * new one. Cancellation is cooperative (next suspension point), so the
+     * `currentKey()` re-check inside [runTranscript]/[runAudio] is the
+     * defence-in-depth backup for the slim window where the network call is
+     * already past its last suspension point.
+     *
+     * The DB write is routed through [ioContext] (default `Dispatchers.Default`)
+     * so callers from the main thread don't ANR on a sluggish on-device write —
+     * SQLDelight does not enforce off-main I/O on its own.
      */
     suspend fun clearAll() {
+        val jobs = activeJobs.value.values.toList()
+        activeJobs.value = emptyMap()
+        inFlight.value = emptyMap()
+        transientErrors.value = emptyMap()
+        jobs.forEach { it.cancel() }
+        jobs.joinAll()
         withContext(ioContext) {
             db.episodeAiSummaryQueries.deleteAll()
         }
@@ -213,6 +241,12 @@ class AiSummaryRepository(
                 return
             }
 
+        if (aiConfig.currentKey().isNullOrBlank()) {
+            // Defence in depth: if the user disconnected during the network
+            // call, drop the result on the floor rather than persist content
+            // that was generated under a now-revoked key.
+            return
+        }
         db.episodeAiSummaryQueries.upsert(
             episodeId = episodeId,
             generatedAtMs = clock.now().toEpochMilliseconds(),
@@ -244,14 +278,10 @@ class AiSummaryRepository(
             surface(episodeId, AiError.AudioTooLong)
             return
         }
-        val localPath = download?.localPath?.takeIf { it.isNotBlank() }
-        if (localPath == null) {
-            // Should be unreachable — pickSource only returns Audio when the
-            // download has a local path — but guard against the race between
-            // the snapshot and a download that gets deleted moments later.
-            surface(episodeId, AiError.Unknown(null))
-            return
-        }
+        // pickSource returns Audio only when `download.localPath` is non-blank
+        // (and the lock guarantees the snapshot we captured is what reaches
+        // here), so the !! is safe — `download` and its localPath are present.
+        val localPath = download!!.localPath!!
         val key = aiConfig.currentKey()
         if (key.isNullOrBlank()) {
             surface(episodeId, AiError.NoKey)
@@ -277,6 +307,10 @@ class AiSummaryRepository(
                 return
             }
 
+        if (aiConfig.currentKey().isNullOrBlank()) {
+            // Same disconnect-during-pipeline guard as the transcript path.
+            return
+        }
         db.episodeAiSummaryQueries.upsert(
             episodeId = episodeId,
             generatedAtMs = clock.now().toEpochMilliseconds(),

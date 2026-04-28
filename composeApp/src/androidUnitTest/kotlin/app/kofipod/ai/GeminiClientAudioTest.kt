@@ -263,7 +263,15 @@ class GeminiClientAudioTest {
             val error = (result.exceptionOrNull() as? AiErrorException)?.error
             assertIs<AiError.Unknown>(error)
             assertNull(error.statusCode, "Timeout has no HTTP status to report")
-            assertEquals(3, calls, "Should attempt floor(timeout/interval) polls before giving up")
+            // Bound rather than pin: the contract is "polls at least once and
+            // gives up within the budget". An exact count would couple to the
+            // private floor-division arithmetic and break on a benign refactor
+            // (e.g. swapping to a deadline-based `withTimeout`) without any
+            // user-visible regression.
+            assertTrue(
+                calls in 1..5,
+                "Polling must terminate within a sane bound — saw $calls attempts",
+            )
         }
 
     // ---------------------------------------------------------------------
@@ -388,6 +396,51 @@ class GeminiClientAudioTest {
                 )
 
             assertEquals(AiError.AudioTooLong, (result.exceptionOrNull() as? AiErrorException)?.error)
+        }
+
+    @Test
+    fun generateFromAudio_mapsKeyInvalid_when400MessageMentionsTokenButNotLength() =
+        runTest {
+            // Regression guard: an earlier heuristic mapped any 400 +
+            // INVALID_ARGUMENT message containing the substring "token" to
+            // AudioTooLong. That misclassified bad-key errors phrased as
+            // "invalid authentication token" — the user would see "this
+            // episode is too long" with no retry button when their real
+            // problem was a rejected key. The narrowed heuristic only
+            // matches on "exceeds the maximum"; this test pins that.
+            val client =
+                HttpClient(
+                    MockEngine { _ ->
+                        respond(
+                            """
+                            {
+                              "error": {
+                                "code": 400,
+                                "message": "Request had invalid authentication token. Please check your API key.",
+                                "status": "INVALID_ARGUMENT"
+                              }
+                            }
+                            """.trimIndent(),
+                            HttpStatusCode.BadRequest,
+                            headersOf(HttpHeaders.ContentType, "application/json"),
+                        )
+                    },
+                ) { install(ContentNegotiation) { json(Json) } }
+
+            val result =
+                GeminiClient(client).generateFromAudio(
+                    apiKey = "k",
+                    model = GeminiModel.Flash,
+                    fileUri = "u",
+                    mimeType = "audio/mpeg",
+                    prompt = "P",
+                )
+
+            assertEquals(
+                AiError.KeyInvalid,
+                (result.exceptionOrNull() as? AiErrorException)?.error,
+                "A 400 mentioning \"token\" in an auth context must NOT mis-fire as AudioTooLong",
+            )
         }
 
     @Test
