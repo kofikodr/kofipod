@@ -64,7 +64,7 @@ There is no in-app sign-in, no OAuth client to maintain, and no `GOOGLE_SERVER_C
 
 SQLDelight database name: `KofipodDatabase`, package `app.kofipod.db`. Schema files under `composeApp/src/commonMain/sqldelight/app/kofipod/db/`:
 
-- Tables: `Podcast.sq`, `Episode.sq`, `PodcastList.sq`, `Download.sq`, `PlaybackState.sq`, `RecentPodcastView.sq`, `SyncMeta.sq`.
+- Tables: `Podcast.sq`, `Episode.sq`, `EpisodeChapter.sq`, `EpisodeAiSummary.sq`, `PodcastList.sq`, `Download.sq`, `PlaybackState.sq`, `RecentPodcastView.sq`, `SyncMeta.sq`.
 - Migrations in `migrations/` — current schema version is **12**. Add a new `N.sqm` file rather than editing existing tables. Dev installs auto-migrate; if a migration ever fails on an emulator, uninstall and reinstall to rebuild from `Schema.create`.
 
 ### Navigation
@@ -87,6 +87,19 @@ Android is the priority, but all three iOS targets must keep compiling. `./gradl
 ### Performance-sensitive invariants
 
 The detail screen's episode list was tuned for scroll-during-playback. Do not merge the 500ms playback ticker back into `DetailUiState` — keep `playingEpisodeId` and `activePlayback` as separate `StateFlow`s so only the active row recomposes per tick. `EpisodeRowData` must stay free of `isActive`/`isPlaying`/`progress` to keep `remember`-stabilized row lists stable. `KPIcon` caches its `Path` via `remember(name, sizePx)` — preserve this when editing.
+
+### AI features
+
+BYOK (bring-your-own-key) Gemini integration. Lives entirely in `app.kofipod.ai/`:
+
+- `GeminiClient.kt` — Ktor wrapper over `generativelanguage.googleapis.com`. Handles `validate`, `generateFromText`, the Files API audio pipeline (`uploadAudio` → `pollUntilActive` → `generateFromAudio` → best-effort `deleteFile`), and structured-output decoding (`responseMimeType: application/json` + `responseSchema` → `AiSummaryJson`).
+- `AiSummaryRepository.kt` — picks transcript path when `episode.transcriptUrl` is non-blank, audio fallback when the episode is downloaded, else surfaces `Idle(available = null)`. Single-flight per episodeId via a `Mutex`. Runs on the named `"appScope"` so navigation away mid-pipeline doesn't cancel the request.
+- `AiConfigRepository.kt` + `AndroidKeyVault.kt` — the user's Gemini key lives in `kofipod_secure` `EncryptedSharedPreferences`, **not** in BuildKonfig. Both that prefs file and the cached-summary table are excluded from Auto Backup (see `backup_rules.xml`) so a device migration starts clean. The key never enters logs, the prompt body, or the response body — `GeminiClient` only logs operation names + status codes via the `Kofipod-AI` tag.
+- `EpisodeAiSummary` table caches one row per episode: prose summary plus three JSON columns (`peopleJson`, `thingsJson`, `linksJson`) holding `[{name, subtitle}]` for people/things and `[{label, url}]` for links. Decoders fall back to an empty list on parse failure rather than tearing down the Ready card; the person/thing decoders also accept the legacy flat-string array shape so cached rows from before Slice 3.5 still render.
+
+UI lives under `ui/screens/detail/ai/`. The episode-detail tab strip surfaces `Summary | Mentioned | Discuss` (plus `Chapters` when present). Summary is prose-only; Mentioned renders one filtered section at a time (People / Books·things / Links) with rows that tap through to a Google search (`googleSearchUrl(name, subtitle)`) — links open their actual URL. Discuss is still a placeholder. **Disconnect** in Settings wipes both the key and every cached summary by calling `AiSummaryRepository.clearAll()`, which also cancels in-flight pipelines so a late upload can't write back against the just-cleared table.
+
+When extending the wire shape (e.g. adding a new entity field), update `AiSummaryJson`, `SUMMARY_RESPONSE_SCHEMA`, `AiPrompts.episodeSummaryPrompt`, the repo's encode/decode helpers, and the fixture at `androidUnitTest/resources/ai/sample_response.json` together — `AiSummaryJsonTest` is the canary that catches schema drift, but only if the fixture is current.
 
 ## Testing conventions
 
