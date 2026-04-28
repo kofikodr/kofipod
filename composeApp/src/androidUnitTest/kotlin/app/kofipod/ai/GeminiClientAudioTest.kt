@@ -291,7 +291,7 @@ class GeminiClientAudioTest {
                     MockEngine { request ->
                         observed = request
                         respond(
-                            """{"candidates":[{"content":{"parts":[{"text":"summary"}]}}]}""",
+                            """{"candidates":[{"content":{"parts":[{"text":"{\"summary\":\"summary\"}"}]}}]}""",
                             HttpStatusCode.OK,
                             headersOf(HttpHeaders.ContentType, "application/json"),
                         )
@@ -307,7 +307,7 @@ class GeminiClientAudioTest {
                     prompt = "PROMPT_TEXT",
                 )
 
-            assertEquals("summary", result.getOrNull())
+            assertEquals("summary", result.getOrNull()?.summary)
 
             val request = assertNotNull(observed)
             val body = (request.body as TextContent).text

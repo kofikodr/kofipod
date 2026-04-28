@@ -39,20 +39,24 @@ import kotlin.test.assertTrue
  */
 class GeminiClientTextTest {
     @Test
-    fun generateFromText_returnsCandidateText_on200() =
+    fun generateFromText_parsesStructuredJson_intoAiSummaryJson() =
         runTest {
-            val client =
-                clientThatReturns(
-                    status = HttpStatusCode.OK,
-                    body =
-                        """
-                        {
-                          "candidates": [{
-                            "content": { "parts": [{ "text": "  Episode summary body.  " }] }
-                          }]
-                        }
-                        """.trimIndent(),
-                )
+            // Slice 3 wired Gemini's structured-output (responseMimeType +
+            // responseSchema) so the candidate text is a JSON document, not
+            // free prose. The client must decode it into [AiSummaryJson]
+            // verbatim — preserving entity counts so the panel can render
+            // the People / Things / Links sections.
+            val structured =
+                buildString {
+                    append("""{"summary":"Episode summary body.",""")
+                    append(""""people":["Alice","Bob"],""")
+                    append(""""things":["Pragmatic Programmer"],""")
+                    append(""""links":[{"label":"Site","url":"https://x.test"}]}""")
+                }
+            // Wrap the JSON in extra whitespace inside the candidate text so we
+            // also pin the outer-trim contract (Gemini occasionally pads the
+            // text part with leading/trailing newlines around the schema body).
+            val client = clientThatReturns(status = HttpStatusCode.OK, body = candidateBody("\n  $structured  \n"))
 
             val result =
                 GeminiClient(client).generateFromText(
@@ -62,11 +66,12 @@ class GeminiClientTextTest {
                     content = "C",
                 )
 
-            assertEquals(
-                "Episode summary body.",
-                result.getOrNull(),
-                "Successful response body's candidate text should round-trip trimmed",
-            )
+            val parsed = assertNotNull(result.getOrNull(), "Structured JSON response must parse to AiSummaryJson")
+            assertEquals("Episode summary body.", parsed.summary, "Outer whitespace around the JSON envelope must be trimmed before decode")
+            assertEquals(listOf("Alice", "Bob"), parsed.people)
+            assertEquals(listOf("Pragmatic Programmer"), parsed.things)
+            assertEquals(1, parsed.links.size)
+            assertEquals("https://x.test", parsed.links[0].url)
         }
 
     @Test
@@ -80,7 +85,7 @@ class GeminiClientTextTest {
             val handler: MockRequestHandler = { request ->
                 observed = request
                 respond(
-                    """{"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}""",
+                    candidateBody("""{"summary":"ok"}"""),
                     HttpStatusCode.OK,
                     headersOf("Content-Type", "application/json"),
                 )
@@ -108,13 +113,14 @@ class GeminiClientTextTest {
         }
 
     @Test
-    fun generateFromText_joinsMultipleParts_intoSingleString() =
+    fun generateFromText_joinsMultipleParts_intoSingleStructuredJson() =
         runTest {
-            // Regression: long transcripts caused Gemini to split a single response
-            // across multiple `parts[*]`. The earlier implementation took only
-            // `parts.firstOrNull`, so the user saw "Inte" / "Mofac" — words
-            // sliced at the part boundary. The fix joins all non-blank parts.
-            // A future refactor that reverts to firstOrNull must fail this test.
+            // Regression: long responses caused Gemini to split a single JSON
+            // body across multiple `parts[*]`. The earlier implementation took
+            // only `parts.firstOrNull`, so the joined fragment was no longer a
+            // valid JSON document and parsing collapsed the whole response.
+            // The fix joins all non-blank parts before structured-decoding,
+            // so a refactor that reverts to firstOrNull would fail to parse.
             val client =
                 clientThatReturns(
                     status = HttpStatusCode.OK,
@@ -124,9 +130,9 @@ class GeminiClientTextTest {
                           "candidates": [{
                             "content": {
                               "parts": [
-                                { "text": "Inte" },
+                                { "text": "{\"summary\":\"Inte" },
                                 { "text": "resting episode about " },
-                                { "text": "podcasting." }
+                                { "text": "podcasting.\"}" }
                               ]
                             }
                           }]
@@ -144,8 +150,8 @@ class GeminiClientTextTest {
 
             assertEquals(
                 "Interesting episode about podcasting.",
-                result.getOrNull(),
-                "Multi-part responses must be joined, not truncated to the first part",
+                result.getOrNull()?.summary,
+                "Multi-part JSON must be joined before parsing — first-only would yield invalid JSON and surface as Unknown",
             )
         }
 
@@ -163,7 +169,7 @@ class GeminiClientTextTest {
             val handler: MockRequestHandler = { request ->
                 observed = request
                 respond(
-                    """{"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}""",
+                    candidateBody("""{"summary":"ok"}"""),
                     HttpStatusCode.OK,
                     headersOf("Content-Type", "application/json"),
                 )
@@ -195,6 +201,93 @@ class GeminiClientTextTest {
                         "long transcripts get truncated to a 2-liner",
                 )
             assertEquals(0, thinkingBudget, "thinkingBudget must be 0 (disabled), not -1 or any positive value")
+        }
+
+    @Test
+    fun generateFromText_returnsUnknown_onMalformedJsonInCandidateText() =
+        runTest {
+            // The model is supposed to honour responseSchema, but a wedge in the
+            // structured-output path (e.g. tripped safety filter that emits a
+            // plain-text apology, or a bad fixture in dev) lands non-JSON in
+            // the candidate text. Surface AiError.Unknown rather than crash —
+            // the panel shows the retry card instead of stack-tracing.
+            val client =
+                clientThatReturns(
+                    status = HttpStatusCode.OK,
+                    body = candidateBody("not valid json {{{"),
+                )
+
+            val result =
+                GeminiClient(client).generateFromText("k", GeminiModel.Flash, "P", "C")
+
+            val error = (result.exceptionOrNull() as? AiErrorException)?.error
+            assertIs<AiError.Unknown>(error, "Malformed structured output must surface as Unknown, not propagate as a parse exception")
+        }
+
+    @Test
+    fun generateFromText_returnsUnknown_onBlankSummary() =
+        runTest {
+            // Schema-valid but content-empty: e.g. responseSchema enforces the
+            // shape but the model produces `{"summary":""}` with no entities.
+            // From the user's perspective this is indistinguishable from a
+            // failed run — empty Ready card with a "Generated 5m ago" footer
+            // is worse than an error card with Retry.
+            val client =
+                clientThatReturns(
+                    status = HttpStatusCode.OK,
+                    body = candidateBody("""{"summary":"   "}"""),
+                )
+
+            val result =
+                GeminiClient(client).generateFromText("k", GeminiModel.Flash, "P", "C")
+
+            val error = (result.exceptionOrNull() as? AiErrorException)?.error
+            assertIs<AiError.Unknown>(error, "Blank summary in a schema-valid envelope must still surface as Unknown")
+        }
+
+    @Test
+    fun generateFromText_sendsResponseSchema_onTheWire() =
+        runTest {
+            // Without responseMimeType + responseSchema Gemini falls back to
+            // free-form prose, which would parse as malformed JSON downstream
+            // and surface every successful generation as Unknown. Pin both
+            // fields to the wire so a refactor that drops one of them fails
+            // here rather than silently in production.
+            var observed: HttpRequestData? = null
+            val handler: MockRequestHandler = { request ->
+                observed = request
+                respond(
+                    candidateBody("""{"summary":"ok"}"""),
+                    HttpStatusCode.OK,
+                    headersOf("Content-Type", "application/json"),
+                )
+            }
+            val client =
+                HttpClient(MockEngine(handler)) {
+                    install(ContentNegotiation) { json(Json) }
+                }
+
+            GeminiClient(client).generateFromText("k", GeminiModel.Flash, "P", "C")
+
+            val request = assertNotNull(observed)
+            val bodyText = (request.body as TextContent).text
+            val generationConfig = Json.parseToJsonElement(bodyText).jsonObject["generationConfig"]!!.jsonObject
+            assertEquals(
+                "application/json",
+                generationConfig["responseMimeType"]?.jsonPrimitive?.content,
+                "responseMimeType must be application/json — without it the model returns prose",
+            )
+            val schema =
+                assertNotNull(
+                    generationConfig["responseSchema"]?.jsonObject,
+                    "responseSchema must be present so Gemini constrains the JSON shape",
+                )
+            assertEquals("OBJECT", schema["type"]?.jsonPrimitive?.content)
+            val properties = assertNotNull(schema["properties"]?.jsonObject)
+            assertTrue("summary" in properties, "Schema must declare summary")
+            assertTrue("people" in properties, "Schema must declare people — entity extraction is the slice contract")
+            assertTrue("things" in properties)
+            assertTrue("links" in properties)
         }
 
     @Test
@@ -294,7 +387,7 @@ class GeminiClientTextTest {
             val handler: MockRequestHandler = { request ->
                 observedUrl = request.url.toString()
                 respond(
-                    """{"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}""",
+                    candidateBody("""{"summary":"ok"}"""),
                     HttpStatusCode.OK,
                     headersOf("Content-Type", "application/json"),
                 )
@@ -313,6 +406,17 @@ class GeminiClientTextTest {
 
     @Suppress("unused") // referenced by the helper to suppress JsonArray/JsonObject import lints if any
     private val sentinel: Pair<JsonArray, JsonObject>? = null
+
+    /**
+     * Builds a Gemini-shaped success body whose single candidate text part
+     * carries [structuredJson] as a JSON-encoded string. Saves every test from
+     * hand-escaping the inner double-quotes when standing up a happy-path
+     * response.
+     */
+    private fun candidateBody(structuredJson: String): String {
+        val escaped = structuredJson.replace("\\", "\\\\").replace("\"", "\\\"")
+        return """{"candidates":[{"content":{"parts":[{"text":"$escaped"}]}}]}"""
+    }
 
     private fun clientThatReturns(
         status: HttpStatusCode,

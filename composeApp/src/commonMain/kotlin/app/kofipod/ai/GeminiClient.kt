@@ -42,7 +42,9 @@ fun interface KeyValidator {
 /**
  * Seam over the text-summarisation call so [AiSummaryRepository] can be unit-tested
  * against a synchronous fake. Same rationale as [KeyValidator]; the production
- * [GeminiClient] is the only real implementation.
+ * [GeminiClient] is the only real implementation. Returns the parsed structured
+ * response — the wire-shape mapping happens inside [GeminiClient] so the
+ * repository never sees raw JSON.
  */
 fun interface TextSummariser {
     suspend fun generateFromText(
@@ -50,7 +52,7 @@ fun interface TextSummariser {
         model: GeminiModel,
         prompt: String,
         content: String,
-    ): Result<String>
+    ): Result<AiSummaryJson>
 }
 
 /**
@@ -68,7 +70,7 @@ fun interface AudioSummariser {
         mimeType: String,
         sizeBytes: Long,
         displayName: String,
-    ): Result<String>
+    ): Result<AiSummaryJson>
 }
 
 /**
@@ -156,7 +158,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         model: GeminiModel,
         prompt: String,
         content: String,
-    ): Result<String> {
+    ): Result<AiSummaryJson> {
         val response: HttpResponse =
             runCatching {
                 client.post("$BASE_URL/v1beta/models/${model.apiId}:generateContent") {
@@ -165,16 +167,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
                     setBody(
                         GenerateContentRequest(
                             contents = listOf(Content(listOf(Part(text = prompt), Part(text = content)))),
-                            generationConfig =
-                                GenerationConfig(
-                                    maxOutputTokens = SUMMARY_MAX_OUTPUT_TOKENS,
-                                    temperature = SUMMARY_TEMPERATURE,
-                                    // Disable Flash 2.5's chain-of-thought tokens.
-                                    // Reasoning is billed against maxOutputTokens, and on
-                                    // long transcripts it can burn the whole budget,
-                                    // leaving the visible response cut off mid-sentence.
-                                    thinkingConfig = ThinkingConfig(thinkingBudget = 0),
-                                ),
+                            generationConfig = summaryGenerationConfig(),
                         ),
                     )
                 }
@@ -187,34 +180,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
             logHttpFailure("generateFromText", response.status.value)
             return Result.failure(AiErrorException(response.status.toAiError()))
         }
-        val parsed =
-            runCatching { response.body<GenerateContentResponse>() }
-                .getOrElse {
-                    logParseFailure("generateFromText", it)
-                    return Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
-                }
-        val candidate = parsed.candidates.firstOrNull()
-        // Gemini can split a single response across multiple `parts` (e.g. one
-        // per stream chunk). Joining all non-blank text preserves words that
-        // would otherwise be sliced at the part boundary.
-        val text =
-            candidate
-                ?.content?.parts
-                ?.mapNotNull { it.text?.takeIf { t -> t.isNotBlank() } }
-                ?.joinToString(separator = "")
-                ?.trim()
-        // If the model stopped for a non-natural reason (MAX_TOKENS, SAFETY,
-        // RECITATION) we surface what we got but log the cause so a future
-        // truncation report has a forensic breadcrumb.
-        val reason = candidate?.finishReason
-        if (reason != null && reason != "STOP") {
-            logFinishReason("generateFromText", reason)
-        }
-        return if (text.isNullOrBlank()) {
-            Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
-        } else {
-            Result.success(text)
-        }
+        return decodeStructuredResponse(response, "generateFromText")
     }
 
     /**
@@ -365,7 +331,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         fileUri: String,
         mimeType: String,
         prompt: String,
-    ): Result<String> {
+    ): Result<AiSummaryJson> {
         val response: HttpResponse =
             runCatching {
                 client.post("$BASE_URL/v1beta/models/${model.apiId}:generateContent") {
@@ -382,12 +348,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
                                         ),
                                     ),
                                 ),
-                            generationConfig =
-                                GenerationConfig(
-                                    maxOutputTokens = SUMMARY_MAX_OUTPUT_TOKENS,
-                                    temperature = SUMMARY_TEMPERATURE,
-                                    thinkingConfig = ThinkingConfig(thinkingBudget = 0),
-                                ),
+                            generationConfig = summaryGenerationConfig(),
                         ),
                     )
                 }
@@ -401,28 +362,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
             logHttpFailure("generateFromAudio", response.status.value)
             return Result.failure(AiErrorException(response.status.toAudioAiError(bodyText)))
         }
-        val parsed =
-            runCatching { response.body<GenerateContentResponse>() }
-                .getOrElse {
-                    logParseFailure("generateFromAudio", it)
-                    return Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
-                }
-        val candidate = parsed.candidates.firstOrNull()
-        val text =
-            candidate
-                ?.content?.parts
-                ?.mapNotNull { it.text?.takeIf { t -> t.isNotBlank() } }
-                ?.joinToString(separator = "")
-                ?.trim()
-        val reason = candidate?.finishReason
-        if (reason != null && reason != "STOP") {
-            logFinishReason("generateFromAudio", reason)
-        }
-        return if (text.isNullOrBlank()) {
-            Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
-        } else {
-            Result.success(text)
-        }
+        return decodeStructuredResponse(response, "generateFromAudio")
     }
 
     /**
@@ -443,7 +383,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         mimeType: String,
         sizeBytes: Long,
         displayName: String,
-    ): Result<String> {
+    ): Result<AiSummaryJson> {
         val uploaded =
             uploadAudio(apiKey, fileChannel, mimeType, sizeBytes, displayName)
                 .getOrElse { return Result.failure(it) }
@@ -474,6 +414,78 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
             logTransportFailure("deleteFile", it)
         }
         return Result.success(Unit)
+    }
+
+    /**
+     * Builds the [GenerationConfig] used by both `generateFromText` and
+     * `generateFromAudio`. Pinned in one place so the two paths can never drift
+     * — and so the structured-output schema lands consistently on every call.
+     *
+     * `responseMimeType: application/json` + `responseSchema` instructs Gemini
+     * to emit a JSON document matching [SUMMARY_RESPONSE_SCHEMA]; the
+     * accompanying prompt clarifies *what* belongs in each field.
+     */
+    private fun summaryGenerationConfig(): GenerationConfig =
+        GenerationConfig(
+            maxOutputTokens = SUMMARY_MAX_OUTPUT_TOKENS,
+            temperature = SUMMARY_TEMPERATURE,
+            // Disable Flash 2.5's chain-of-thought tokens. Reasoning is billed
+            // against maxOutputTokens, and on long transcripts it can burn the
+            // whole budget, leaving the visible response cut off mid-sentence.
+            thinkingConfig = ThinkingConfig(thinkingBudget = 0),
+            responseMimeType = "application/json",
+            responseSchema = SUMMARY_RESPONSE_SCHEMA,
+        )
+
+    /**
+     * Pulls the JSON document out of a successful `generateContent` response and
+     * parses it as [AiSummaryJson]. Treats four cases as failures:
+     *
+     *  - empty/blank candidate text → [AiError.Unknown]
+     *  - JSON parse failure → [AiError.Unknown] (we log the exception type
+     *    only — never the body, which can carry transcript content)
+     *  - empty `summary` → [AiError.Unknown] (a valid envelope with nothing to
+     *    show is indistinguishable from a failed run as far as the user cares)
+     *  - non-`STOP` finish reason → still passes through, but logged so a
+     *    truncation report has a forensic breadcrumb.
+     */
+    private suspend fun decodeStructuredResponse(
+        response: HttpResponse,
+        op: String,
+    ): Result<AiSummaryJson> {
+        val parsed =
+            runCatching { response.body<GenerateContentResponse>() }
+                .getOrElse {
+                    logParseFailure(op, it)
+                    return Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
+                }
+        val candidate = parsed.candidates.firstOrNull()
+        // Gemini can split a single response across multiple `parts` (e.g. one
+        // per stream chunk). Joining all non-blank text preserves the JSON
+        // body even if the model emits it across boundaries.
+        val text =
+            candidate
+                ?.content?.parts
+                ?.mapNotNull { it.text?.takeIf { t -> t.isNotBlank() } }
+                ?.joinToString(separator = "")
+                ?.trim()
+        val reason = candidate?.finishReason
+        if (reason != null && reason != "STOP") {
+            logFinishReason(op, reason)
+        }
+        if (text.isNullOrBlank()) {
+            return Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
+        }
+        val structured =
+            runCatching { aiJson.decodeFromString<AiSummaryJson>(text) }
+                .getOrElse {
+                    logParseFailure(op, it)
+                    return Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
+                }
+        if (structured.summary.isBlank()) {
+            return Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
+        }
+        return Result.success(structured)
     }
 
     private fun HttpStatusCode.toAiError(): AiError =
@@ -509,6 +521,17 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
 
     companion object {
         const val BASE_URL = "https://generativelanguage.googleapis.com"
+
+        // Lenient configuration for the model's structured output. Gemini is
+        // free to evolve the response envelope (e.g. add a `confidence` field),
+        // and a strict parser would surface those additions as AiError.Unknown
+        // instead of silently ignoring the new key. Defaults on AiSummaryJson
+        // cover the inverse case — a missing entity list parses as empty.
+        private val aiJson: Json =
+            Json {
+                ignoreUnknownKeys = true
+                isLenient = true
+            }
 
         // Slice 2 prompt asks for ~200 words. 1024 tokens covers ~600-800
         // words across most languages, giving enough headroom that languages
@@ -616,6 +639,11 @@ private data class GenerationConfig(
     val maxOutputTokens: Int,
     val temperature: Double,
     val thinkingConfig: ThinkingConfig? = null,
+    // Pinning the wire shape for entity extraction. Both fields are sent
+    // together — schema without mimeType is silently ignored by Gemini, and
+    // mimeType without schema gives free-form JSON that drifts run-to-run.
+    val responseMimeType: String? = null,
+    val responseSchema: Schema? = null,
 )
 
 /**

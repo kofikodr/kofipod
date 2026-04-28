@@ -15,6 +15,7 @@ import app.kofipod.ai.AiSourceKind
 import app.kofipod.ai.AiSummary
 import app.kofipod.ai.AiSummaryUiState
 import app.kofipod.ai.GeminiModel
+import app.kofipod.ai.MentionedLink
 import app.kofipod.ui.screens.detail.ai.AiSummaryPanelContent
 import app.kofipod.ui.theme.KofipodTheme
 import app.kofipod.ui.theme.KofipodThemeMode
@@ -89,6 +90,12 @@ class AiSummaryPanelSnapshots {
     fun aiSummary_readyStale_dark() = paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Dark) { Render(readyStale()) } }
 
     @Test
+    fun aiSummary_readyWithEntities_light() = paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Light) { Render(readyWithEntities()) } }
+
+    @Test
+    fun aiSummary_readyWithEntities_dark() = paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Dark) { Render(readyWithEntities()) } }
+
+    @Test
     fun aiSummary_errorRateLimited_light() = paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Light) { Render(errorRateLimited()) } }
 
     @Test
@@ -153,6 +160,8 @@ private fun readyFresh(): AiSummaryUiState = AiSummaryUiState.Ready(sampleSummar
 
 private fun readyStale(): AiSummaryUiState = AiSummaryUiState.Ready(sampleSummary(), stale = true)
 
+private fun readyWithEntities(): AiSummaryUiState = AiSummaryUiState.Ready(sampleSummaryWithEntities(), stale = false)
+
 private fun errorRateLimited(): AiSummaryUiState = AiSummaryUiState.Error(AiError.RateLimited)
 
 private fun errorKeyInvalid(): AiSummaryUiState = AiSummaryUiState.Error(AiError.KeyInvalid)
@@ -178,6 +187,20 @@ private fun sampleSummary(): AiSummary =
                 "type inference, made visible. The closing segment turns to tooling: how IDE " +
                 "integration changed the calculus, why most error messages are read in editors " +
                 "now rather than terminals, and what that means for design.",
+    )
+
+private fun sampleSummaryWithEntities(): AiSummary =
+    sampleSummary().copy(
+        people = listOf("Andrei Alexandrescu", "Evan Czaplicki"),
+        things = listOf("The Rust Programming Language", "Elm", "TypeScript"),
+        links =
+            listOf(
+                MentionedLink(label = "Rust diagnostics RFC", url = "https://rust-lang.github.io/rfcs/0066"),
+                MentionedLink(
+                    label = "TypeScript narrowing release notes",
+                    url = "https://www.typescriptlang.org/docs/handbook/2/narrowing.html",
+                ),
+            ),
     )
 
 private const val SAMPLE_AUDIO_MINUTES = 67

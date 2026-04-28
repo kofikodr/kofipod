@@ -214,7 +214,7 @@ class AiSummaryRepositoryTest {
                 build(
                     initialKey = "k",
                     transcripts = StubTranscriptFetcher.success("WEBVTT\n\n00:00.000 --> 00:01.000\nHello world."),
-                    summariser = StubSummariser(returns = Result.success("Episode summary body.")),
+                    summariser = StubSummariser(returns = StubSummariser.summary("Episode summary body.")),
                 )
             insertEpisode(db, episodeId = "ep1", transcriptUrl = "https://example.com/t.vtt")
 
@@ -244,7 +244,7 @@ class AiSummaryRepositoryTest {
             // Pins the load-bearing wiring: AudioSummariser receives the right
             // path / mime / size, the persisted row keeps the fingerprint we
             // just summarised, and the source kind is preserved.
-            val audio = StubAudioSummariser(returns = Result.success("Audio episode summary."))
+            val audio = StubAudioSummariser(returns = StubAudioSummariser.summary("Audio episode summary."))
             val (repo, db) = build(initialKey = "k", audio = audio)
             insertEpisode(
                 db,
@@ -309,7 +309,7 @@ class AiSummaryRepositoryTest {
             // allowed through to the summariser. Pins the boundary so a
             // refactor flipping `>` to `>=` doesn't silently exclude
             // 8-hour-on-the-nose episodes the spec says are permitted.
-            val audio = StubAudioSummariser(returns = Result.success("Boundary summary."))
+            val audio = StubAudioSummariser(returns = StubAudioSummariser.summary("Boundary summary."))
             val (repo, db) = build(initialKey = "k", audio = audio)
             insertEpisode(
                 db,
@@ -333,7 +333,7 @@ class AiSummaryRepositoryTest {
             // A 12-hour episode would survive the upload only to be rejected by
             // Gemini for exceeding the context window. We fail fast here so the
             // user doesn't pay 30s of wait + bandwidth for an inevitable error.
-            val audio = StubAudioSummariser(returns = Result.success("never called"))
+            val audio = StubAudioSummariser(returns = StubAudioSummariser.summary("never called"))
             val (repo, db) = build(initialKey = "k", audio = audio)
             insertEpisode(
                 db,
@@ -365,7 +365,7 @@ class AiSummaryRepositoryTest {
                 build(
                     initialKey = "k",
                     transcripts = StubTranscriptFetcher.failure(AiError.TranscriptUnavailable),
-                    summariser = StubSummariser(returns = Result.success("never called")),
+                    summariser = StubSummariser(returns = StubSummariser.summary("never called")),
                 )
             insertEpisode(db, episodeId = "ep1", transcriptUrl = "https://example.com/missing.vtt")
 
@@ -406,7 +406,7 @@ class AiSummaryRepositoryTest {
             // double the user's quota / rate-limit budget.
             val gate = CompletableDeferred<Result<String>>()
             val transcripts = StubTranscriptFetcher { gate.await() }
-            val summariser = StubSummariser(returns = Result.success("done"))
+            val summariser = StubSummariser(returns = StubSummariser.summary("done"))
             val (repo, db) = build(initialKey = "k", transcripts = transcripts, summariser = summariser)
             insertEpisode(db, episodeId = "ep1", transcriptUrl = "https://example.com/t.vtt")
 
@@ -441,7 +441,7 @@ class AiSummaryRepositoryTest {
                     if (attempt == 1) {
                         Result.failure(AiErrorException(AiError.RateLimited))
                     } else {
-                        Result.success("Episode summary body.")
+                        StubSummariser.summary("Episode summary body.")
                     }
                 }
             val (repo, db) =
@@ -477,7 +477,7 @@ class AiSummaryRepositoryTest {
             // table and silently insert a row generated under the old key.
             // On the next `connect()` with a different key, that row would
             // resurface — content from key K1 visible under key K2.
-            val gate = CompletableDeferred<Result<String>>()
+            val gate = CompletableDeferred<Result<AiSummaryJson>>()
             val audio = StubAudioSummariser { gate.await() }
             val fixture =
                 build(
@@ -502,7 +502,7 @@ class AiSummaryRepositoryTest {
             // Release the gate AFTER clearAll has returned. Any upsert behind
             // it must be a no-op — either because the job was cancelled, or
             // because the in-pipeline currentKey() check sees a null vault.
-            gate.complete(Result.success("LATE summary that must NOT be persisted"))
+            gate.complete(StubAudioSummariser.summary("LATE summary that must NOT be persisted"))
             advanceUntilIdle()
 
             val rows = db.episodeAiSummaryQueries.selectByEpisode("ep1").executeAsList()
@@ -549,8 +549,8 @@ class AiSummaryRepositoryTest {
     private fun TestScope.build(
         initialKey: String?,
         transcripts: TranscriptFetcher = StubTranscriptFetcher.success(""),
-        summariser: TextSummariser = StubSummariser(returns = Result.success("default")),
-        audio: AudioSummariser = StubAudioSummariser(returns = Result.success("audio default")),
+        summariser: TextSummariser = StubSummariser(returns = StubSummariser.summary("default")),
+        audio: AudioSummariser = StubAudioSummariser(returns = StubAudioSummariser.summary("audio default")),
         audioFallbackEnabled: Boolean = true,
     ): Fixture {
         // Use the test scheduler for SQLDelight flow emissions too — without this,
@@ -656,9 +656,9 @@ private class SimpleFakeVault(initial: String?) : KeyVault {
 }
 
 private class StubSummariser(
-    private val handler: suspend () -> Result<String>,
+    private val handler: suspend () -> Result<AiSummaryJson>,
 ) : TextSummariser {
-    constructor(returns: Result<String>) : this({ returns })
+    constructor(returns: Result<AiSummaryJson>) : this({ returns })
 
     var callCount: Int = 0
         private set
@@ -668,16 +668,20 @@ private class StubSummariser(
         model: GeminiModel,
         prompt: String,
         content: String,
-    ): Result<String> {
+    ): Result<AiSummaryJson> {
         callCount += 1
         return handler()
+    }
+
+    companion object {
+        fun summary(text: String): Result<AiSummaryJson> = Result.success(AiSummaryJson(summary = text))
     }
 }
 
 private class StubAudioSummariser(
-    private val handler: suspend (StubAudioCall) -> Result<String>,
+    private val handler: suspend (StubAudioCall) -> Result<AiSummaryJson>,
 ) : AudioSummariser {
-    constructor(returns: Result<String>) : this({ returns })
+    constructor(returns: Result<AiSummaryJson>) : this({ returns })
 
     val calls: MutableList<StubAudioCall> = mutableListOf()
 
@@ -689,10 +693,14 @@ private class StubAudioSummariser(
         mimeType: String,
         sizeBytes: Long,
         displayName: String,
-    ): Result<String> {
+    ): Result<AiSummaryJson> {
         val call = StubAudioCall(apiKey, model, prompt, localPath, mimeType, sizeBytes, displayName)
         calls += call
         return handler(call)
+    }
+
+    companion object {
+        fun summary(text: String): Result<AiSummaryJson> = Result.success(AiSummaryJson(summary = text))
     }
 }
 

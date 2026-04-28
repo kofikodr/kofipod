@@ -22,6 +22,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 import kotlin.coroutines.CoroutineContext
 import app.kofipod.db.EpisodeAiSummary as DbEpisodeAiSummary
 
@@ -230,7 +233,7 @@ class AiSummaryRepository(
             }
 
         val prompt = AiPrompts.episodeSummaryPrompt(localeTag = currentLocaleTag())
-        val summary: String =
+        val structured: AiSummaryJson =
             summariser.generateFromText(
                 apiKey = key,
                 model = model,
@@ -253,10 +256,10 @@ class AiSummaryRepository(
             modelId = model.apiId,
             sourceKind = AiSourceKind.Transcript.wire,
             sourceFingerprint = transcriptUrl,
-            summary = summary,
-            peopleJson = "[]",
-            thingsJson = "[]",
-            linksJson = "[]",
+            summary = structured.summary,
+            peopleJson = encodeStringList(structured.people),
+            thingsJson = encodeStringList(structured.things),
+            linksJson = encodeLinkList(structured.links),
         )
         // Persisted successfully — drop any error left over from a previous
         // failed attempt for this episode so the UI doesn't briefly flash the
@@ -293,7 +296,7 @@ class AiSummaryRepository(
         val sizeBytes = download.downloadedBytes
         val prompt = AiPrompts.episodeSummaryPrompt(localeTag = currentLocaleTag())
 
-        val summary: String =
+        val structured: AiSummaryJson =
             audio.summariseAudio(
                 apiKey = key,
                 model = model,
@@ -320,10 +323,10 @@ class AiSummaryRepository(
             // re-downloaded (potentially re-encoded) episode invalidates the
             // cache and prompts a regenerate.
             sourceFingerprint = sizeBytes.toString(),
-            summary = summary,
-            peopleJson = "[]",
-            thingsJson = "[]",
-            linksJson = "[]",
+            summary = structured.summary,
+            peopleJson = encodeStringList(structured.people),
+            thingsJson = encodeStringList(structured.things),
+            linksJson = encodeLinkList(structured.links),
         )
         transientErrors.update { it - episodeId }
     }
@@ -371,6 +374,19 @@ class AiSummaryRepository(
         val error: AiError?,
     )
 
+    private fun DbEpisodeAiSummary.toDomain(): AiSummary =
+        AiSummary(
+            episodeId = episodeId,
+            generatedAtMs = generatedAtMs,
+            modelId = modelId,
+            sourceKind = AiSourceKind.fromWire(sourceKind) ?: AiSourceKind.Transcript,
+            sourceFingerprint = sourceFingerprint,
+            summary = summary,
+            people = decodeStringList(peopleJson),
+            things = decodeStringList(thingsJson),
+            links = decodeLinkList(linksJson),
+        )
+
     private companion object {
         // Soft cap aligned with the spec — Gemini's actual context window
         // varies by model, but 8h is a safe headroom across Flash variants
@@ -387,19 +403,36 @@ class AiSummaryRepository(
         // mirrors `DownloadProgress.State.Completed`). A partial download is
         // not summarisable.
         const val DOWNLOAD_STATE_COMPLETED = "Completed"
-    }
 
-    private fun DbEpisodeAiSummary.toDomain(): AiSummary =
-        AiSummary(
-            episodeId = episodeId,
-            generatedAtMs = generatedAtMs,
-            modelId = modelId,
-            sourceKind = AiSourceKind.fromWire(sourceKind) ?: AiSourceKind.Transcript,
-            sourceFingerprint = sourceFingerprint,
-            summary = summary,
-            // Slice 3 parses the JSON arrays; Slice 2 ships them empty.
-            people = emptyList(),
-            things = emptyList(),
-            links = emptyList(),
-        )
+        // Lenient on read so a forward-compatible schema bump (e.g. adding a
+        // confidence score per entity) doesn't surface as a parse error and
+        // wipe the cached row out of the user's view. On write we use the
+        // same instance.
+        val entityJson: Json =
+            Json {
+                ignoreUnknownKeys = true
+                isLenient = true
+            }
+
+        private val stringListSerializer = ListSerializer(String.serializer())
+        private val linkListSerializer = ListSerializer(MentionedLinkJson.serializer())
+
+        fun encodeStringList(values: List<String>): String = entityJson.encodeToString(stringListSerializer, values)
+
+        fun encodeLinkList(values: List<MentionedLinkJson>): String = entityJson.encodeToString(linkListSerializer, values)
+
+        // Both decoders fall back to an empty list on parse failure rather
+        // than tearing the entire Ready card down — a corrupt entity column
+        // is annoying but the prose summary is still useful, and the next
+        // regenerate will repair the row anyway.
+        fun decodeStringList(raw: String): List<String> =
+            runCatching { entityJson.decodeFromString(stringListSerializer, raw) }.getOrDefault(emptyList())
+
+        fun decodeLinkList(raw: String): List<MentionedLink> =
+            runCatching {
+                entityJson
+                    .decodeFromString(linkListSerializer, raw)
+                    .map { MentionedLink(it.label, it.url) }
+            }.getOrDefault(emptyList())
+    }
 }

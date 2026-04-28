@@ -5,6 +5,7 @@ import app.kofipod.ai.AiConfigRepository
 import app.kofipod.ai.AiError
 import app.kofipod.ai.AiErrorException
 import app.kofipod.ai.AiSourceKind
+import app.kofipod.ai.AiSummaryJson
 import app.kofipod.ai.AiSummaryRepository
 import app.kofipod.ai.AudioSummariser
 import app.kofipod.ai.DownloadSource
@@ -432,7 +433,7 @@ class AiSetupViewModelTest {
             model: GeminiModel,
             prompt: String,
             content: String,
-        ): Result<String> = error("AiSetupViewModelTest must not exercise the summariser")
+        ): Result<AiSummaryJson> = error("AiSetupViewModelTest must not exercise the summariser")
     }
 
     private object NoopAudioSummariser : AudioSummariser {
@@ -444,7 +445,7 @@ class AiSetupViewModelTest {
             mimeType: String,
             sizeBytes: Long,
             displayName: String,
-        ): Result<String> = error("AiSetupViewModelTest must not exercise the audio summariser")
+        ): Result<AiSummaryJson> = error("AiSetupViewModelTest must not exercise the audio summariser")
     }
 
     private object NoopTranscriptFetcher : TranscriptFetcher {
