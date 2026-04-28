@@ -124,7 +124,11 @@ private fun IdleCard(
                     when (state.available) {
                         AiSourceKind.Transcript -> "Uses your Gemini key. Reads the published transcript."
                         AiSourceKind.Audio -> "Uses your Gemini key. ~${audioMinutes}m of audio."
-                        null -> "This episode has no transcript yet. Audio summary coming in a future update."
+                        // No transcript + not downloaded. Audio fallback shipped in
+                        // Slice 2.5, but the pipeline needs the local file — point
+                        // the user at the Download button on the action row above
+                        // so they have a concrete next step rather than a dead-end.
+                        null -> "Download this episode to summarise its audio."
                     },
                     color = c.textSoft,
                     fontSize = 12.sp,
