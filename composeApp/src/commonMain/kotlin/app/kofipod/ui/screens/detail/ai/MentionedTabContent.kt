@@ -113,7 +113,6 @@ private fun AwaitingSummaryHint(modifier: Modifier) {
 // -----------------------------------------------------------------------------
 
 private enum class MentionedFilter(val label: String) {
-    All("All"),
     People("People"),
     Things("Books / things"),
     Links("Links"),
@@ -129,8 +128,27 @@ private fun MentionedReady(
         EmptyMentionsHint(modifier)
         return
     }
-    val c = LocalKofipodColors.current
-    var selected by rememberSaveable { mutableStateOf(MentionedFilter.All) }
+    // Default selection is the first filter whose section has items so the
+    // user lands on something useful rather than an empty pane. People are
+    // the most common, but a links-only episode (e.g. a pure show-notes
+    // recap) shouldn't open on an empty People list.
+    val initial =
+        when {
+            summary.people.isNotEmpty() -> MentionedFilter.People
+            summary.things.isNotEmpty() -> MentionedFilter.Things
+            else -> MentionedFilter.Links
+        }
+    var selected by rememberSaveable { mutableStateOf(initial) }
+    // If the underlying summary regenerated and the previously-selected
+    // section is now empty, snap back to a non-empty one so we never
+    // render the "Nothing in this category" hint as the steady state.
+    val activeIsEmpty =
+        when (selected) {
+            MentionedFilter.People -> summary.people.isEmpty()
+            MentionedFilter.Things -> summary.things.isEmpty()
+            MentionedFilter.Links -> summary.links.isEmpty()
+        }
+    if (activeIsEmpty) selected = initial
 
     Column(modifier.fillMaxWidth()) {
         Header(total = total)
@@ -144,40 +162,22 @@ private fun MentionedReady(
         )
         Spacer(Modifier.height(16.dp))
 
-        val showPeople = selected == MentionedFilter.All || selected == MentionedFilter.People
-        val showThings = selected == MentionedFilter.All || selected == MentionedFilter.Things
-        val showLinks = selected == MentionedFilter.All || selected == MentionedFilter.Links
-
-        if (showPeople && summary.people.isNotEmpty()) {
-            SectionHeader("PEOPLE")
-            Spacer(Modifier.height(4.dp))
-            PeopleList(summary.people)
-            Spacer(Modifier.height(20.dp))
-        }
-        if (showThings && summary.things.isNotEmpty()) {
-            SectionHeader("BOOKS / THINGS")
-            Spacer(Modifier.height(4.dp))
-            ThingsList(summary.things)
-            Spacer(Modifier.height(20.dp))
-        }
-        if (showLinks && summary.links.isNotEmpty()) {
-            SectionHeader("LINKS")
-            Spacer(Modifier.height(4.dp))
-            LinksList(summary.links)
-        }
-        // Filter active but the targeted section is empty — show a tiny hint
-        // rather than a blank pane so the user knows their filter took effect.
-        val anyVisible =
-            (showPeople && summary.people.isNotEmpty()) ||
-                (showThings && summary.things.isNotEmpty()) ||
-                (showLinks && summary.links.isNotEmpty())
-        if (!anyVisible) {
-            Text(
-                "Nothing in this category for this episode.",
-                color = c.textSoft,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(top = 4.dp),
-            )
+        when (selected) {
+            MentionedFilter.People -> {
+                SectionHeader("PEOPLE")
+                Spacer(Modifier.height(4.dp))
+                PeopleList(summary.people)
+            }
+            MentionedFilter.Things -> {
+                SectionHeader("BOOKS / THINGS")
+                Spacer(Modifier.height(4.dp))
+                ThingsList(summary.things)
+            }
+            MentionedFilter.Links -> {
+                SectionHeader("LINKS")
+                Spacer(Modifier.height(4.dp))
+                LinksList(summary.links)
+            }
         }
     }
 }
@@ -245,15 +245,23 @@ private fun FilterRow(
     things: Int,
     links: Int,
 ) {
-    val total = people + things + links
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilterChip(MentionedFilter.All, total, selected, onSelect)
         if (people > 0) FilterChip(MentionedFilter.People, people, selected, onSelect)
         if (things > 0) FilterChip(MentionedFilter.Things, things, selected, onSelect)
         if (links > 0) FilterChip(MentionedFilter.Links, links, selected, onSelect)
     }
 }
 
+/**
+ * Sub-filter pill. Selected uses [purpleTint] fill (the lavender from the
+ * design — a softer purple than the main tab's solid `c.purple` so the two
+ * rows of pills don't fight visually). Unselected uses a thin pink outline
+ * matching the main tab strip — same family of accents, lighter weight.
+ *
+ * The 1dp border is intentionally thinner than the 1.5dp on the main tabs so
+ * the sub-row reads as secondary; bumping it back to 1.5dp would flatten the
+ * visual hierarchy between the two rows.
+ */
 @Composable
 private fun FilterChip(
     filter: MentionedFilter,
@@ -263,14 +271,15 @@ private fun FilterChip(
 ) {
     val c = LocalKofipodColors.current
     val isSelected = filter == selected
-    val (bg, fg) =
-        if (isSelected) c.pinkSoft to c.pink else Color.Transparent to c.text
+    val bg = if (isSelected) c.purpleTint else Color.Transparent
+    val fg = if (isSelected) c.purple else c.text
+    val borderColor = if (isSelected) c.purpleTint else c.pink
     Row(
         modifier =
             Modifier
                 .clip(RoundedCornerShape(999.dp))
                 .background(bg)
-                .border(1.dp, c.border, RoundedCornerShape(999.dp))
+                .border(1.dp, borderColor, RoundedCornerShape(999.dp))
                 .clickable { onSelect(filter) }
                 .padding(horizontal = 12.dp, vertical = 6.dp)
                 .testTag("mentionedFilter.${filter.name}"),
@@ -285,7 +294,7 @@ private fun FilterChip(
         Spacer(Modifier.width(6.dp))
         Text(
             count.toString(),
-            color = if (isSelected) fg else c.textMute,
+            color = if (isSelected) fg.copy(alpha = 0.75f) else c.textMute,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             fontFamily = FontFamily.Monospace,
@@ -393,10 +402,11 @@ private fun EntityRow(
             }
         }
         Spacer(Modifier.width(8.dp))
-        // Tiny external-link affordance so the row reads as tappable. Same icon
-        // for entities (→ Google) and links (→ direct), since both navigate
-        // out of the app.
-        KPIcon(name = KPIconName.Share, color = c.textMute, size = 14.dp, strokeWidth = 1.6f)
+        // Drill chevron, not a share icon: the rows navigate into Google /
+        // the link's URL — they don't fan content outward to other apps the
+        // way Share does. Same chevron the main tab strip uses elsewhere
+        // for "tap to go" affordances.
+        KPIcon(name = KPIconName.ChevronRight, color = c.textMute, size = 14.dp, strokeWidth = 1.6f)
     }
 }
 
