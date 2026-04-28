@@ -99,6 +99,22 @@ internal fun AiSummaryPanelContent(
 // State cards
 // -----------------------------------------------------------------------------
 
+/**
+ * Idle layout pinned to the v2 mock: an "AI ASSIST" pill (top-left) and an
+ * "OPTIONAL" mono tag (top-right) frame the card; the centred dashed
+ * Generate button is the focal point; a muted footer below names what the
+ * feature actually produces.
+ *
+ * The footer copy intentionally name-checks Q&A even though the Discuss tab
+ * is still a placeholder — telegraphing the v2 surface lets the AI section
+ * read as a single feature rather than three loose tabs. Revisit if Q&A
+ * gets pushed past the next release window.
+ *
+ * When no source is available (no transcript, episode not downloaded) the
+ * Generate button is suppressed and the footer is swapped to the actionable
+ * "Download this episode to summarise its audio." hint so the user has a
+ * concrete next step inside the same card chrome.
+ */
 @Composable
 private fun IdleCard(
     state: AiSummaryUiState.Idle,
@@ -109,32 +125,15 @@ private fun IdleCard(
     val c = LocalKofipodColors.current
     PanelCard(modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            SparkleBadge()
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "Generate AI Insights for this episode",
-                    color = c.text,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = 20.sp,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    when (state.available) {
-                        AiSourceKind.Transcript -> "Uses your Gemini key. Reads the published transcript."
-                        AiSourceKind.Audio -> "Uses your Gemini key. ~${audioMinutes}m of audio."
-                        // No transcript + not downloaded. Audio fallback shipped in
-                        // Slice 2.5, but the pipeline needs the local file — point
-                        // the user at the Download button on the action row above
-                        // so they have a concrete next step rather than a dead-end.
-                        null -> "Download this episode to summarise its audio."
-                    },
-                    color = c.textSoft,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                )
-            }
+            AiAssistChip()
+            Spacer(Modifier.weight(1f))
+            Text(
+                "OPTIONAL",
+                color = c.textMute,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+            )
         }
         if (state.available != null) {
             Spacer(Modifier.height(14.dp))
@@ -144,6 +143,59 @@ private fun IdleCard(
                 modifier = Modifier.testTag("aiPanelIdleGenerateButton"),
             )
         }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text =
+                when (state.available) {
+                    // Source-specific cues survive in the audio-minutes case so
+                    // the user sees the upload size implication; transcript path
+                    // lands on the unified copy because there's no equivalent
+                    // size signal worth pre-disclosing.
+                    AiSourceKind.Audio ->
+                        "Summary, people, books, links, and Q&A — generated with your key. " +
+                            "Uploads ~${audioMinutes}m of audio to Gemini."
+                    AiSourceKind.Transcript ->
+                        "Summary, people, books, links, and Q&A — all generated locally with your key."
+                    // Audio fallback shipped in Slice 2.5 but needs the local file.
+                    // Point the user at the Download button (one row above the tab
+                    // strip) rather than leaving them on a dead-end card.
+                    null -> "Download this episode to summarise its audio."
+                },
+            color = c.textSoft,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/**
+ * "AI ASSIST" chip — pinkSoft pill with sparkle prefix and bold mono label.
+ * Distinct from [EyebrowChip] which uses different copy + sits above the
+ * Ready/Error cards; keeping them separate avoids the temptation to thread
+ * the label through as a parameter and grow a generic chip API on a single
+ * caller.
+ */
+@Composable
+private fun AiAssistChip() {
+    val c = LocalKofipodColors.current
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(c.pinkSoft)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        KPIcon(name = KPIconName.Sparkle, color = c.pink, size = 11.dp)
+        Spacer(Modifier.width(4.dp))
+        Text(
+            "AI ASSIST",
+            color = c.pink,
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 
