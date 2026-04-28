@@ -7,8 +7,13 @@ import kotlinx.serialization.Serializable
  * Structured shape Gemini returns when we set
  * `generationConfig.responseMimeType = "application/json"` plus the matching
  * [SUMMARY_RESPONSE_SCHEMA]. The four keys mirror the four panel sections:
- * the prose summary, two flat name lists (people, things), and a list of
+ * the prose summary, two name+subtitle lists (people, things), and a list of
  * label/url pairs.
+ *
+ * Each people/things entry pairs a `name` with an optional short `subtitle`
+ * (e.g. "Host", "Guest · Modular", "Book · 2014"). The Mentioned tab renders
+ * the subtitle in an accent colour next to the name; absent or blank
+ * subtitles render as just the name.
  *
  * Fields default to empty so a partial response (e.g. an episode that mentions
  * no books) parses cleanly rather than failing the whole pipeline.
@@ -16,9 +21,21 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class AiSummaryJson(
     val summary: String = "",
-    val people: List<String> = emptyList(),
-    val things: List<String> = emptyList(),
+    val people: List<MentionedPersonJson> = emptyList(),
+    val things: List<MentionedThingJson> = emptyList(),
     val links: List<MentionedLinkJson> = emptyList(),
+)
+
+@Serializable
+data class MentionedPersonJson(
+    val name: String,
+    val subtitle: String = "",
+)
+
+@Serializable
+data class MentionedThingJson(
+    val name: String,
+    val subtitle: String = "",
 )
 
 @Serializable
@@ -35,6 +52,10 @@ data class MentionedLinkJson(
  * `propertyOrdering` is honoured by Gemini and stabilises the output keys —
  * useful when comparing fixtures across releases. `required` is the hard
  * contract; without it the model is free to omit keys.
+ *
+ * Subtitles on people/things are NOT in `required` — the model is encouraged
+ * (via the prompt) to fill them when there's a clean role/affiliation/kind
+ * signal in the source, but a blank subtitle should not block the response.
  */
 internal val SUMMARY_RESPONSE_SCHEMA: Schema =
     Schema(
@@ -42,8 +63,36 @@ internal val SUMMARY_RESPONSE_SCHEMA: Schema =
         properties =
             mapOf(
                 "summary" to Schema(type = "STRING"),
-                "people" to Schema(type = "ARRAY", items = Schema(type = "STRING")),
-                "things" to Schema(type = "ARRAY", items = Schema(type = "STRING")),
+                "people" to
+                    Schema(
+                        type = "ARRAY",
+                        items =
+                            Schema(
+                                type = "OBJECT",
+                                properties =
+                                    mapOf(
+                                        "name" to Schema(type = "STRING"),
+                                        "subtitle" to Schema(type = "STRING"),
+                                    ),
+                                required = listOf("name"),
+                                propertyOrdering = listOf("name", "subtitle"),
+                            ),
+                    ),
+                "things" to
+                    Schema(
+                        type = "ARRAY",
+                        items =
+                            Schema(
+                                type = "OBJECT",
+                                properties =
+                                    mapOf(
+                                        "name" to Schema(type = "STRING"),
+                                        "subtitle" to Schema(type = "STRING"),
+                                    ),
+                                required = listOf("name"),
+                                propertyOrdering = listOf("name", "subtitle"),
+                            ),
+                    ),
                 "links" to
                     Schema(
                         type = "ARRAY",

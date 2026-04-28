@@ -25,9 +25,31 @@ data class AiSummary(
     val sourceKind: AiSourceKind,
     val sourceFingerprint: String,
     val summary: String,
-    val people: List<String> = emptyList(),
-    val things: List<String> = emptyList(),
+    val people: List<MentionedPerson> = emptyList(),
+    val things: List<MentionedThing> = emptyList(),
     val links: List<MentionedLink> = emptyList(),
+)
+
+/**
+ * A named individual mentioned in the episode — a host, guest, or referenced
+ * figure. [subtitle] is a short role/affiliation hint ("Host", "Guest · Modular",
+ * "Referenced") that the Mentioned tab renders in an accent colour next to the
+ * name. Blank subtitle → name renders alone, no extra spacing. Domain-only
+ * type; the wire shape is [MentionedPersonJson].
+ */
+data class MentionedPerson(
+    val name: String,
+    val subtitle: String = "",
+)
+
+/**
+ * A specific work, product, or topic referenced by name (book, paper, film,
+ * software, company, place). [subtitle] is a short kind/year/disambiguation
+ * hint ("Book · 2014", "Language", "SQLite extension") shown next to the name.
+ */
+data class MentionedThing(
+    val name: String,
+    val subtitle: String = "",
 )
 
 data class MentionedLink(

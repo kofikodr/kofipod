@@ -20,14 +20,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -38,7 +33,6 @@ import app.kofipod.ai.AiSourceKind
 import app.kofipod.ai.AiSummary
 import app.kofipod.ai.AiSummaryUiState
 import app.kofipod.ai.GeminiModel
-import app.kofipod.ai.MentionedLink
 import app.kofipod.ui.primitives.KPButton
 import app.kofipod.ui.primitives.KPButtonStyle
 import app.kofipod.ui.primitives.KPIcon
@@ -213,7 +207,6 @@ private fun ReadyCard(
             lineHeight = 22.sp,
             modifier = Modifier.testTag("aiPanelReadySummary"),
         )
-        EntitySections(summary)
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -283,118 +276,6 @@ private fun ErrorCard(
                 modifier = Modifier.fillMaxWidth().testTag("aiPanelErrorRetryButton"),
             )
         }
-    }
-}
-
-// -----------------------------------------------------------------------------
-// Entity sections (Slice 3)
-// -----------------------------------------------------------------------------
-
-/**
- * Three optional collapsible sections beneath the summary prose: People,
- * Things, Links. Each is hidden when its underlying list is empty so an
- * episode that mentions nothing doesn't render three blank stubs. The whole
- * block is also hidden when all three are empty (no leading divider).
- *
- * Sections start expanded — the user can collapse to free vertical space
- * when revisiting a long-summary card. Saver-backed state survives
- * configuration changes, but is keyed only by section title; navigating
- * away and back resets to the default expanded state, which is fine.
- */
-@Composable
-private fun EntitySections(summary: AiSummary) {
-    val anyContent = summary.people.isNotEmpty() || summary.things.isNotEmpty() || summary.links.isNotEmpty()
-    if (!anyContent) return
-    Spacer(Modifier.height(14.dp))
-    if (summary.people.isNotEmpty()) {
-        EntitySection(title = "People", items = summary.people) {
-            Text(it, color = LocalKofipodColors.current.text, fontSize = 13.sp, lineHeight = 18.sp)
-        }
-    }
-    if (summary.things.isNotEmpty()) {
-        if (summary.people.isNotEmpty()) Spacer(Modifier.height(8.dp))
-        EntitySection(title = "Things mentioned", items = summary.things) {
-            Text(it, color = LocalKofipodColors.current.text, fontSize = 13.sp, lineHeight = 18.sp)
-        }
-    }
-    if (summary.links.isNotEmpty()) {
-        if (summary.people.isNotEmpty() || summary.things.isNotEmpty()) Spacer(Modifier.height(8.dp))
-        LinksSection(summary.links)
-    }
-}
-
-@Composable
-private fun <T> EntitySection(
-    title: String,
-    items: List<T>,
-    item: @Composable (T) -> Unit,
-) {
-    val c = LocalKofipodColors.current
-    var expanded by rememberSaveable(title) { mutableStateOf(true) }
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded }
-                    .padding(vertical = 6.dp)
-                    .testTag("aiPanelEntitySection-$title"),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                title.uppercase(),
-                color = c.textMute,
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.width(8.dp))
-            Text("${items.size}", color = c.textSoft, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-            Spacer(Modifier.weight(1f))
-            // Rotate the down chevron 180° (i.e. up) when expanded; saves
-            // having both icons in the asset set and reads correctly to
-            // accessibility tools as a single semantic element.
-            KPIcon(
-                name = KPIconName.ChevronDown,
-                color = c.textSoft,
-                size = 14.dp,
-                modifier = Modifier.rotate(if (expanded) 180f else 0f),
-            )
-        }
-        if (expanded) {
-            Spacer(Modifier.height(2.dp))
-            Column(Modifier.padding(start = 4.dp, top = 2.dp, bottom = 2.dp)) {
-                items.forEach { value ->
-                    Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("• ", color = c.textSoft, fontSize = 13.sp)
-                        item(value)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LinksSection(links: List<MentionedLink>) {
-    val c = LocalKofipodColors.current
-    val uriHandler = LocalUriHandler.current
-    EntitySection(title = "Links", items = links) { link ->
-        // Wrap the open call in runCatching: an unparseable / unsupported URI
-        // shouldn't crash the whole panel — the link is still visible, it
-        // just doesn't navigate.
-        Text(
-            link.label.ifBlank { link.url },
-            color = c.pink,
-            fontSize = 13.sp,
-            lineHeight = 18.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier =
-                Modifier
-                    .clickable { runCatching { uriHandler.openUri(link.url) } }
-                    .padding(vertical = 2.dp)
-                    .testTag("aiPanelEntityLink"),
-        )
     }
 }
 

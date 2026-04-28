@@ -257,8 +257,8 @@ class AiSummaryRepository(
             sourceKind = AiSourceKind.Transcript.wire,
             sourceFingerprint = transcriptUrl,
             summary = structured.summary,
-            peopleJson = encodeStringList(structured.people),
-            thingsJson = encodeStringList(structured.things),
+            peopleJson = encodePersonList(structured.people),
+            thingsJson = encodeThingList(structured.things),
             linksJson = encodeLinkList(structured.links),
         )
         // Persisted successfully — drop any error left over from a previous
@@ -324,8 +324,8 @@ class AiSummaryRepository(
             // cache and prompts a regenerate.
             sourceFingerprint = sizeBytes.toString(),
             summary = structured.summary,
-            peopleJson = encodeStringList(structured.people),
-            thingsJson = encodeStringList(structured.things),
+            peopleJson = encodePersonList(structured.people),
+            thingsJson = encodeThingList(structured.things),
             linksJson = encodeLinkList(structured.links),
         )
         transientErrors.update { it - episodeId }
@@ -382,8 +382,8 @@ class AiSummaryRepository(
             sourceKind = AiSourceKind.fromWire(sourceKind) ?: AiSourceKind.Transcript,
             sourceFingerprint = sourceFingerprint,
             summary = summary,
-            people = decodeStringList(peopleJson),
-            things = decodeStringList(thingsJson),
+            people = decodePersonList(peopleJson),
+            things = decodeThingList(thingsJson),
             links = decodeLinkList(linksJson),
         )
 
@@ -414,19 +414,47 @@ class AiSummaryRepository(
                 isLenient = true
             }
 
-        private val stringListSerializer = ListSerializer(String.serializer())
+        private val personListSerializer = ListSerializer(MentionedPersonJson.serializer())
+        private val thingListSerializer = ListSerializer(MentionedThingJson.serializer())
         private val linkListSerializer = ListSerializer(MentionedLinkJson.serializer())
 
-        fun encodeStringList(values: List<String>): String = entityJson.encodeToString(stringListSerializer, values)
+        fun encodePersonList(values: List<MentionedPersonJson>): String = entityJson.encodeToString(personListSerializer, values)
+
+        fun encodeThingList(values: List<MentionedThingJson>): String = entityJson.encodeToString(thingListSerializer, values)
 
         fun encodeLinkList(values: List<MentionedLinkJson>): String = entityJson.encodeToString(linkListSerializer, values)
 
-        // Both decoders fall back to an empty list on parse failure rather
+        // All decoders fall back to an empty list on parse failure rather
         // than tearing the entire Ready card down — a corrupt entity column
         // is annoying but the prose summary is still useful, and the next
         // regenerate will repair the row anyway.
-        fun decodeStringList(raw: String): List<String> =
-            runCatching { entityJson.decodeFromString(stringListSerializer, raw) }.getOrDefault(emptyList())
+        //
+        // The person/thing decoders also accept the legacy `["string", ...]`
+        // shape (rows persisted before the Slice 3.5 wire-shape extension)
+        // so users with cached summaries don't see them disappear after the
+        // upgrade. Legacy entries land with an empty subtitle, which the UI
+        // already handles.
+        fun decodePersonList(raw: String): List<MentionedPerson> =
+            runCatching {
+                entityJson
+                    .decodeFromString(personListSerializer, raw)
+                    .map { MentionedPerson(it.name, it.subtitle) }
+            }.recoverCatching {
+                entityJson
+                    .decodeFromString(legacyStringListSerializer, raw)
+                    .map { MentionedPerson(name = it, subtitle = "") }
+            }.getOrDefault(emptyList())
+
+        fun decodeThingList(raw: String): List<MentionedThing> =
+            runCatching {
+                entityJson
+                    .decodeFromString(thingListSerializer, raw)
+                    .map { MentionedThing(it.name, it.subtitle) }
+            }.recoverCatching {
+                entityJson
+                    .decodeFromString(legacyStringListSerializer, raw)
+                    .map { MentionedThing(name = it, subtitle = "") }
+            }.getOrDefault(emptyList())
 
         fun decodeLinkList(raw: String): List<MentionedLink> =
             runCatching {
@@ -434,5 +462,7 @@ class AiSummaryRepository(
                     .decodeFromString(linkListSerializer, raw)
                     .map { MentionedLink(it.label, it.url) }
             }.getOrDefault(emptyList())
+
+        private val legacyStringListSerializer = ListSerializer(String.serializer())
     }
 }

@@ -533,12 +533,14 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
                 isLenient = true
             }
 
-        // Slice 2 prompt asks for ~200 words. 1024 tokens covers ~600-800
-        // words across most languages, giving enough headroom that languages
-        // tokenising less efficiently than English (Thai, JP, CJK) don't run
-        // dry mid-sentence — and leaving room if the model decides to be
-        // slightly more verbose than the prompt asked for, which is fine.
-        private const val SUMMARY_MAX_OUTPUT_TOKENS = 1024
+        // Slice 2 sized this for a ~200-word prose summary alone (1024 tokens).
+        // Slice 3 added three entity arrays inside the same JSON envelope, and
+        // long-URL `links` plus less-efficient non-English tokenisation pushed
+        // real episodes past that cap — surfacing as MAX_TOKENS truncation and
+        // an unparseable JSON document. 8192 is generous headroom; we only pay
+        // for what the model actually emits, so the cap matters only as a
+        // ceiling against runaway responses.
+        private const val SUMMARY_MAX_OUTPUT_TOKENS = 8192
         private const val SUMMARY_TEMPERATURE = 0.4
 
         private const val DEFAULT_POLL_INTERVAL_MS = 1000L

@@ -34,10 +34,16 @@ class AiSummaryJsonTest {
         assertEquals(
             3,
             parsed.people.size,
-            "people array must round-trip three names — a count mismatch means the array got flattened or split",
+            "people array must round-trip three entries — a count mismatch means the array got flattened or split",
         )
-        assertTrue("Andrei Alexandrescu" in parsed.people)
+        val alexandrescu = assertNotNull(parsed.people.firstOrNull { it.name == "Andrei Alexandrescu" })
+        assertTrue(
+            alexandrescu.subtitle.isNotBlank(),
+            "Subtitle should round-trip when the fixture provides one — blank means the wire shape collapsed",
+        )
         assertEquals(4, parsed.things.size, "things must round-trip four titles")
+        val rustBook = assertNotNull(parsed.things.firstOrNull { it.name.startsWith("The Rust") })
+        assertEquals("Book", rustBook.subtitle)
         assertEquals(2, parsed.links.size, "links must round-trip two label/url pairs")
         val rustLink = assertNotNull(parsed.links.firstOrNull { it.label.startsWith("Rust") })
         assertTrue(rustLink.url.startsWith("https://"), "Link URLs must round-trip verbatim, https intact")
@@ -72,7 +78,7 @@ class AiSummaryJsonTest {
             {
               "summary": "S",
               "confidence": 0.91,
-              "people": ["A"],
+              "people": [{"name": "A", "subtitle": "Host"}],
               "things": [],
               "links": [],
               "usageMetadata": {"promptTokens": 1234}
@@ -82,7 +88,32 @@ class AiSummaryJsonTest {
         val parsed = lenientJson.decodeFromString(AiSummaryJson.serializer(), raw)
 
         assertEquals("S", parsed.summary)
-        assertEquals(listOf("A"), parsed.people)
+        assertEquals(1, parsed.people.size)
+        assertEquals("A", parsed.people[0].name)
+        assertEquals("Host", parsed.people[0].subtitle)
+    }
+
+    @Test
+    fun missingSubtitleField_defaultsToEmptyString() {
+        // Older fixtures + early model responses may emit `{name}` without a
+        // `subtitle` key. The Mentioned tab handles blank subtitles
+        // gracefully (renders just the name), so the parser must tolerate
+        // the missing key rather than failing the whole envelope.
+        val raw =
+            """
+            {
+              "summary": "S",
+              "people": [{"name": "Mira"}],
+              "things": [{"name": "Roc"}],
+              "links": []
+            }
+            """.trimIndent()
+
+        val parsed = lenientJson.decodeFromString(AiSummaryJson.serializer(), raw)
+
+        assertEquals("Mira", parsed.people.single().name)
+        assertEquals("", parsed.people.single().subtitle)
+        assertEquals("", parsed.things.single().subtitle)
     }
 
     private fun readFixture(path: String): String {

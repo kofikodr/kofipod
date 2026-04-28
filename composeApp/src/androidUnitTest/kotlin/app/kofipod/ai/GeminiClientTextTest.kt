@@ -49,8 +49,8 @@ class GeminiClientTextTest {
             val structured =
                 buildString {
                     append("""{"summary":"Episode summary body.",""")
-                    append(""""people":["Alice","Bob"],""")
-                    append(""""things":["Pragmatic Programmer"],""")
+                    append(""""people":[{"name":"Alice","subtitle":"Host"},{"name":"Bob","subtitle":""}],""")
+                    append(""""things":[{"name":"Pragmatic Programmer","subtitle":"Book"}],""")
                     append(""""links":[{"label":"Site","url":"https://x.test"}]}""")
                 }
             // Wrap the JSON in extra whitespace inside the candidate text so we
@@ -68,8 +68,14 @@ class GeminiClientTextTest {
 
             val parsed = assertNotNull(result.getOrNull(), "Structured JSON response must parse to AiSummaryJson")
             assertEquals("Episode summary body.", parsed.summary, "Outer whitespace around the JSON envelope must be trimmed before decode")
-            assertEquals(listOf("Alice", "Bob"), parsed.people)
-            assertEquals(listOf("Pragmatic Programmer"), parsed.things)
+            assertEquals(2, parsed.people.size)
+            assertEquals("Alice", parsed.people[0].name)
+            assertEquals("Host", parsed.people[0].subtitle)
+            assertEquals("Bob", parsed.people[1].name)
+            assertEquals("", parsed.people[1].subtitle, "Empty subtitle must round-trip as blank string, not be dropped")
+            assertEquals(1, parsed.things.size)
+            assertEquals("Pragmatic Programmer", parsed.things[0].name)
+            assertEquals("Book", parsed.things[0].subtitle)
             assertEquals(1, parsed.links.size)
             assertEquals("https://x.test", parsed.links[0].url)
         }

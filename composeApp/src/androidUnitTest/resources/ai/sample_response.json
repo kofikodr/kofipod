@@ -1,15 +1,15 @@
 {
   "summary": "The hosts unpack a recent shift in compiler diagnostics, arguing that the move from monolithic stack traces to span-pointing error messages was the single biggest UX win of the past decade. They walk through Rust's borrow-checker hints as the canonical example, then pivot to TypeScript's narrowing improvements, observing that better diagnostics often start as failed type-inference attempts rendered visible to the developer. A mid-episode tangent on Elm's syntax errors lands on the observation that error UX is mostly about respecting the reader's time. The closing segment turns to tooling: how IDE integration changed the calculus, why most error messages are read in editors now rather than terminals, and what that means for design choices ahead.",
   "people": [
-    "Andrei Alexandrescu",
-    "Evan Czaplicki",
-    "Anders Hejlsberg"
+    {"name": "Andrei Alexandrescu", "subtitle": "Guest · D Language Foundation"},
+    {"name": "Evan Czaplicki", "subtitle": "Referenced"},
+    {"name": "Anders Hejlsberg", "subtitle": "Referenced · TypeScript"}
   ],
   "things": [
-    "The Rust Programming Language (book)",
-    "Elm",
-    "TypeScript",
-    "Compiler Construction (Wirth)"
+    {"name": "The Rust Programming Language", "subtitle": "Book"},
+    {"name": "Elm", "subtitle": "Language"},
+    {"name": "TypeScript", "subtitle": "Language"},
+    {"name": "Compiler Construction (Wirth)", "subtitle": "Book · 1996"}
   ],
   "links": [
     {

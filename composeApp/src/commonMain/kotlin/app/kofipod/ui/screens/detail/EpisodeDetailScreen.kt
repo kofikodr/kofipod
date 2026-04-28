@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.kofipod.ai.AiSummaryUiState
 import app.kofipod.db.Episode
 import app.kofipod.db.EpisodeChapter
 import app.kofipod.db.Podcast
@@ -46,6 +47,8 @@ import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.primitives.KofipodArtwork
 import app.kofipod.ui.screens.detail.ai.AiSummaryPanel
+import app.kofipod.ui.screens.detail.ai.AiSummaryViewModel
+import app.kofipod.ui.screens.detail.ai.MentionedTabPanel
 import app.kofipod.ui.theme.LocalKofipodColors
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
@@ -250,13 +253,25 @@ private fun EpisodeBody(
         if (selected !in visibleTabs) {
             selected = visibleTabs.first()
         }
+        // Pulled here (not inside the Mentioned branch) so the tab badge
+        // updates the moment a summary lands, even while the user is still
+        // looking at the Summary tab. Koin returns the same VM instance for
+        // the same episodeId, so the AiSummaryPanel below shares state with
+        // this collector — no double subscription.
+        val mentionedCount =
+            if (summaryEnabled) {
+                val aiVm: AiSummaryViewModel = koinViewModel(parameters = { parametersOf(episode.id) })
+                val aiState by aiVm.state.collectAsState()
+                aiState.mentionedCount()
+            } else {
+                0
+            }
         EpisodeDetailTabRow(
             tabs = visibleTabs,
             selected = selected,
             onSelect = { selected = it },
             chapterCount = chapters.size,
-            // Slice 3 fills this in.
-            mentionedCount = 0,
+            mentionedCount = mentionedCount,
         )
         Spacer(Modifier.height(16.dp))
         when (selected) {
@@ -267,11 +282,17 @@ private fun EpisodeBody(
                     audioMinutes = (episode.durationSec / 60).toInt(),
                     onOpenAiSetup = onOpenAiSetup,
                 )
-            EpisodeDetailTab.Mentioned -> ComingSoonCard(label = "Mentioned guests, books, and links land in a future update.")
+            EpisodeDetailTab.Mentioned -> MentionedTabPanel(episodeId = episode.id)
             EpisodeDetailTab.Discuss -> ComingSoonCard(label = "Ask Gemini about this episode — coming soon.")
         }
     }
 }
+
+private fun AiSummaryUiState.mentionedCount(): Int =
+    when (this) {
+        is AiSummaryUiState.Ready -> summary.people.size + summary.things.size + summary.links.size
+        else -> 0
+    }
 
 @Composable
 private fun ComingSoonCard(label: String) {
