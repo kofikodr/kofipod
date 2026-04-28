@@ -255,8 +255,9 @@ private fun FilterRow(
 /**
  * Sub-filter pill. Selected uses [purpleTint] fill (the lavender from the
  * design — a softer purple than the main tab's solid `c.purple` so the two
- * rows of pills don't fight visually). Unselected uses a thin pink outline
- * matching the main tab strip — same family of accents, lighter weight.
+ * rows of pills don't fight visually). Unselected uses a subtle desaturated
+ * purple outline ([borderStrong]) so the chip strip reads as a single
+ * tonal family rather than a second accent colour.
  *
  * The 1dp border is intentionally thinner than the 1.5dp on the main tabs so
  * the sub-row reads as secondary; bumping it back to 1.5dp would flatten the
@@ -273,7 +274,7 @@ private fun FilterChip(
     val isSelected = filter == selected
     val bg = if (isSelected) c.purpleTint else Color.Transparent
     val fg = if (isSelected) c.purple else c.text
-    val borderColor = if (isSelected) c.purpleTint else c.pink
+    val borderColor = if (isSelected) c.purpleTint else c.borderStrong
     Row(
         modifier =
             Modifier

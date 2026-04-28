@@ -106,7 +106,10 @@ private fun TabPill(
         if (isSelected) {
             Triple(c.purple, Color.White, c.purple)
         } else {
-            Triple(Color.Transparent, c.text, c.pink)
+            // Subtle desaturated purple border so the unselected tabs sit
+            // quietly beside the bold purple selected pill — pink read as a
+            // separate accent fighting the purple, even at low alpha.
+            Triple(Color.Transparent, c.text, c.borderStrong)
         }
     Row(
         modifier =
