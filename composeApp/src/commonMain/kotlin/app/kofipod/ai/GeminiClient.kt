@@ -279,9 +279,11 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
 
     /**
      * Polls `GET /v1beta/{name}?key=…` until the file's `state` flips from
-     * `PROCESSING` to `ACTIVE`. Caps at [pollTimeoutMs] (30s default) — beyond
-     * that we surface [AiError.Unknown] rather than block the UI forever. The
-     * 30s budget is a soft cap; bumping to 60s is a pre-approved follow-up.
+     * `PROCESSING` to `ACTIVE`. Caps at [pollTimeoutMs] (5 min default) —
+     * beyond that we surface [AiError.Unknown] rather than block the UI
+     * forever. Real episodes land between 30s and 2 min in PROCESSING for
+     * typical 30–60 MB MP3s; the original 30s cap was too aggressive and
+     * showed users a generic error mid-pipeline.
      *
      * `pollIntervalMs` and `pollTimeoutMs` are injected so unit tests can use
      * tighter values without real wall-clock waits.
@@ -339,37 +341,54 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         mimeType: String,
         prompt: String,
     ): Result<AiSummaryJson> {
-        val response: HttpResponse =
-            runCatching {
-                client.post("$BASE_URL/v1beta/models/${model.apiId}:generateContent") {
-                    contentType(ContentType.Application.Json)
-                    url { parameters.append("key", apiKey) }
-                    setBody(
-                        GenerateContentRequest(
-                            contents =
-                                listOf(
-                                    Content(
-                                        listOf(
-                                            Part(fileData = FileData(mimeType = mimeType, fileUri = fileUri)),
-                                            Part(text = prompt),
+        // Retry transient 5xx (notably 503 "model overloaded", common on the
+        // Flash tier during peak hours) with exponential backoff. The upload
+        // is already finalised on Gemini's side at this point, so a retry is
+        // cheap — we're only re-issuing the generateContent request, not
+        // re-uploading the audio. We don't retry 429: that's the user's
+        // quota and the right surface is the dedicated RateLimited card,
+        // not a silent burn through their daily budget.
+        var attempt = 0
+        while (true) {
+            val response: HttpResponse =
+                runCatching {
+                    client.post("$BASE_URL/v1beta/models/${model.apiId}:generateContent") {
+                        contentType(ContentType.Application.Json)
+                        url { parameters.append("key", apiKey) }
+                        setBody(
+                            GenerateContentRequest(
+                                contents =
+                                    listOf(
+                                        Content(
+                                            listOf(
+                                                Part(fileData = FileData(mimeType = mimeType, fileUri = fileUri)),
+                                                Part(text = prompt),
+                                            ),
                                         ),
                                     ),
-                                ),
-                            generationConfig = summaryGenerationConfig(),
-                        ),
-                    )
+                                generationConfig = summaryGenerationConfig(),
+                            ),
+                        )
+                    }
+                }.getOrElse {
+                    logTransportFailure("generateFromAudio", it)
+                    return Result.failure(AiErrorException(AiError.Network))
                 }
-            }.getOrElse {
-                logTransportFailure("generateFromAudio", it)
-                return Result.failure(AiErrorException(AiError.Network))
-            }
 
-        if (!response.status.isSuccess()) {
+            if (response.status.isSuccess()) {
+                return decodeStructuredResponse(response, "generateFromAudio")
+            }
+            val transient = response.status.value in TRANSIENT_5XX
+            if (transient && attempt < GENERATE_MAX_RETRIES) {
+                logHttpFailure("generateFromAudio", response.status.value)
+                delay(GENERATE_RETRY_BACKOFF_MS shl attempt)
+                attempt++
+                continue
+            }
             val bodyText = runCatching { response.bodyAsText() }.getOrNull().orEmpty()
             logHttpFailure("generateFromAudio", response.status.value)
             return Result.failure(AiErrorException(response.status.toAudioAiError(bodyText)))
         }
-        return decodeStructuredResponse(response, "generateFromAudio")
     }
 
     /**
@@ -557,8 +576,16 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         private const val SUMMARY_MAX_OUTPUT_TOKENS = 8192
         private const val SUMMARY_TEMPERATURE = 0.4
 
-        private const val DEFAULT_POLL_INTERVAL_MS = 1000L
-        private const val DEFAULT_POLL_TIMEOUT_MS = 30_000L
+        private const val DEFAULT_POLL_INTERVAL_MS = 2_000L
+        private const val DEFAULT_POLL_TIMEOUT_MS = 5L * 60 * 1000
+
+        // Retry budget for transient 5xx on generateFromAudio. Backoff doubles
+        // each attempt: 2s, 4s, 8s. Three retries is a sweet spot — enough to
+        // ride out a brief 503 burst on the Flash tier without compounding
+        // the user's perceived latency past ~15s of silent waiting.
+        private const val GENERATE_MAX_RETRIES = 3
+        private const val GENERATE_RETRY_BACKOFF_MS = 2_000L
+        private val TRANSIENT_5XX = setOf(500, 502, 503, 504)
 
         // Diagnostic log tag. Filterable via `adb logcat -s Kofipod-AI:V`. We
         // never log the request body, response body, or API key — only the
