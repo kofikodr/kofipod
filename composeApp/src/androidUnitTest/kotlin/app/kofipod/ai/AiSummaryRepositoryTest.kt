@@ -3,6 +3,7 @@ package app.kofipod.ai
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToOneOrNull
+import app.kofipod.background.AiSummaryScheduler
 import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.data.repo.RefreshResult
 import app.kofipod.data.repo.SettingsRepository
@@ -17,6 +18,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -407,7 +409,8 @@ class AiSummaryRepositoryTest {
             val gate = CompletableDeferred<Result<String>>()
             val transcripts = StubTranscriptFetcher { gate.await() }
             val summariser = StubSummariser(returns = StubSummariser.summary("done"))
-            val (repo, db) = build(initialKey = "k", transcripts = transcripts, summariser = summariser)
+            val (repo, db, _, scheduler) =
+                build(initialKey = "k", transcripts = transcripts, summariser = summariser)
             insertEpisode(db, episodeId = "ep1", transcriptUrl = "https://example.com/t.vtt")
 
             repo.generate("ep1")
@@ -423,6 +426,16 @@ class AiSummaryRepositoryTest {
                 summariser.callCount,
                 "Synchronous double-tap must collapse to a single Gemini call — " +
                     "otherwise concurrent upserts race and quota is wasted",
+            )
+            // The scheduler call is intentionally outside the single-flight
+            // guard — bursts of taps are expected to enqueue twice, but
+            // WorkManager's KEEP policy collapses them to one queued worker.
+            // Pinning the count here prevents a future "guard the enqueue
+            // too" change from being a silent semantic flip.
+            assertEquals(
+                2,
+                scheduler.enqueueCount,
+                "Double-tap must enqueue twice — KEEP policy on the WorkManager side absorbs the duplication",
             )
         }
 
@@ -513,6 +526,332 @@ class AiSummaryRepositoryTest {
         }
 
     @Test
+    fun cancel_dropsInFlightAudio_andDoesNotPersistRow() =
+        runTest {
+            // Cancel must short-circuit a long upload without surfacing an error
+            // — the user explicitly opted out, so we land back on Idle (or
+            // whatever cached state existed). Unlike clearAll, the cached
+            // summary table is untouched: cancelling a regenerate must not
+            // wipe the prior summary.
+            val gate = CompletableDeferred<Result<AiSummaryJson>>()
+            val audio = StubAudioSummariser { gate.await() }
+            val (repo, db) = build(initialKey = "k", audio = audio)
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "", durationSec = 1800L)
+            insertCompletedDownload(db, episodeId = "ep1", localPath = "/tmp/ep1.mp3", downloadedBytes = 1_000_000)
+
+            repo.generate("ep1")
+            // Park the pipeline inside the summariser so cancel has something to interrupt.
+            testScheduler.runCurrent()
+
+            // Pin the precondition: the panel sees Generating before we cancel.
+            // Without this assertion, the test would also pass if `generate()`
+            // silently never started — making the "cancel works" claim weak.
+            val before = repo.observeFor("ep1").first()
+            assertIs<AiSummaryUiState.Generating>(
+                before,
+                "Pipeline must reach Generating before cancel — otherwise we're not exercising the abort path",
+            )
+
+            repo.cancel("ep1")
+            // Release the gate AFTER cancel. The cancelled job's `finally` is
+            // already running by this point — the late completion must be a no-op.
+            gate.complete(StubAudioSummariser.summary("LATE"))
+            advanceUntilIdle()
+
+            val rows = db.episodeAiSummaryQueries.selectByEpisode("ep1").executeAsList()
+            assertTrue(
+                rows.isEmpty(),
+                "cancel() must drop the in-flight pipeline so a late upsert can't persist after the user opted out",
+            )
+            val state = repo.observeFor("ep1").first()
+            // No prior cached summary → falls back to Idle. The Generating
+            // chrome must be gone.
+            assertEquals(AiSummaryUiState.Idle(AiSourceKind.Audio), state)
+        }
+
+    @Test
+    fun generate_audioPath_emitsAnalysingStage_afterUploadFinalises() =
+        runTest {
+            // The whole point of the staged progress card is that the panel
+            // can see *which* step is running. The repo wires the Audio path's
+            // onStage callback into setStage(); without an assertion that the
+            // observable Generating state actually flips to Analysing when
+            // the summariser invokes onStage, that wiring could regress
+            // silently — the panel would just sit on Preparing forever.
+            val gate = CompletableDeferred<Result<AiSummaryJson>>()
+            val audio =
+                StubAudioSummariser { call ->
+                    // Simulate the GeminiClient calling back as soon as the
+                    // resumable upload finalises and the poll/generate phase
+                    // begins. Real production wiring lives in
+                    // `GeminiClient.summariseAudio` — this stub is just standing
+                    // in for that call site.
+                    call.onStage(GenerationStage.Analysing)
+                    gate.await()
+                }
+            val (repo, db) = build(initialKey = "k", audio = audio)
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "", durationSec = 1800L)
+            insertCompletedDownload(db, episodeId = "ep1", localPath = "/tmp/ep1.mp3", downloadedBytes = 5_000_000)
+
+            repo.generate("ep1")
+            testScheduler.runCurrent()
+
+            val state = repo.observeFor("ep1").first()
+            val generating = assertIs<AiSummaryUiState.Generating>(state)
+            assertEquals(GenerationStage.Analysing, generating.stage, "onStage(Analysing) must surface in the observable Generating")
+            assertEquals(5_000_000L, generating.sizeBytes, "Audio path must carry the upload size into the Generating state")
+
+            // Tidy up so runTest doesn't trip the "uncompleted job" check.
+            gate.complete(StubAudioSummariser.summary("done"))
+            advanceUntilIdle()
+        }
+
+    @Test
+    fun generate_clearsProgressStage_onError() =
+        runTest {
+            // The runGenerate `finally` block clears `progress` — but if a
+            // future refactor moved the `setStage(Formatting)` call into a
+            // path that runs alongside the error surface, we'd briefly emit
+            // Generating(Formatting) before the Error card. This test pins
+            // the contract that Error is the terminal state and there's no
+            // residual Formatting bleed-through.
+            val (repo, db) =
+                build(
+                    initialKey = "k",
+                    transcripts = StubTranscriptFetcher.success("body"),
+                    summariser = StubSummariser(returns = Result.failure(AiErrorException(AiError.Network))),
+                )
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "https://example.com/t.vtt")
+
+            repo.generate("ep1")
+            advanceUntilIdle()
+
+            val state = repo.observeFor("ep1").first()
+            assertIs<AiSummaryUiState.Error>(state, "Errored pipeline must end in Error, not a stuck Generating stage")
+        }
+
+    @Test
+    fun generate_writesPendingMarker_andSchedulesResumeWorker() =
+        runTest {
+            // Pin the contract: every Generate tap drops a row in
+            // PendingAiSummary AND asks the platform scheduler to enqueue the
+            // resume worker. Without both, a process death between launch and
+            // first dispatch would leave nothing for next-launch recovery.
+            val gate = CompletableDeferred<Result<AiSummaryJson>>()
+            val audio = StubAudioSummariser { gate.await() }
+            val (repo, db, _, scheduler) = build(initialKey = "k", audio = audio)
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "", durationSec = 1800L)
+            insertCompletedDownload(db, episodeId = "ep1", localPath = "/tmp/ep1.mp3", downloadedBytes = 1_000)
+
+            repo.generate("ep1")
+            testScheduler.runCurrent()
+
+            val pending = db.pendingAiSummaryQueries.selectAll().executeAsList()
+            assertEquals(1, pending.size, "Generate must persist a pending marker for resume coverage")
+            assertEquals("ep1", pending[0].episodeId)
+            assertEquals(1, scheduler.enqueueCount, "Generate must enqueue the resume worker exactly once")
+
+            // Tidy: let the pipeline complete so runTest doesn't gripe.
+            gate.complete(StubAudioSummariser.summary("done"))
+            advanceUntilIdle()
+        }
+
+    @Test
+    fun pendingMarker_isDeletedOnSuccess() =
+        runTest {
+            // Happy-path round-trip: marker exists during the run, gone on
+            // success. Without the delete, the worker would re-fire on next
+            // launch and re-burn the user's quota for an episode that's
+            // already cached.
+            val (repo, db) =
+                build(
+                    initialKey = "k",
+                    transcripts = StubTranscriptFetcher.success("body"),
+                    summariser = StubSummariser(returns = StubSummariser.summary("S")),
+                )
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "https://example.com/t.vtt")
+
+            repo.generate("ep1")
+            advanceUntilIdle()
+
+            assertTrue(
+                db.pendingAiSummaryQueries.selectAll().executeAsList().isEmpty(),
+                "Successful summarisation must clear the pending marker",
+            )
+        }
+
+    @Test
+    fun pendingMarker_isDeletedOnError() =
+        runTest {
+            // Surfaced errors are the user's call to retry — auto-retrying via
+            // the worker would burn quota silently. The marker must be gone
+            // by the time the Error card lands.
+            val (repo, db) =
+                build(
+                    initialKey = "k",
+                    transcripts = StubTranscriptFetcher.success("body"),
+                    summariser = StubSummariser(returns = Result.failure(AiErrorException(AiError.Network))),
+                )
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "https://example.com/t.vtt")
+
+            repo.generate("ep1")
+            advanceUntilIdle()
+
+            assertTrue(
+                db.pendingAiSummaryQueries.selectAll().executeAsList().isEmpty(),
+                "Surfaced error must clear the pending marker — user owns the retry decision",
+            )
+        }
+
+    @Test
+    fun pendingMarker_isDeletedOnCancel() =
+        runTest {
+            // Cancel = user opted out. Worker must not pick this back up and
+            // re-run the request without consent.
+            val gate = CompletableDeferred<Result<AiSummaryJson>>()
+            val audio = StubAudioSummariser { gate.await() }
+            val (repo, db) = build(initialKey = "k", audio = audio)
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "", durationSec = 1800L)
+            insertCompletedDownload(db, episodeId = "ep1", localPath = "/tmp/ep1.mp3", downloadedBytes = 1_000)
+
+            repo.generate("ep1")
+            testScheduler.runCurrent()
+            assertTrue(
+                db.pendingAiSummaryQueries.selectAll().executeAsList().isNotEmpty(),
+                "Fixture: marker must exist during the run for the delete-on-cancel claim to be meaningful",
+            )
+
+            repo.cancel("ep1")
+            gate.complete(StubAudioSummariser.summary("LATE"))
+            advanceUntilIdle()
+
+            assertTrue(
+                db.pendingAiSummaryQueries.selectAll().executeAsList().isEmpty(),
+                "Cancel must clear the pending marker — worker must not re-fire after user opted out",
+            )
+        }
+
+    @Test
+    fun resumePending_runsMarkersSequentially_notInParallel() =
+        runTest {
+            // The repo's kdoc explicitly opts for sequential resume to keep
+            // metered-network burn predictable — two simultaneous 58 MB audio
+            // uploads on cellular would surprise the user. A refactor flipping
+            // to `pending.map { async { ... } }.awaitAll()` would not be caught
+            // without this test, since a single-marker fixture can't tell
+            // sequential from parallel.
+            val gateA = CompletableDeferred<String>()
+            val gateB = CompletableDeferred<String>()
+            val callOrder = mutableListOf<String>()
+            // The shared StubTranscriptFetcher discards the URL — use a bare
+            // TranscriptFetcher so we can branch on which marker is being
+            // resumed, then gate each branch on a separate CompletableDeferred.
+            val transcripts =
+                TranscriptFetcher { url ->
+                    callOrder += url
+                    val gate = if (url.endsWith("a.vtt")) gateA else gateB
+                    Result.success(gate.await())
+                }
+            val (repo, db) =
+                build(
+                    initialKey = "k",
+                    transcripts = transcripts,
+                    summariser = StubSummariser(returns = StubSummariser.summary("S")),
+                )
+            insertEpisode(db, episodeId = "epA", transcriptUrl = "https://example.com/a.vtt")
+            insertEpisode(
+                db,
+                episodeId = "epB",
+                transcriptUrl = "https://example.com/b.vtt",
+                // Different podcast id would normally be needed; the fixture
+                // uses the same Podcast row across episodes (insertEpisode
+                // re-upserts pod1) so this is fine.
+            )
+            db.pendingAiSummaryQueries.upsert("epA", 0L)
+            db.pendingAiSummaryQueries.upsert("epB", 0L)
+
+            val resume = backgroundScope.launch { repo.resumePending() }
+            // Park inside the first gate; without sequential semantics, the
+            // second fetch would also be in flight by now.
+            testScheduler.runCurrent()
+            assertEquals(listOf("https://example.com/a.vtt"), callOrder, "Sequential resume must not start B before A completes")
+
+            // Release A → B should now run.
+            gateA.complete("body-a")
+            testScheduler.runCurrent()
+            assertEquals(
+                listOf("https://example.com/a.vtt", "https://example.com/b.vtt"),
+                callOrder,
+                "B must start only after A's pipeline completes",
+            )
+
+            gateB.complete("body-b")
+            resume.join()
+        }
+
+    @Test
+    fun resumePending_drivesPipelineForEachMarker() =
+        runTest {
+            // The worker (and on-init resume hook) call this directly. Any
+            // marker present at the moment of the call must drive the
+            // corresponding pipeline through to terminal state.
+            val (repo, db) =
+                build(
+                    initialKey = "k",
+                    transcripts = StubTranscriptFetcher.success("body"),
+                    summariser = StubSummariser(returns = StubSummariser.summary("recovered")),
+                )
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "https://example.com/t.vtt")
+            // Simulate "process died last time before runGenerate's finally
+            // could clear the marker" by writing one directly without going
+            // through generate().
+            db.pendingAiSummaryQueries.upsert("ep1", 0L)
+
+            repo.resumePending()
+            advanceUntilIdle()
+
+            val state = repo.observeFor("ep1").first()
+            val ready = assertIs<AiSummaryUiState.Ready>(state, "resumePending must drive the pipeline to Ready, got $state")
+            assertEquals("recovered", ready.summary.summary)
+            assertTrue(
+                db.pendingAiSummaryQueries.selectAll().executeAsList().isEmpty(),
+                "Successful resume must clear the marker, just like a fresh generate()",
+            )
+        }
+
+    @Test
+    fun clearAll_alsoWipesPendingMarkers() =
+        runTest {
+            // Disconnect must not leave behind markers — the worker would
+            // resume requests against a vault that no longer holds a key.
+            val (repo, db) = build(initialKey = "k")
+            db.pendingAiSummaryQueries.upsert("ep1", 0L)
+
+            repo.clearAll()
+
+            assertTrue(
+                db.pendingAiSummaryQueries.selectAll().executeAsList().isEmpty(),
+                "clearAll must wipe pending markers alongside the cached summary table",
+            )
+        }
+
+    @Test
+    fun cancel_isNoOp_whenNoActivePipeline() =
+        runTest {
+            // A bare cancel with nothing in flight must not crash, fire stale
+            // state changes, or otherwise leave the repo in a bad place — UI
+            // can call this defensively (e.g. on screen disposal).
+            val (repo, db) = build(initialKey = "k")
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "https://example.com/t.vtt")
+
+            repo.cancel("ep1")
+            advanceUntilIdle()
+
+            val state = repo.observeFor("ep1").first()
+            assertEquals(AiSummaryUiState.Idle(AiSourceKind.Transcript), state)
+        }
+
+    @Test
     fun clearAll_emptiesAllCachedSummaries() =
         runTest {
             // Slice 4 wires Disconnect to call this. Verifying the contract here so
@@ -544,7 +883,17 @@ class AiSummaryRepositoryTest {
         val repo: AiSummaryRepository,
         val db: KofipodDatabase,
         val aiConfig: AiConfigRepository,
+        val scheduler: RecordingScheduler,
     )
+
+    private class RecordingScheduler : AiSummaryScheduler {
+        var enqueueCount: Int = 0
+            private set
+
+        override fun enqueueResume() {
+            enqueueCount += 1
+        }
+    }
 
     private fun TestScope.build(
         initialKey: String?,
@@ -552,6 +901,7 @@ class AiSummaryRepositoryTest {
         summariser: TextSummariser = StubSummariser(returns = StubSummariser.summary("default")),
         audio: AudioSummariser = StubAudioSummariser(returns = StubAudioSummariser.summary("audio default")),
         audioFallbackEnabled: Boolean = true,
+        scheduler: RecordingScheduler = RecordingScheduler(),
     ): Fixture {
         // Use the test scheduler for SQLDelight flow emissions too — without this,
         // SettingsRepository's `Dispatchers.Default` flowContext prevents
@@ -574,10 +924,11 @@ class AiSummaryRepositoryTest {
                 episodes = DbEpisodeSource(db),
                 downloads = DbDownloadSource(db),
                 appScope = coroutineScope,
+                scheduler = scheduler,
                 ioContext = testDispatcher,
                 audioFallbackEnabled = audioFallbackEnabled,
             )
-        return Fixture(repo, db, aiConfig)
+        return Fixture(repo, db, aiConfig, scheduler)
     }
 
     private fun insertEpisode(
@@ -693,8 +1044,9 @@ private class StubAudioSummariser(
         mimeType: String,
         sizeBytes: Long,
         displayName: String,
+        onStage: (GenerationStage) -> Unit,
     ): Result<AiSummaryJson> {
-        val call = StubAudioCall(apiKey, model, prompt, localPath, mimeType, sizeBytes, displayName)
+        val call = StubAudioCall(apiKey, model, prompt, localPath, mimeType, sizeBytes, displayName, onStage)
         calls += call
         return handler(call)
     }
@@ -704,7 +1056,9 @@ private class StubAudioSummariser(
     }
 }
 
-private data class StubAudioCall(
+// `data class` would synthesise componentN/equals over `onStage`, which is
+// pointless for a function reference and noisy in failure messages.
+private class StubAudioCall(
     val apiKey: String,
     val model: GeminiModel,
     val prompt: String,
@@ -712,6 +1066,7 @@ private data class StubAudioCall(
     val mimeType: String,
     val sizeBytes: Long,
     val displayName: String,
+    val onStage: (GenerationStage) -> Unit,
 )
 
 private class DbDownloadSource(private val db: KofipodDatabase) : DownloadSource {

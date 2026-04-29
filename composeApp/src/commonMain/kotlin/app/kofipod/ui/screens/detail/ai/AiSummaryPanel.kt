@@ -24,6 +24,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -33,10 +36,12 @@ import app.kofipod.ai.AiSourceKind
 import app.kofipod.ai.AiSummary
 import app.kofipod.ai.AiSummaryUiState
 import app.kofipod.ai.GeminiModel
+import app.kofipod.ai.GenerationStage
 import app.kofipod.ui.primitives.KPButton
 import app.kofipod.ui.primitives.KPButtonStyle
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
+import app.kofipod.ui.screens.detail.formatMb
 import app.kofipod.ui.theme.LocalKofipodColors
 import kotlinx.datetime.Clock
 import org.koin.compose.viewmodel.koinViewModel
@@ -64,6 +69,7 @@ fun AiSummaryPanel(
         state = state,
         audioMinutes = audioMinutes,
         onGenerate = viewModel::onGenerate,
+        onCancel = viewModel::onCancel,
         onOpenAiSetup = onOpenAiSetup,
         modifier = modifier,
     )
@@ -79,6 +85,7 @@ internal fun AiSummaryPanelContent(
     state: AiSummaryUiState,
     audioMinutes: Int,
     onGenerate: () -> Unit,
+    onCancel: () -> Unit,
     onOpenAiSetup: () -> Unit,
     modifier: Modifier = Modifier,
     // Injectable so Paparazzi snapshots can pin the "X ago" footer to a stable
@@ -89,7 +96,7 @@ internal fun AiSummaryPanelContent(
     when (state) {
         AiSummaryUiState.Hidden -> Unit
         is AiSummaryUiState.Idle -> IdleCard(state, audioMinutes, onGenerate, modifier)
-        is AiSummaryUiState.Generating -> GeneratingCard(modifier)
+        is AiSummaryUiState.Generating -> GeneratingCard(state, onCancel, modifier)
         is AiSummaryUiState.Ready -> ReadyCard(state.summary, state.stale, onGenerate, nowMs, modifier)
         is AiSummaryUiState.Error -> ErrorCard(state.error, onGenerate, onOpenAiSetup, modifier)
     }
@@ -199,33 +206,229 @@ private fun AiAssistChip() {
     }
 }
 
+/**
+ * Staged-progress card. Replaces a single "Summarising…" indicator with a
+ * three-row checklist that surfaces which step of the generate pipeline is
+ * actually running (Preparing → Analysing → Formatting), the upload size for
+ * audio runs, plus a Cancel control. Pinned by [GenerationStage] so the
+ * repository's stage transitions drive the visible state without the UI
+ * having to time anything.
+ *
+ * Time-remaining estimates are intentionally left out — the only signals we
+ * have (file size, average network throughput, model wall-clock) are noisy
+ * enough that a wrong "about 2m left" reads worse than no estimate at all.
+ */
 @Composable
-private fun GeneratingCard(modifier: Modifier) {
+private fun GeneratingCard(
+    state: AiSummaryUiState.Generating,
+    onCancel: () -> Unit,
+    modifier: Modifier,
+) {
     val c = LocalKofipodColors.current
+    val labels = stageLabels(state.sourceKind)
     PanelCard(modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            SparkleBadge()
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "Summarising…",
-                    color = c.text,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Spacer(Modifier.height(8.dp))
+            GeneratingChip()
+            Spacer(Modifier.weight(1f))
+            CancelButton(onCancel)
+        }
+        Spacer(Modifier.height(14.dp))
+        StageRow(
+            label = labels.preparing,
+            indicator = stageIndicator(state.stage, GenerationStage.Preparing),
+            // Surfaced only on the upload (Preparing) row, matching the mock.
+            // Falls back silently if we don't have a size to show — transcript
+            // path leaves the right-hand column empty rather than printing "—".
+            trailing = state.sizeBytes?.let { formatMb(it) }.orEmpty(),
+        )
+        Spacer(Modifier.height(10.dp))
+        StageRow(
+            label = labels.analysing,
+            indicator = stageIndicator(state.stage, GenerationStage.Analysing),
+            trailing = "",
+        )
+        Spacer(Modifier.height(10.dp))
+        StageRow(
+            label = "Formatting",
+            indicator = stageIndicator(state.stage, GenerationStage.Formatting),
+            trailing = "",
+        )
+        Spacer(Modifier.height(14.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(c.border),
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "You can leave this screen — we'll keep going in the background.",
+            color = c.textSoft,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+        )
+    }
+}
+
+private data class StageLabels(
+    val preparing: String,
+    val analysing: String,
+)
+
+private fun stageLabels(sourceKind: AiSourceKind): StageLabels =
+    when (sourceKind) {
+        AiSourceKind.Audio ->
+            StageLabels(
+                preparing = "Uploading audio",
+                analysing = "Transcribing & analysing",
+            )
+        AiSourceKind.Transcript ->
+            StageLabels(
+                preparing = "Fetching transcript",
+                analysing = "Analysing",
+            )
+    }
+
+private enum class StageIndicator { Done, Active, Pending }
+
+private fun stageIndicator(
+    current: GenerationStage,
+    row: GenerationStage,
+): StageIndicator =
+    when {
+        current.ordinal > row.ordinal -> StageIndicator.Done
+        current == row -> StageIndicator.Active
+        else -> StageIndicator.Pending
+    }
+
+@Composable
+private fun StageRow(
+    label: String,
+    indicator: StageIndicator,
+    trailing: String,
+) {
+    val c = LocalKofipodColors.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        StageBullet(indicator)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                label,
+                color =
+                    when (indicator) {
+                        StageIndicator.Active -> c.text
+                        StageIndicator.Done -> c.text
+                        StageIndicator.Pending -> c.textMute
+                    },
+                fontSize = 14.sp,
+                fontWeight =
+                    if (indicator == StageIndicator.Active) FontWeight.Bold else FontWeight.Medium,
+            )
+            if (indicator == StageIndicator.Active) {
+                Spacer(Modifier.height(6.dp))
                 LinearProgressIndicator(
                     color = c.pink,
                     trackColor = c.pinkSoft,
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .height(4.dp)
+                            .height(3.dp)
                             .clip(RoundedCornerShape(999.dp))
                             .testTag("aiPanelGeneratingProgress"),
                 )
             }
         }
+        if (trailing.isNotEmpty()) {
+            Spacer(Modifier.width(12.dp))
+            Text(
+                trailing,
+                color = c.textMute,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+    }
+}
+
+@Composable
+private fun StageBullet(indicator: StageIndicator) {
+    val c = LocalKofipodColors.current
+    when (indicator) {
+        StageIndicator.Done ->
+            Box(
+                Modifier
+                    .size(18.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(c.pinkSoft),
+                contentAlignment = Alignment.Center,
+            ) {
+                KPIcon(name = KPIconName.Check, color = c.pink, size = 12.dp)
+            }
+        StageIndicator.Active ->
+            Box(
+                Modifier
+                    .size(18.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(c.pink),
+            )
+        StageIndicator.Pending ->
+            Box(
+                Modifier
+                    .size(18.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    // 1.5 dp dashed-effect approximation: a soft outline against
+                    // the card background. A true dashed circle needs a custom
+                    // PathEffect; not worth the LOC for a tertiary visual cue.
+                    .border(1.5.dp, c.border, RoundedCornerShape(999.dp)),
+            )
+    }
+}
+
+@Composable
+private fun GeneratingChip() {
+    val c = LocalKofipodColors.current
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(c.pinkSoft)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        KPIcon(name = KPIconName.Sparkle, color = c.pink, size = 11.dp)
+        Spacer(Modifier.width(4.dp))
+        Text(
+            "GENERATING…",
+            color = c.pink,
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun CancelButton(onCancel: () -> Unit) {
+    val c = LocalKofipodColors.current
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .border(1.dp, c.border, RoundedCornerShape(999.dp))
+            // Bare Row + clickable would read as plain text to TalkBack — the
+            // role tells assistive tech this is an interactive button. Cancel
+            // is the only abort affordance during generation, so its
+            // discoverability matters more than the cosmetic regenerate text.
+            .semantics { role = Role.Button }
+            .clickable { onCancel() }
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .testTag("aiPanelGeneratingCancelButton"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Cancel",
+            color = c.text,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 

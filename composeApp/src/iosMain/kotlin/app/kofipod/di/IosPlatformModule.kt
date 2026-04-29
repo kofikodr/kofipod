@@ -3,6 +3,8 @@ package app.kofipod.di
 
 import app.kofipod.ai.IosKeyVaultStub
 import app.kofipod.ai.KeyVault
+import app.kofipod.background.AiSummaryScheduler
+import app.kofipod.background.IosAiSummaryScheduler
 import app.kofipod.network.IosNetworkMonitor
 import app.kofipod.network.NetworkMonitor
 import app.kofipod.ui.palette.IosPalettePort
@@ -27,4 +29,5 @@ val iosPlatformModule =
         single<LocalApkPathStore> { IosLocalApkPathStore() }
         single { UpdateChecker() }
         single<KeyVault> { IosKeyVaultStub() }
+        single<AiSummaryScheduler> { IosAiSummaryScheduler() }
     }

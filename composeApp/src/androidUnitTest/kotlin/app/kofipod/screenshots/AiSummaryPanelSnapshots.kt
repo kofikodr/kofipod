@@ -15,6 +15,7 @@ import app.kofipod.ai.AiSourceKind
 import app.kofipod.ai.AiSummary
 import app.kofipod.ai.AiSummaryUiState
 import app.kofipod.ai.GeminiModel
+import app.kofipod.ai.GenerationStage
 import app.kofipod.ui.screens.detail.ai.AiSummaryPanelContent
 import app.kofipod.ui.theme.KofipodTheme
 import app.kofipod.ui.theme.KofipodThemeMode
@@ -77,6 +78,30 @@ class AiSummaryPanelSnapshots {
     fun aiSummary_generating_dark() = paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Dark) { Render(generating()) } }
 
     @Test
+    fun aiSummary_generatingTranscriptPreparing_light() =
+        paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Light) { Render(generatingTranscriptPreparing()) } }
+
+    @Test
+    fun aiSummary_generatingTranscriptPreparing_dark() =
+        paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Dark) { Render(generatingTranscriptPreparing()) } }
+
+    @Test
+    fun aiSummary_generatingAudioFormatting_light() =
+        paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Light) { Render(generatingAudioFormatting()) } }
+
+    @Test
+    fun aiSummary_generatingAudioFormatting_dark() =
+        paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Dark) { Render(generatingAudioFormatting()) } }
+
+    @Test
+    fun aiSummary_generatingAudioPreparing_light() =
+        paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Light) { Render(generatingAudioPreparing()) } }
+
+    @Test
+    fun aiSummary_generatingAudioPreparing_dark() =
+        paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Dark) { Render(generatingAudioPreparing()) } }
+
+    @Test
     fun aiSummary_readyFresh_light() = paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Light) { Render(readyFresh()) } }
 
     @Test
@@ -113,6 +138,7 @@ private fun Render(state: AiSummaryUiState) {
         state = state,
         audioMinutes = SAMPLE_AUDIO_MINUTES,
         onGenerate = {},
+        onCancel = {},
         onOpenAiSetup = {},
         // Pin the relative-time clock so the Ready card always renders
         // "5m ago" — without this the snapshot drifts every minute (and
@@ -147,7 +173,41 @@ private fun idleAudio(): AiSummaryUiState = AiSummaryUiState.Idle(AiSourceKind.A
 
 private fun idleNoSource(): AiSummaryUiState = AiSummaryUiState.Idle(available = null)
 
-private fun generating(): AiSummaryUiState = AiSummaryUiState.Generating(AiSourceKind.Transcript)
+// Audio + Analysing: matches the canonical mock — chip top-left, Cancel
+// top-right, "Uploading audio" done with size, "Transcribing & analysing"
+// active, "Formatting" pending. Pinning this branch is what catches drift
+// against the design once the multi-stage card is in place.
+private fun generating(): AiSummaryUiState =
+    AiSummaryUiState.Generating(
+        sourceKind = AiSourceKind.Audio,
+        stage = GenerationStage.Analysing,
+        sizeBytes = 58L * 1024 * 1024,
+    )
+
+private fun generatingTranscriptPreparing(): AiSummaryUiState =
+    AiSummaryUiState.Generating(
+        sourceKind = AiSourceKind.Transcript,
+        stage = GenerationStage.Preparing,
+        sizeBytes = null,
+    )
+
+private fun generatingAudioFormatting(): AiSummaryUiState =
+    AiSummaryUiState.Generating(
+        sourceKind = AiSourceKind.Audio,
+        stage = GenerationStage.Formatting,
+        sizeBytes = 58L * 1024 * 1024,
+    )
+
+// Pins the only stage where the upload-size chip is visible alongside an
+// active first-row bullet. Without this fixture, a regression that suppresses
+// the size column at Preparing stage only would slip past the Analysing /
+// Formatting baselines.
+private fun generatingAudioPreparing(): AiSummaryUiState =
+    AiSummaryUiState.Generating(
+        sourceKind = AiSourceKind.Audio,
+        stage = GenerationStage.Preparing,
+        sizeBytes = 58L * 1024 * 1024,
+    )
 
 private fun readyFresh(): AiSummaryUiState = AiSummaryUiState.Ready(sampleSummary(), stale = false)
 

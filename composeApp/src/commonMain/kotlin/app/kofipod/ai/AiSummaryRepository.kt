@@ -3,12 +3,14 @@ package app.kofipod.ai
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToOneOrNull
+import app.kofipod.background.AiSummaryScheduler
 import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.db.Download
 import app.kofipod.db.KofipodDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -70,6 +72,10 @@ class AiSummaryRepository(
     private val episodes: EpisodeSource,
     private val downloads: DownloadSource,
     private val appScope: CoroutineScope,
+    // Schedules the out-of-process resume worker (Android). iOS impl is a no-op
+    // — that platform's only resume mechanism is `resumePending()` running at
+    // app start.
+    private val scheduler: AiSummaryScheduler,
     private val clock: Clock = Clock.System,
     // Injected so tests can drive `clearAll()` on the test scheduler. Production
     // uses `Dispatchers.Default`, mirroring `SettingsRepository.flowContext`.
@@ -80,6 +86,13 @@ class AiSummaryRepository(
 ) {
     /** episodeId → in-flight source kind. A second `generate()` for the same id is a no-op. */
     private val inFlight = MutableStateFlow<Map<String, AiSourceKind>>(emptyMap())
+
+    /**
+     * episodeId → live stage + payload size for the in-flight pipeline. Drives
+     * the staged progress card. Cleared when the job finishes (success, error,
+     * or cancellation).
+     */
+    private val progress = MutableStateFlow<Map<String, GenerationProgress>>(emptyMap())
 
     /** episodeId → most recent transient error, surfaced once and cleared on next run. */
     private val transientErrors = MutableStateFlow<Map<String, AiError>>(emptyMap())
@@ -108,18 +121,26 @@ class AiSummaryRepository(
         val keyFlow = aiConfig.isKeyConfigured()
         val inFlightForId: Flow<AiSourceKind?> = inFlight.map { it[episodeId] }
         val errorForId: Flow<AiError?> = transientErrors.map { it[episodeId] }
+        val progressForId: Flow<GenerationProgress?> = progress.map { it[episodeId] }
 
         // `combine` tops out at 5 typed flows. Pre-zip the always-needed-together
-        // signals (key + transient state) so we stay below that ceiling once the
-        // download flow is added in Slice 2.5.
+        // signals (key + transient state + progress) so we stay below that
+        // ceiling alongside the episode / cached / download flows.
         val transientFlow: Flow<TransientState> =
-            combine(keyFlow, inFlightForId, errorForId) { keyOk, runningKind, error ->
-                TransientState(keyOk, runningKind, error)
+            combine(keyFlow, inFlightForId, errorForId, progressForId) { keyOk, runningKind, error, runningProgress ->
+                TransientState(keyOk, runningKind, error, runningProgress)
             }
 
         return combine(transientFlow, episodeFlow, cachedFlow, downloadFlow) { transient, episode, cached, download ->
             if (!transient.keyOk) return@combine AiSummaryUiState.Hidden
-            if (transient.runningKind != null) return@combine AiSummaryUiState.Generating(transient.runningKind)
+            if (transient.runningKind != null) {
+                val live = transient.runningProgress
+                return@combine AiSummaryUiState.Generating(
+                    sourceKind = transient.runningKind,
+                    stage = live?.stage ?: GenerationStage.Preparing,
+                    sizeBytes = live?.sizeBytes,
+                )
+            }
             if (transient.error != null) return@combine AiSummaryUiState.Error(transient.error)
             val available = pickSource(episode, download)
             if (cached != null) {
@@ -146,9 +167,109 @@ class AiSummaryRepository(
      * while a job is in flight.
      */
     fun generate(episodeId: String) {
-        val job = appScope.launch { runGenerate(episodeId) }
-        activeJobs.update { it + (episodeId to job) }
+        // Schedule the out-of-process backstop FIRST. On Android this enqueues
+        // a unique WorkManager job (KEEP policy → bursts collapse to one); on
+        // iOS it's a no-op. The actual marker write happens inside the launch
+        // below to keep the caller (typically a Compose tap handler on the
+        // main thread) off SQLDelight's synchronous I/O — a process death
+        // between this call and the first dispatch is microseconds wide and
+        // dwarfed by the kill window during the 30s+ upload itself.
+        scheduler.enqueueResume()
+        launchGenerate(episodeId, writeMarker = true)
+    }
+
+    /**
+     * Common launch path used by both [generate] (foreground tap) and
+     * [resumePending] (worker / app-init drain). Critically, both routes
+     * register the launched job in [activeJobs] so [clearAll] can cancel it
+     * — without this, a worker-driven `runGenerate` running mid-Disconnect
+     * would proceed to upsert a row keyed to the just-revoked vault.
+     */
+    private fun launchGenerate(
+        episodeId: String,
+        writeMarker: Boolean,
+    ): Job {
+        val job =
+            appScope.launch {
+                if (writeMarker) {
+                    // Off-main marker write. Persists the intent before the
+                    // pipeline reaches its first network suspension point so a
+                    // mid-upload process death still leaves a recoverable row.
+                    withContext(ioContext) {
+                        db.pendingAiSummaryQueries.upsert(episodeId, clock.now().toEpochMilliseconds())
+                    }
+                }
+                runGenerate(episodeId)
+            }
+        // Register the completion handler BEFORE adding to activeJobs. If we
+        // did it the other way around, a fast-completing job (e.g. a pre-empted
+        // dispatcher under load, or an unconfined-dispatcher test path) could
+        // fire `invokeOnCompletion` before the put-to-map ran — the cleanup
+        // would remove a key that hadn't been written yet, leaving a permanent
+        // ghost entry that survives subsequent generate/cancel cycles.
         job.invokeOnCompletion { activeJobs.update { it - episodeId } }
+        activeJobs.update { it + (episodeId to job) }
+        return job
+    }
+
+    /**
+     * Non-suspending fire-and-forget variant of [resumePending] for app-startup
+     * call sites that don't have a coroutine context handy. Launches on the
+     * shared `appScope` so the work outlives the calling context. Kicked from
+     * `KofipodApplication.onCreate` on every cold start so an iOS process
+     * (or an Android cold start where the worker hasn't fired yet) recovers
+     * any markers left by the previous run.
+     */
+    fun resumePendingAsync() {
+        appScope.launch { resumePending() }
+    }
+
+    /**
+     * Drains every [app.kofipod.db.PendingAiSummary] marker — the resume entry
+     * point used by both [AiSummaryWorker] (Android, on process restart while
+     * the app was killed) and the on-init resume hook (every platform, on
+     * fresh app launch).
+     *
+     * Single-flight semantics inherited from [runGenerate]: if an appScope
+     * job is already running for the same episodeId, this call is a cheap
+     * no-op for that id. Errors are surfaced through the existing transient
+     * error channel — the worker itself returns success regardless, since
+     * auto-retrying a `KeyInvalid` or `RateLimited` would burn quota silently.
+     *
+     * Suspends until every pending pipeline has completed (or short-circuited)
+     * so the WorkManager runtime knows when to release wake locks.
+     */
+    suspend fun resumePending() {
+        // Read the markers off-main — the queries are tiny but SQLDelight
+        // doesn't enforce off-main I/O on its own.
+        val pending = withContext(ioContext) { db.pendingAiSummaryQueries.selectAll().executeAsList() }
+        // Run sequentially rather than in parallel: most users have one
+        // in-flight summary at a time, and parallelising over multiple keys
+        // worth of audio uploads would burn the user's metered budget faster
+        // than they expect. The worker itself isn't time-critical.
+        //
+        // Each iteration goes through `launchGenerate` so the resulting job
+        // lands in `activeJobs`. Without that, a worker-driven pipeline that
+        // overlaps with a user-initiated `clearAll()` (Disconnect) would not
+        // be cancellable — the in-pipeline `currentKey()` re-check is the
+        // last-line defence, but cooperative cancellation is what makes that
+        // check reliable.
+        for (row in pending) {
+            launchGenerate(row.episodeId, writeMarker = false).join()
+        }
+    }
+
+    /**
+     * Cancels the in-flight pipeline for [episodeId], if any. Safe to call when
+     * nothing is running. The cancelled job's `finally` clears `inFlight` and
+     * `progress` so the panel falls back to Idle.
+     *
+     * Unlike [clearAll], this does not touch the cached-summary table — a user
+     * cancelling a regenerate keeps any prior cached summary intact, which is
+     * what they expect (cancel ≠ disconnect).
+     */
+    fun cancel(episodeId: String) {
+        activeJobs.value[episodeId]?.cancel()
     }
 
     /**
@@ -170,11 +291,16 @@ class AiSummaryRepository(
         val jobs = activeJobs.value.values.toList()
         activeJobs.value = emptyMap()
         inFlight.value = emptyMap()
+        progress.value = emptyMap()
         transientErrors.value = emptyMap()
         jobs.forEach { it.cancel() }
         jobs.joinAll()
         withContext(ioContext) {
             db.episodeAiSummaryQueries.deleteAll()
+            // Disconnect must also wipe pending markers; otherwise the
+            // worker would resume a request the user has explicitly opted
+            // out of, against a vault that no longer holds a key.
+            db.pendingAiSummaryQueries.deleteAll()
         }
     }
 
@@ -208,6 +334,28 @@ class AiSummaryRepository(
             }
         } finally {
             inFlight.update { it - episodeId }
+            // Tear down progress state alongside the in-flight registration so
+            // the panel doesn't briefly render a stale "Formatting" stage after
+            // an error or cancellation.
+            progress.update { it - episodeId }
+            // Drop the resume marker on every terminal state — success, surfaced
+            // error, cooperative cancel. Auto-retrying a surfaced error would
+            // burn quota; the user's Retry button (or a fresh Generate tap) is
+            // the right re-entry point. Process-death recovery is the only
+            // case where this delete *doesn't* run, which is exactly the case
+            // we want the worker to handle.
+            //
+            // `NonCancellable` is defence-in-depth: the SQLDelight call is
+            // currently synchronous so there's no suspension point for the
+            // cancel signal to interrupt, but a future driver upgrade could
+            // change that. Without the wrapper a Disconnect-mid-finally race
+            // would leak markers. The unit test `pendingMarker_isDeletedOnCancel`
+            // rides on `UnconfinedTestDispatcher`'s sequential semantics and
+            // does NOT exercise the wrapper directly — the production
+            // guarantee is by inspection.
+            withContext(NonCancellable) {
+                db.pendingAiSummaryQueries.deleteByEpisode(episodeId)
+            }
         }
     }
 
@@ -226,12 +374,17 @@ class AiSummaryRepository(
         }
         val model = aiConfig.model().first()
 
+        // No upload payload size to surface here — transcripts are typically
+        // tiny and a HEAD probe to learn Content-Length is more code than the
+        // cue is worth. The panel hides the right-side size column on null.
+        setStage(episodeId, GenerationStage.Preparing, sizeBytes = null)
         val transcriptText: String =
             transcripts.fetch(transcriptUrl).getOrElse { throwable ->
                 surface(episodeId, throwable.toAiError())
                 return
             }
 
+        setStage(episodeId, GenerationStage.Analysing, sizeBytes = null)
         val prompt = AiPrompts.episodeSummaryPrompt(localeTag = currentLocaleTag())
         val structured: AiSummaryJson =
             summariser.generateFromText(
@@ -243,6 +396,7 @@ class AiSummaryRepository(
                 surface(episodeId, throwable.toAiError())
                 return
             }
+        setStage(episodeId, GenerationStage.Formatting, sizeBytes = null)
 
         if (aiConfig.currentKey().isNullOrBlank()) {
             // Defence in depth: if the user disconnected during the network
@@ -296,6 +450,10 @@ class AiSummaryRepository(
         val sizeBytes = download.downloadedBytes
         val prompt = AiPrompts.episodeSummaryPrompt(localeTag = currentLocaleTag())
 
+        // Initial stage; the AudioSummariser will flip us to Analysing as soon
+        // as upload finalises. We seed Preparing here so the panel renders the
+        // size cue immediately, even before the first byte goes out.
+        setStage(episodeId, GenerationStage.Preparing, sizeBytes = sizeBytes)
         val structured: AiSummaryJson =
             audio.summariseAudio(
                 apiKey = key,
@@ -305,10 +463,12 @@ class AiSummaryRepository(
                 mimeType = mimeType,
                 sizeBytes = sizeBytes,
                 displayName = "kofipod-$episodeId",
+                onStage = { stage -> setStage(episodeId, stage, sizeBytes = sizeBytes) },
             ).getOrElse { throwable ->
                 surface(episodeId, throwable.toAiError())
                 return
             }
+        setStage(episodeId, GenerationStage.Formatting, sizeBytes = sizeBytes)
 
         if (aiConfig.currentKey().isNullOrBlank()) {
             // Same disconnect-during-pipeline guard as the transcript path.
@@ -336,6 +496,14 @@ class AiSummaryRepository(
         error: AiError,
     ) {
         transientErrors.update { it + (episodeId to error) }
+    }
+
+    private fun setStage(
+        episodeId: String,
+        stage: GenerationStage,
+        sizeBytes: Long?,
+    ) {
+        progress.update { it + (episodeId to GenerationProgress(stage, sizeBytes)) }
     }
 
     private fun pickSource(
@@ -372,6 +540,7 @@ class AiSummaryRepository(
         val keyOk: Boolean,
         val runningKind: AiSourceKind?,
         val error: AiError?,
+        val runningProgress: GenerationProgress?,
     )
 
     private fun DbEpisodeAiSummary.toDomain(): AiSummary =

@@ -85,10 +85,21 @@ val commonDataModule =
         // platform I/O concerns and unit tests don't need to fake file reads.
         single<app.kofipod.ai.AudioSummariser> {
             val gemini = get<GeminiClient>()
-            app.kofipod.ai.AudioSummariser { apiKey, model, prompt, localPath, mimeType, sizeBytes, displayName ->
+            app.kofipod.ai.AudioSummariser {
+                    apiKey, model, prompt, localPath, mimeType, sizeBytes, displayName, onStage,
+                ->
                 runCatching {
                     val channel = app.kofipod.ai.openLocalFileChannel(localPath)
-                    gemini.summariseAudio(apiKey, model, prompt, channel, mimeType, sizeBytes, displayName).getOrThrow()
+                    gemini.summariseAudio(
+                        apiKey = apiKey,
+                        model = model,
+                        prompt = prompt,
+                        fileChannel = channel,
+                        mimeType = mimeType,
+                        sizeBytes = sizeBytes,
+                        displayName = displayName,
+                        onStage = onStage,
+                    ).getOrThrow()
                 }
             }
         }
@@ -114,6 +125,7 @@ val commonDataModule =
                 episodes = get<EpisodeSource>(),
                 downloads = get<app.kofipod.ai.DownloadSource>(),
                 appScope = get(org.koin.core.qualifier.named("appScope")),
+                scheduler = get<app.kofipod.background.AiSummaryScheduler>(),
             )
         }
         single { PaletteCache(port = get()) }

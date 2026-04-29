@@ -1,0 +1,26 @@
+-- Marker that an AI summary was requested but not yet completed. Written when
+-- the user taps Generate, deleted on every terminal state of `runGenerate`
+-- (success, surfaced error, cooperative cancel). If the process dies mid-flight
+-- the marker survives, and `AiSummaryWorker` (Android) plus the repository's
+-- on-init `resumePending()` (every platform) re-drive the pipeline.
+--
+-- Cascades with Episode so deleting an episode collects the marker too — a
+-- summary request against a row that no longer exists has no defensible
+-- behaviour and would only burn the user's quota.
+CREATE TABLE PendingAiSummary (
+    episodeId    TEXT NOT NULL PRIMARY KEY,
+    requestedAtMs INTEGER NOT NULL,
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
+);
+
+upsert:
+INSERT OR REPLACE INTO PendingAiSummary(episodeId, requestedAtMs) VALUES (?, ?);
+
+deleteByEpisode:
+DELETE FROM PendingAiSummary WHERE episodeId = ?;
+
+deleteAll:
+DELETE FROM PendingAiSummary;
+
+selectAll:
+SELECT * FROM PendingAiSummary;

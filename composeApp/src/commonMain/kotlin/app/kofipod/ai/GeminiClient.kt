@@ -62,6 +62,12 @@ fun interface TextSummariser {
  * [openLocalFileChannel] expect-fun, then delegates to [GeminiClient.summariseAudio].
  */
 fun interface AudioSummariser {
+    /**
+     * @param onStage receives [GenerationStage.Preparing] before upload starts and
+     *   [GenerationStage.Analysing] after the upload finalises. The repository
+     *   uses these transitions to drive the staged progress UI without having to
+     *   own the underlying multi-step pipeline. Tests can ignore the callback.
+     */
     suspend fun summariseAudio(
         apiKey: String,
         model: GeminiModel,
@@ -70,6 +76,7 @@ fun interface AudioSummariser {
         mimeType: String,
         sizeBytes: Long,
         displayName: String,
+        onStage: (GenerationStage) -> Unit,
     ): Result<AiSummaryJson>
 }
 
@@ -383,11 +390,18 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         mimeType: String,
         sizeBytes: Long,
         displayName: String,
+        onStage: (GenerationStage) -> Unit = {},
     ): Result<AiSummaryJson> {
+        onStage(GenerationStage.Preparing)
         val uploaded =
             uploadAudio(apiKey, fileChannel, mimeType, sizeBytes, displayName)
                 .getOrElse { return Result.failure(it) }
         return try {
+            // Upload byte stream is now on Gemini's side. The poll + generate
+            // round-trip is the slow tail (Gemini transcribes + reasons over
+            // the audio), so flip the stage indicator here so the UI doesn't
+            // sit on "Uploading" while we're really waiting on the model.
+            onStage(GenerationStage.Analysing)
             val active =
                 pollUntilActive(apiKey, uploaded.name)
                     .getOrElse { return Result.failure(it) }

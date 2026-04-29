@@ -5,6 +5,24 @@ package app.kofipod.ai
 // shape — DTOs that mirror the wire format live in their respective callers.
 
 /**
+ * Visible step of the generate pipeline. Surfaced in [AiSummaryUiState.Generating]
+ * so the panel can render the multi-row stage list (preparing → analysing →
+ * formatting). The repository drives transitions; the UI labels each stage based
+ * on [AiSourceKind] (e.g. "Uploading audio" vs "Fetching transcript").
+ */
+enum class GenerationStage { Preparing, Analysing, Formatting }
+
+/**
+ * Internal repository state for the in-flight pipeline. Pinned to a top-level
+ * type so it can be carried across the `combine` boundary inside [AiSummaryRepository]
+ * without leaking through the public [AiSummaryUiState] sealed interface.
+ */
+internal data class GenerationProgress(
+    val stage: GenerationStage,
+    val sizeBytes: Long?,
+)
+
+/**
  * Which input drove a cached summary. Persisted as the `wire` string so a future
  * v3 (e.g. on-device transcription) can extend the enum without rewriting rows.
  */
@@ -75,8 +93,22 @@ sealed interface AiSummaryUiState {
      */
     data class Idle(val available: AiSourceKind?) : AiSummaryUiState
 
-    /** Request in flight. Source is locked at the moment generate() was called. */
-    data class Generating(val sourceKind: AiSourceKind) : AiSummaryUiState
+    /**
+     * Request in flight. Source is locked at the moment generate() was called.
+     *
+     * @property stage which step of the pipeline is currently running. Drives the
+     *   stages list in [GeneratingCard] — earlier stages render as "done", the
+     *   current one as in-progress, later ones as pending.
+     * @property sizeBytes byte count of the upload payload, surfaced next to the
+     *   "Uploading audio" row. Audio path only — null for transcript (we don't
+     *   know the body size up-front and a HEAD probe is more code than the cue
+     *   is worth).
+     */
+    data class Generating(
+        val sourceKind: AiSourceKind,
+        val stage: GenerationStage = GenerationStage.Preparing,
+        val sizeBytes: Long? = null,
+    ) : AiSummaryUiState
 
     /**
      * Cached summary present. [stale] is true when the current best-available source's

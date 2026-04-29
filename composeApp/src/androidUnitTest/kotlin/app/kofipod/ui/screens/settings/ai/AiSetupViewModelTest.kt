@@ -10,6 +10,7 @@ import app.kofipod.ai.AiSummaryRepository
 import app.kofipod.ai.AudioSummariser
 import app.kofipod.ai.DownloadSource
 import app.kofipod.ai.GeminiModel
+import app.kofipod.ai.GenerationStage
 import app.kofipod.ai.KeyValidator
 import app.kofipod.ai.KeyVault
 import app.kofipod.ai.TextSummariser
@@ -359,6 +360,7 @@ class AiSetupViewModelTest {
                 episodes = EmptyEpisodeSource,
                 downloads = EmptyDownloadSource,
                 appScope = appScope,
+                scheduler = NoopScheduler,
                 ioContext = testDispatcher,
             )
         advanceUntilIdle()
@@ -436,6 +438,10 @@ class AiSetupViewModelTest {
         ): Result<AiSummaryJson> = error("AiSetupViewModelTest must not exercise the summariser")
     }
 
+    private object NoopScheduler : app.kofipod.background.AiSummaryScheduler {
+        override fun enqueueResume() = Unit
+    }
+
     private object NoopAudioSummariser : AudioSummariser {
         override suspend fun summariseAudio(
             apiKey: String,
@@ -445,6 +451,7 @@ class AiSetupViewModelTest {
             mimeType: String,
             sizeBytes: Long,
             displayName: String,
+            onStage: (GenerationStage) -> Unit,
         ): Result<AiSummaryJson> = error("AiSetupViewModelTest must not exercise the audio summariser")
     }
 

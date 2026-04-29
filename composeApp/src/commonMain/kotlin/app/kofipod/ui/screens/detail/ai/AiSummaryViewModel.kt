@@ -31,4 +31,8 @@ class AiSummaryViewModel(
     fun onGenerate() {
         repo.generate(episodeId)
     }
+
+    fun onCancel() {
+        repo.cancel(episodeId)
+    }
 }
