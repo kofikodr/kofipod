@@ -11,11 +11,6 @@ import app.kofipod.opml.IosOpmlFilePort
 import app.kofipod.opml.OpmlFilePort
 import app.kofipod.ui.palette.IosPalettePort
 import app.kofipod.ui.palette.PalettePort
-import app.kofipod.ui.screens.settings.IosUpdateActionPort
-import app.kofipod.ui.screens.settings.UpdateActionPort
-import app.kofipod.update.IosLocalApkPathStore
-import app.kofipod.update.LocalApkPathStore
-import app.kofipod.update.UpdateChecker
 import org.koin.dsl.module
 
 /**
@@ -26,10 +21,7 @@ import org.koin.dsl.module
 val iosPlatformModule =
     module {
         single<NetworkMonitor> { IosNetworkMonitor() }
-        single<UpdateActionPort> { IosUpdateActionPort() }
         single<PalettePort> { IosPalettePort() }
-        single<LocalApkPathStore> { IosLocalApkPathStore() }
-        single { UpdateChecker() }
         single<KeyVault> { IosKeyVaultStub() }
         single<AiSummaryScheduler> { IosAiSummaryScheduler() }
         single<OpmlFilePort> { IosOpmlFilePort() }
