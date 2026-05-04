@@ -16,11 +16,10 @@ import io.sentry.kotlin.multiplatform.protocol.Breadcrumb as SentryBreadcrumb
  * Sentry KMP 0.15.0 init does not need a Context — it auto-discovers
  * the Application context via ContentProvider on Android.
  */
-actual class CrashReporter {
-
+class AndroidCrashReporter : CrashReporter {
     private var enabled = false
 
-    actual fun enable() {
+    override fun enable() {
         if (enabled) return
         if (BuildKonfig.SENTRY_DSN.isBlank()) return
         Sentry.init { options ->
@@ -37,9 +36,10 @@ actual class CrashReporter {
                     msg.message = msg.message?.let(CrashReporterScrubber::scrubMessage)
                     msg.formatted = msg.formatted?.let(CrashReporterScrubber::scrubMessage)
                 }
-                val scrubbedExceptions = event.exceptions.map { ex ->
-                    ex.copy(value = ex.value?.let(CrashReporterScrubber::scrubMessage))
-                }
+                val scrubbedExceptions =
+                    event.exceptions.map { ex ->
+                        ex.copy(value = ex.value?.let(CrashReporterScrubber::scrubMessage))
+                    }
                 event.exceptions.clear()
                 event.exceptions.addAll(scrubbedExceptions)
                 event
@@ -48,21 +48,22 @@ actual class CrashReporter {
         enabled = true
     }
 
-    actual fun disable() {
+    override fun disable() {
         if (!enabled) return
         Sentry.close()
         enabled = false
     }
 
-    actual fun isEnabled(): Boolean = enabled
+    override fun isEnabled(): Boolean = enabled
 
     private fun adapt(crumb: SentryBreadcrumb): SentryBreadcrumb? {
         val rawData = crumb.getData()?.mapValues { (_, v) -> v.toString() }.orEmpty()
-        val pure = Breadcrumb(
-            category = crumb.category.orEmpty(),
-            message = crumb.message.orEmpty(),
-            data = rawData,
-        )
+        val pure =
+            Breadcrumb(
+                category = crumb.category.orEmpty(),
+                message = crumb.message.orEmpty(),
+                data = rawData,
+            )
         val scrubbed = CrashReporterScrubber.scrubBreadcrumb(pure) ?: return null
         crumb.message = scrubbed.message
         scrubbed.data.forEach { (k, v) -> crumb.setData(k, v) }

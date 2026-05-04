@@ -14,24 +14,23 @@ import com.aptabase.Aptabase
  * If the app key is empty (F-Droid build, fork without secrets), [enable]
  * is a permanent no-op.
  */
-actual class Telemetry(private val context: Context) {
-
+class AndroidTelemetry(private val context: Context) : Telemetry {
     private var enabled = false
 
-    actual fun enable() {
+    override fun enable() {
         if (enabled) return
         if (BuildKonfig.APTABASE_APP_KEY.isBlank()) return
         Aptabase.instance.initialize(context, BuildKonfig.APTABASE_APP_KEY)
         enabled = true
     }
 
-    actual fun disable() {
+    override fun disable() {
         if (!enabled) return
         // Aptabase has no explicit close; gating future track() calls is enough.
         enabled = false
     }
 
-    actual fun track(event: TelemetryEvent) {
+    override fun track(event: TelemetryEvent) {
         if (!enabled) return
         Aptabase.instance.trackEvent(event.name, event.props)
     }

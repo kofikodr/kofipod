@@ -31,7 +31,9 @@ class DiagnosticsBootstrapper(
     }
 
     companion object {
-        fun effective(toggle: Flow<Boolean>, acknowledged: Flow<Boolean>): Flow<Boolean> =
-            combine(toggle, acknowledged) { t, a -> t && a }.distinctUntilChanged()
+        fun effective(
+            toggle: Flow<Boolean>,
+            acknowledged: Flow<Boolean>,
+        ): Flow<Boolean> = combine(toggle, acknowledged) { t, a -> t && a }.distinctUntilChanged()
     }
 }

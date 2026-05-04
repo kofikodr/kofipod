@@ -22,11 +22,11 @@ private const val KEY_DISCLOSURE_ACK = "diagnostics.disclosure.acknowledged"
  * the intended fail-safe: a new device always sees disclosure unacknowledged.
  */
 class AndroidDiagnosticsConfigRepository(context: Context) : DiagnosticsConfigRepository {
-
     private val prefs by lazy {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
+        val masterKey =
+            MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
         EncryptedSharedPreferences.create(
             context,
             PREFS_FILE,
@@ -44,18 +44,21 @@ class AndroidDiagnosticsConfigRepository(context: Context) : DiagnosticsConfigRe
     override val usageEnabled: Flow<Boolean> = usage.asStateFlow()
     override val disclosureAcknowledged: Flow<Boolean> = ack.asStateFlow()
 
-    override suspend fun setCrashesEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
-        prefs.edit().putBoolean(KEY_CRASHES_ENABLED, enabled).commit()
-        crashes.value = enabled
-    }
+    override suspend fun setCrashesEnabled(enabled: Boolean) =
+        withContext(Dispatchers.IO) {
+            prefs.edit().putBoolean(KEY_CRASHES_ENABLED, enabled).commit()
+            crashes.value = enabled
+        }
 
-    override suspend fun setUsageEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
-        prefs.edit().putBoolean(KEY_USAGE_ENABLED, enabled).commit()
-        usage.value = enabled
-    }
+    override suspend fun setUsageEnabled(enabled: Boolean) =
+        withContext(Dispatchers.IO) {
+            prefs.edit().putBoolean(KEY_USAGE_ENABLED, enabled).commit()
+            usage.value = enabled
+        }
 
-    override suspend fun acknowledgeDisclosure() = withContext(Dispatchers.IO) {
-        prefs.edit().putBoolean(KEY_DISCLOSURE_ACK, true).commit()
-        ack.value = true
-    }
+    override suspend fun acknowledgeDisclosure() =
+        withContext(Dispatchers.IO) {
+            prefs.edit().putBoolean(KEY_DISCLOSURE_ACK, true).commit()
+            ack.value = true
+        }
 }

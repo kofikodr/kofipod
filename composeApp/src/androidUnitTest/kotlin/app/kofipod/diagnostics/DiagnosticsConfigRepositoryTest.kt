@@ -11,58 +11,63 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiagnosticsConfigRepositoryTest {
+    @Test
+    fun `defaults — crashes on, usage on, disclosure not acknowledged`() =
+        runTest {
+            val repo = FakeDiagnosticsConfigRepository()
+            assertTrue(repo.crashesEnabled.first())
+            assertTrue(repo.usageEnabled.first())
+            assertFalse(repo.disclosureAcknowledged.first())
+        }
 
     @Test
-    fun `defaults — crashes on, usage on, disclosure not acknowledged`() = runTest {
-        val repo = FakeDiagnosticsConfigRepository()
-        assertTrue(repo.crashesEnabled.first())
-        assertTrue(repo.usageEnabled.first())
-        assertFalse(repo.disclosureAcknowledged.first())
-    }
+    fun `setCrashesEnabled false flips the crashes flow`() =
+        runTest {
+            val repo = FakeDiagnosticsConfigRepository()
+            repo.setCrashesEnabled(false)
+            assertFalse(repo.crashesEnabled.first())
+            assertTrue(repo.usageEnabled.first())
+        }
 
     @Test
-    fun `setCrashesEnabled false flips the crashes flow`() = runTest {
-        val repo = FakeDiagnosticsConfigRepository()
-        repo.setCrashesEnabled(false)
-        assertFalse(repo.crashesEnabled.first())
-        assertTrue(repo.usageEnabled.first())
-    }
+    fun `setUsageEnabled false flips the usage flow`() =
+        runTest {
+            val repo = FakeDiagnosticsConfigRepository()
+            repo.setUsageEnabled(false)
+            assertFalse(repo.usageEnabled.first())
+            assertTrue(repo.crashesEnabled.first())
+        }
 
     @Test
-    fun `setUsageEnabled false flips the usage flow`() = runTest {
-        val repo = FakeDiagnosticsConfigRepository()
-        repo.setUsageEnabled(false)
-        assertFalse(repo.usageEnabled.first())
-        assertTrue(repo.crashesEnabled.first())
-    }
+    fun `acknowledgeDisclosure flips the acknowledgement flow`() =
+        runTest {
+            val repo = FakeDiagnosticsConfigRepository()
+            repo.acknowledgeDisclosure()
+            assertTrue(repo.disclosureAcknowledged.first())
+        }
 
     @Test
-    fun `acknowledgeDisclosure flips the acknowledgement flow`() = runTest {
-        val repo = FakeDiagnosticsConfigRepository()
-        repo.acknowledgeDisclosure()
-        assertTrue(repo.disclosureAcknowledged.first())
-    }
+    fun `flags are independent`() =
+        runTest {
+            val repo = FakeDiagnosticsConfigRepository()
+            repo.setCrashesEnabled(false)
+            repo.setUsageEnabled(false)
+            repo.acknowledgeDisclosure()
+            assertFalse(repo.crashesEnabled.first())
+            assertFalse(repo.usageEnabled.first())
+            assertTrue(repo.disclosureAcknowledged.first())
+        }
 
     @Test
-    fun `flags are independent`() = runTest {
-        val repo = FakeDiagnosticsConfigRepository()
-        repo.setCrashesEnabled(false)
-        repo.setUsageEnabled(false)
-        repo.acknowledgeDisclosure()
-        assertFalse(repo.crashesEnabled.first())
-        assertFalse(repo.usageEnabled.first())
-        assertTrue(repo.disclosureAcknowledged.first())
-    }
-
-    @Test
-    fun `setting flags emits new values to existing collectors`() = runTest {
-        val repo = FakeDiagnosticsConfigRepository()
-        val emissions = mutableListOf<Boolean>()
-        emissions.add(repo.crashesEnabled.first())
-        repo.setCrashesEnabled(false)
-        emissions.add(repo.crashesEnabled.first())
-        assertEquals(listOf(true, false), emissions)
-    }
+    fun `setting flags emits new values to existing collectors`() =
+        runTest {
+            val repo = FakeDiagnosticsConfigRepository()
+            val emissions = mutableListOf<Boolean>()
+            emissions.add(repo.crashesEnabled.first())
+            repo.setCrashesEnabled(false)
+            emissions.add(repo.crashesEnabled.first())
+            assertEquals(listOf(true, false), emissions)
+        }
 }
 
 class FakeDiagnosticsConfigRepository : DiagnosticsConfigRepository {
@@ -74,7 +79,15 @@ class FakeDiagnosticsConfigRepository : DiagnosticsConfigRepository {
     override val usageEnabled: Flow<Boolean> = usage
     override val disclosureAcknowledged: Flow<Boolean> = ack
 
-    override suspend fun setCrashesEnabled(enabled: Boolean) { crashes.value = enabled }
-    override suspend fun setUsageEnabled(enabled: Boolean) { usage.value = enabled }
-    override suspend fun acknowledgeDisclosure() { ack.value = true }
+    override suspend fun setCrashesEnabled(enabled: Boolean) {
+        crashes.value = enabled
+    }
+
+    override suspend fun setUsageEnabled(enabled: Boolean) {
+        usage.value = enabled
+    }
+
+    override suspend fun acknowledgeDisclosure() {
+        ack.value = true
+    }
 }

@@ -3,11 +3,11 @@ package app.kofipod
 
 import android.app.Application
 import app.kofipod.ai.AiSummaryRepository
+import app.kofipod.di.androidPlatformModule
+import app.kofipod.di.commonDataModule
 import app.kofipod.diagnostics.DiagnosticsBootstrapper
 import app.kofipod.diagnostics.Telemetry
 import app.kofipod.diagnostics.TelemetryEvent
-import app.kofipod.di.androidPlatformModule
-import app.kofipod.di.commonDataModule
 import app.kofipod.ui.theme.ThemeSystem
 import app.kofipod.update.UpdateInstaller
 import org.koin.android.ext.koin.androidContext

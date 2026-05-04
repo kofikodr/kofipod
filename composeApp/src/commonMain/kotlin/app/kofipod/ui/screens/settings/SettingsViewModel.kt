@@ -207,14 +207,11 @@ class SettingsViewModel(
 
     fun exportOpml() = opml.exportOpml()
 
-    fun setCrashesEnabled(enabled: Boolean) =
-        viewModelScope.launch { diagnostics.setCrashesEnabled(enabled) }
+    fun setCrashesEnabled(enabled: Boolean) = viewModelScope.launch { diagnostics.setCrashesEnabled(enabled) }
 
-    fun setUsageEnabled(enabled: Boolean) =
-        viewModelScope.launch { diagnostics.setUsageEnabled(enabled) }
+    fun setUsageEnabled(enabled: Boolean) = viewModelScope.launch { diagnostics.setUsageEnabled(enabled) }
 
-    fun acknowledgeDisclosure() =
-        viewModelScope.launch { diagnostics.acknowledgeDisclosure() }
+    fun acknowledgeDisclosure() = viewModelScope.launch { diagnostics.acknowledgeDisclosure() }
 }
 
 private data class AiAndUpdateState(

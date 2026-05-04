@@ -6,7 +6,6 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class CrashReporterScrubberTest {
-
     @Test
     fun `scrubMessage strips query strings from URLs`() {
         val raw = "Failed to fetch https://api.podcastindex.org/podcasts?key=secret&q=foo for episode"
@@ -32,51 +31,56 @@ class CrashReporterScrubberTest {
 
     @Test
     fun `scrubBreadcrumb drops http breadcrumbs containing gemini`() {
-        val crumb = Breadcrumb(
-            category = "http",
-            message = "GET https://generativelanguage.googleapis.com/v1/models",
-            data = mapOf("url" to "https://generativelanguage.googleapis.com/v1/models"),
-        )
+        val crumb =
+            Breadcrumb(
+                category = "http",
+                message = "GET https://generativelanguage.googleapis.com/v1/models",
+                data = mapOf("url" to "https://generativelanguage.googleapis.com/v1/models"),
+            )
         assertNull(CrashReporterScrubber.scrubBreadcrumb(crumb))
     }
 
     @Test
     fun `scrubBreadcrumb drops http breadcrumbs containing googleapis`() {
-        val crumb = Breadcrumb(
-            category = "http",
-            message = "POST https://oauth2.googleapis.com/token",
-            data = emptyMap(),
-        )
+        val crumb =
+            Breadcrumb(
+                category = "http",
+                message = "POST https://oauth2.googleapis.com/token",
+                data = emptyMap(),
+            )
         assertNull(CrashReporterScrubber.scrubBreadcrumb(crumb))
     }
 
     @Test
     fun `scrubBreadcrumb drops http breadcrumbs containing podcastindex`() {
-        val crumb = Breadcrumb(
-            category = "http",
-            message = "GET https://api.podcastindex.org/search?q=foo",
-            data = emptyMap(),
-        )
+        val crumb =
+            Breadcrumb(
+                category = "http",
+                message = "GET https://api.podcastindex.org/search?q=foo",
+                data = emptyMap(),
+            )
         assertNull(CrashReporterScrubber.scrubBreadcrumb(crumb))
     }
 
     @Test
     fun `scrubBreadcrumb drops query category breadcrumbs`() {
-        val crumb = Breadcrumb(
-            category = "query",
-            message = "SELECT * FROM Episode WHERE id = ?",
-            data = emptyMap(),
-        )
+        val crumb =
+            Breadcrumb(
+                category = "query",
+                message = "SELECT * FROM Episode WHERE id = ?",
+                data = emptyMap(),
+            )
         assertNull(CrashReporterScrubber.scrubBreadcrumb(crumb))
     }
 
     @Test
     fun `scrubBreadcrumb keeps innocuous http breadcrumbs but strips query strings in data`() {
-        val crumb = Breadcrumb(
-            category = "http",
-            message = "GET https://example.com/feed?x=1",
-            data = mapOf("url" to "https://example.com/feed?x=1"),
-        )
+        val crumb =
+            Breadcrumb(
+                category = "http",
+                message = "GET https://example.com/feed?x=1",
+                data = mapOf("url" to "https://example.com/feed?x=1"),
+            )
         val scrubbed = CrashReporterScrubber.scrubBreadcrumb(crumb)!!
         assertEquals("GET https://example.com/feed", scrubbed.message)
         assertEquals(mapOf("url" to "https://example.com/feed"), scrubbed.data)

@@ -333,7 +333,7 @@ class DownloadRepositoryTest {
                 override val type: StateFlow<NetworkType> = networkFlow.asStateFlow()
             }
         val testScope = TestScope(dispatcher)
-        val repo = DownloadRepository(db, engine, settings, monitor, testScope)
+        val repo = DownloadRepository(db, engine, settings, monitor, testScope, app.kofipod.diagnostics.NoOpTelemetry)
 
         val harness = Harness(db, repo, engine, settings, testScope, networkFlow)
         try {

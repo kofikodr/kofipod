@@ -42,12 +42,13 @@ fun PrivacyDiagnosticsSection(
             subtitle = "Help fix bugs by sharing anonymous crash details when the app crashes. No personal information.",
             checked = crashesEnabled,
             onCheckedChange = onCrashesEnabledChange,
-            disclosureLines = listOf(
-                "Stack trace",
-                "Exception class and message (URLs scrubbed)",
-                "OS version, device model (e.g. \"Pixel 7\")",
-                "App version, locale",
-            ),
+            disclosureLines =
+                listOf(
+                    "Stack trace",
+                    "Exception class and message (URLs scrubbed)",
+                    "OS version, device model (e.g. \"Pixel 7\")",
+                    "App version, locale",
+                ),
         )
 
         Spacer(Modifier.height(12.dp))
@@ -58,12 +59,13 @@ fun PrivacyDiagnosticsSection(
             subtitle = "Help prioritize features by sharing counts of how often they're used. No identifiers, no IP address stored.",
             checked = usageEnabled,
             onCheckedChange = onUsageEnabledChange,
-            disclosureLines = listOf(
-                "Event name (e.g. \"search_performed\")",
-                "Event properties (fixed enum values)",
-                "App version, OS version, locale",
-                "No client identifier ever sent",
-            ),
+            disclosureLines =
+                listOf(
+                    "Event name (e.g. \"search_performed\")",
+                    "Event properties (fixed enum values)",
+                    "App version, OS version, locale",
+                    "No client identifier ever sent",
+                ),
         )
 
         Spacer(Modifier.height(12.dp))
@@ -71,10 +73,11 @@ fun PrivacyDiagnosticsSection(
         Text(
             text = "Read the privacy policy ›",
             color = c.purple,
-            modifier = Modifier
-                .testTag("diagnostics.privacyPolicy")
-                .clickable { onOpenPrivacyPolicy() }
-                .padding(vertical = 8.dp),
+            modifier =
+                Modifier
+                    .testTag("diagnostics.privacyPolicy")
+                    .clickable { onOpenPrivacyPolicy() }
+                    .padding(vertical = 8.dp),
         )
     }
 }
@@ -110,10 +113,11 @@ private fun DiagnosticsToggleRow(
         Text(
             text = "What's sent?",
             color = c.textMute,
-            modifier = Modifier
-                .testTag("$tag.disclosureToggle")
-                .clickable { expanded = !expanded }
-                .padding(vertical = 4.dp),
+            modifier =
+                Modifier
+                    .testTag("$tag.disclosureToggle")
+                    .clickable { expanded = !expanded }
+                    .padding(vertical = 4.dp),
         )
         if (expanded) {
             Column(Modifier.padding(start = 8.dp)) {

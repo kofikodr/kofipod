@@ -5,6 +5,10 @@ import app.kofipod.ai.IosKeyVaultStub
 import app.kofipod.ai.KeyVault
 import app.kofipod.background.AiSummaryScheduler
 import app.kofipod.background.IosAiSummaryScheduler
+import app.kofipod.diagnostics.CrashReporter
+import app.kofipod.diagnostics.NoOpCrashReporter
+import app.kofipod.diagnostics.NoOpTelemetry
+import app.kofipod.diagnostics.Telemetry
 import app.kofipod.network.IosNetworkMonitor
 import app.kofipod.network.NetworkMonitor
 import app.kofipod.opml.IosOpmlFilePort
@@ -33,4 +37,6 @@ val iosPlatformModule =
         single<KeyVault> { IosKeyVaultStub() }
         single<AiSummaryScheduler> { IosAiSummaryScheduler() }
         single<OpmlFilePort> { IosOpmlFilePort() }
+        single<CrashReporter> { NoOpCrashReporter }
+        single<Telemetry> { NoOpTelemetry }
     }

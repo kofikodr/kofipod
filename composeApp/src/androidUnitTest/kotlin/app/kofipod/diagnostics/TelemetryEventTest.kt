@@ -6,7 +6,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TelemetryEventTest {
-
     @Test
     fun `every event name uses snake_case lowercase`() {
         val pattern = Regex("^[a-z][a-z0-9_]*$")
@@ -45,15 +44,16 @@ class TelemetryEventTest {
         assertEquals(mapOf("source" to "typed"), e.props)
     }
 
-    private fun every(): List<TelemetryEvent> = listOf(
-        TelemetryEvent.AppOpened,
-        TelemetryEvent.SearchPerformed(SearchSource.TYPED),
-        TelemetryEvent.SearchPerformed(SearchSource.CATEGORY),
-        TelemetryEvent.EpisodeDownloaded,
-        TelemetryEvent.EpisodePlayed,
-        TelemetryEvent.AiSummaryGenerated(AiPath.TRANSCRIPT),
-        TelemetryEvent.AiSummaryGenerated(AiPath.AUDIO),
-        TelemetryEvent.AiDiscussMessageSent(AiPath.TRANSCRIPT),
-        TelemetryEvent.AiDiscussMessageSent(AiPath.AUDIO),
-    )
+    private fun every(): List<TelemetryEvent> =
+        listOf(
+            TelemetryEvent.AppOpened,
+            TelemetryEvent.SearchPerformed(SearchSource.TYPED),
+            TelemetryEvent.SearchPerformed(SearchSource.CATEGORY),
+            TelemetryEvent.EpisodeDownloaded,
+            TelemetryEvent.EpisodePlayed,
+            TelemetryEvent.AiSummaryGenerated(AiPath.TRANSCRIPT),
+            TelemetryEvent.AiSummaryGenerated(AiPath.AUDIO),
+            TelemetryEvent.AiDiscussMessageSent(AiPath.TRANSCRIPT),
+            TelemetryEvent.AiDiscussMessageSent(AiPath.AUDIO),
+        )
 }

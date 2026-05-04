@@ -4,15 +4,17 @@ package app.kofipod.di
 import app.kofipod.ai.AndroidKeyVault
 import app.kofipod.ai.KeyVault
 import app.kofipod.background.AiSummaryScheduler
-import app.kofipod.diagnostics.AndroidDiagnosticsConfigRepository
-import app.kofipod.diagnostics.CrashReporter
-import app.kofipod.diagnostics.DiagnosticsConfigRepository
-import app.kofipod.diagnostics.Telemetry
 import app.kofipod.background.AndroidAiSummaryScheduler
 import app.kofipod.background.Notifier
 import app.kofipod.background.Scheduler
 import app.kofipod.data.db.DatabaseFactory
 import app.kofipod.data.repo.SettingsRepository
+import app.kofipod.diagnostics.AndroidCrashReporter
+import app.kofipod.diagnostics.AndroidDiagnosticsConfigRepository
+import app.kofipod.diagnostics.AndroidTelemetry
+import app.kofipod.diagnostics.CrashReporter
+import app.kofipod.diagnostics.DiagnosticsConfigRepository
+import app.kofipod.diagnostics.Telemetry
 import app.kofipod.downloads.DownloadEngine
 import app.kofipod.downloads.DownloadEngineApi
 import app.kofipod.network.AndroidNetworkMonitor
@@ -60,8 +62,8 @@ val androidPlatformModule =
         single<UpdateActionPort> { AndroidUpdateActionPort(installer = get()) }
         single<KeyVault> { AndroidKeyVault(androidContext()) }
         single<DiagnosticsConfigRepository> { AndroidDiagnosticsConfigRepository(androidContext()) }
-        single { CrashReporter() }
-        single { Telemetry(androidContext()) }
+        single<CrashReporter> { AndroidCrashReporter() }
+        single<Telemetry> { AndroidTelemetry(androidContext()) }
         // The Android OPML port is a singleton that the picker-host composable subscribes
         // to. Both the interface and the concrete type resolve to the same instance so the
         // composable (which casts to the concrete) sees what the VM (which uses the

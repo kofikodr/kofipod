@@ -20,6 +20,8 @@ interface DiagnosticsConfigRepository {
     val disclosureAcknowledged: Flow<Boolean>
 
     suspend fun setCrashesEnabled(enabled: Boolean)
+
     suspend fun setUsageEnabled(enabled: Boolean)
+
     suspend fun acknowledgeDisclosure()
 }

@@ -12,15 +12,13 @@ data class Breadcrumb(
 )
 
 object CrashReporterScrubber {
-
     private val urlWithQueryRegex = Regex("""(https?://[^\s?]+)\?[^\s]*""")
 
     private val sensitiveHttpHosts = listOf("gemini", "googleapis", "podcastindex")
 
     private val droppedCategories = setOf("query")
 
-    fun scrubMessage(raw: String): String =
-        urlWithQueryRegex.replace(raw) { match -> match.groupValues[1] }
+    fun scrubMessage(raw: String): String = urlWithQueryRegex.replace(raw) { match -> match.groupValues[1] }
 
     fun scrubBreadcrumb(crumb: Breadcrumb): Breadcrumb? {
         if (crumb.category in droppedCategories) return null
