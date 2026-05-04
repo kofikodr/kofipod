@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import app.kofipod.util.PendingHolder
 import kotlinx.coroutines.CompletableDeferred
 import org.koin.compose.koinInject
 
@@ -88,24 +89,5 @@ actual fun OpmlPickerHost() {
                     request.deferred.completeExceptionally(it)
                 }
         }
-    }
-}
-
-/**
- * Single-slot holder used to bridge the launcher-callback closure (which captures values
- * at composition time) to the latest pending request. Compose remembers the holder
- * itself; we mutate the slot when a new request is launched and clear it on result.
- */
-private class PendingHolder<T : Any> {
-    private var slot: T? = null
-
-    fun set(value: T) {
-        slot = value
-    }
-
-    fun take(): T? {
-        val v = slot
-        slot = null
-        return v
     }
 }

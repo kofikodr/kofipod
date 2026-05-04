@@ -117,12 +117,13 @@ fun SettingsScreen(
         )
 
         SectionLabel("Backup", topSpacing = 22.dp)
-        SettingRow(
-            icon = KPIconName.Folder,
-            title = "Automatic backup",
-            subtitle =
-                "App data is automatically backed up if it's enabled in your phone's " +
-                    "Settings → System → Backup. Audio downloads are not included.",
+        BackupSection(
+            state = state,
+            onChooseFolder = viewModel::chooseBackupFolder,
+            onBackupNow = viewModel::backupNow,
+            onRestore = viewModel::restoreFromBackup,
+            onConfirmRestore = viewModel::confirmRestore,
+            onCancelRestoreConfirm = viewModel::cancelRestoreConfirm,
         )
 
         SectionLabel("Appearance", topSpacing = 22.dp)

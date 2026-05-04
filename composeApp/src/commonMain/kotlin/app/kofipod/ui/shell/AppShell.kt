@@ -36,6 +36,8 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navOptions
+import app.kofipod.backup.BackupController
+import app.kofipod.backup.BackupPickerHost
 import app.kofipod.opml.OpmlPickerHost
 import app.kofipod.ui.UiEvent
 import app.kofipod.ui.UiEventBus
@@ -54,7 +56,14 @@ fun AppShell() {
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val bus: UiEventBus = koinInject()
+    val backupController: BackupController = koinInject()
     val snackbarHostState = remember { SnackbarHostState() }
+    // First-composition pass: if the previous process exited via a restore confirm,
+    // PendingRestore.consumeIfPresent already replaced the DB; surface a snackbar so
+    // the user knows their library was restored. Idempotent — flag clears on read.
+    LaunchedEffect(backupController) {
+        backupController.notifyRestoreCompletedIfPending()
+    }
     LaunchedEffect(bus) {
         bus.events.collect { event ->
             when (event) {
@@ -113,8 +122,9 @@ fun AppShell() {
         }
     }
     // Hoisted at the shell level so SAF launchers stay rooted regardless of which
-    // screen triggered the import/export. No-op on iOS.
+    // screen triggered the import/export or backup pick. No-ops on iOS.
     OpmlPickerHost()
+    BackupPickerHost()
 }
 
 private data class Tab(

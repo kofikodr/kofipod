@@ -5,4 +5,5 @@ import app.kofipod.BuildConfig
 
 actual object AppInfo {
     actual val versionName: String = BuildConfig.VERSION_NAME
+    actual val versionCode: Int = BuildConfig.VERSION_CODE
 }
