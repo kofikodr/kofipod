@@ -23,6 +23,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -37,6 +38,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navOptions
 import app.kofipod.opml.OpmlPickerHost
+import app.kofipod.pro.PaywallRouter
+import app.kofipod.pro.PaywallState
 import app.kofipod.ui.UiEvent
 import app.kofipod.ui.UiEventBus
 import app.kofipod.ui.nav.DeepLinks
@@ -45,6 +48,7 @@ import app.kofipod.ui.nav.Route
 import app.kofipod.ui.player.MiniPlayer
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
+import app.kofipod.ui.screens.paywall.PaywallSheet
 import app.kofipod.ui.theme.LocalKofipodColors
 import org.koin.compose.koinInject
 
@@ -54,6 +58,8 @@ fun AppShell() {
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val bus: UiEventBus = koinInject()
+    val paywallRouter: PaywallRouter = koinInject()
+    val paywall by paywallRouter.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(bus) {
         bus.events.collect { event ->
@@ -115,6 +121,16 @@ fun AppShell() {
     // Hoisted at the shell level so SAF launchers stay rooted regardless of which
     // screen triggered the import/export. No-op on iOS.
     OpmlPickerHost()
+    // Paywall lives at the shell level — a NavHost destination would render full-screen
+    // and leave a blank background behind the ModalBottomSheet. Hoisting here overlays
+    // the sheet on top of whichever screen triggered it.
+    val visible = paywall as? PaywallState.Visible
+    if (visible != null) {
+        PaywallSheet(
+            triggerKey = visible.triggerKey,
+            onDismiss = { paywallRouter.dismiss() },
+        )
+    }
 }
 
 private data class Tab(

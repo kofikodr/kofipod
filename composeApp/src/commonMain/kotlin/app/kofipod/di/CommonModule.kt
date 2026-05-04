@@ -46,6 +46,7 @@ import app.kofipod.opml.OpmlRepository
 import app.kofipod.opml.PodcastFeedLookup
 import app.kofipod.pro.BillingClientPort
 import app.kofipod.pro.EntitlementCache
+import app.kofipod.pro.PaywallRouter
 import app.kofipod.pro.ProEntitlementRepository
 import app.kofipod.ui.UiEventBus
 import app.kofipod.ui.palette.PaletteCache
@@ -55,6 +56,7 @@ import app.kofipod.ui.screens.downloads.DownloadsViewModel
 import app.kofipod.ui.screens.library.LibraryDetailViewModel
 import app.kofipod.ui.screens.library.LibraryViewModel
 import app.kofipod.ui.screens.library.StarterPackViewModel
+import app.kofipod.ui.screens.paywall.PaywallViewModel
 import app.kofipod.ui.screens.player.PlayerViewModel
 import app.kofipod.ui.screens.scheduler.SchedulerInfoViewModel
 import app.kofipod.ui.screens.search.SearchViewModel
@@ -225,6 +227,7 @@ val commonDataModule =
                 appScope = get(org.koin.core.qualifier.named("appScope")),
             )
         }
+        single { PaywallRouter() }
         single {
             DownloadRepository(
                 db = get(),
@@ -246,6 +249,12 @@ val commonDataModule =
         }
         viewModel { LibraryViewModel(get(), get(), get(), get()) }
         viewModel { StarterPackViewModel(get(), get()) }
+        viewModel {
+            PaywallViewModel(
+                repo = get(),
+                router = get(),
+            )
+        }
         viewModel { (listId: String?) -> LibraryDetailViewModel(listId, get(), get(), get(), get(), get()) }
         viewModel {
             SettingsViewModel(
