@@ -186,7 +186,13 @@ actual class KofipodPlayer(private val context: Context) {
     }
 
     actual fun stop() {
-        controller?.stop()
+        // stop() alone leaves the current MediaItem loaded, so the mini-player keeps
+        // showing it. clearMediaItems() drops the queue and fires onMediaItemTransition,
+        // which pushes a state with a null episodeId — the mini-player's dismiss signal.
+        controller?.run {
+            stop()
+            clearMediaItems()
+        }
     }
 
     actual fun release() {

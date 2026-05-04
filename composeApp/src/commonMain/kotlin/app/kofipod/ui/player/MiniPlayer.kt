@@ -21,10 +21,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.kofipod.playback.KofipodPlayer
+import app.kofipod.ui.primitives.KPIcon
+import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.theme.LocalKofipodColors
 import org.koin.compose.koinInject
 
@@ -73,6 +76,28 @@ fun MiniPlayer(onOpen: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
+        if (!state.isPlaying) {
+            // Only offered while paused so an in-progress listen can't be ended by a
+            // mistaken tap; the small hit-target sits left of the play control.
+            Box(
+                Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .clickable(
+                        onClickLabel = "Dismiss player",
+                        role = Role.Button,
+                    ) { player.stop() }
+                    .testTag("miniPlayerDismiss"),
+                contentAlignment = Alignment.Center,
+            ) {
+                KPIcon(
+                    name = KPIconName.Close,
+                    color = c.textMute,
+                    size = 18.dp,
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+        }
         Box(
             Modifier
                 .size(40.dp)
