@@ -3,7 +3,7 @@ package app.kofipod.opml
 
 /**
  * Surfaces the platform file-picker surface to common code without pulling Android types
- * into commonMain. Mirrors the [app.kofipod.ui.screens.settings.UpdateActionPort] shape.
+ * into commonMain.
  *
  * Android binds this to the flow-driven [app.kofipod.opml.AndroidOpmlFilePort], which is
  * paired with a Compose host (`OpmlPickerHost`) hoisted in [app.kofipod.ui.shell.AppShell]

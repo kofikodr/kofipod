@@ -17,7 +17,6 @@ import app.kofipod.ai.SummarySource
 import app.kofipod.ai.TextSummariser
 import app.kofipod.ai.TranscriptDiscussSource
 import app.kofipod.ai.TranscriptFetcher
-import app.kofipod.data.api.GithubReleasesApi
 import app.kofipod.data.api.PodcastIndexApi
 import app.kofipod.data.db.DatabaseFactory
 import app.kofipod.data.db.buildDatabase
@@ -88,7 +87,6 @@ val commonDataModule =
         single<EpisodeSource> { get<EpisodesRepository>() }
         single { SettingsRepository(get()) }
         single { StatsRepository(get(), get()) }
-        single { GithubReleasesApi(get()) }
         // Use the dedicated AI HttpClient — never the shared one. See AiHttpClient.kt
         // for the rationale (Gemini key travels in `?key=`; logging would leak it).
         single { GeminiClient(client = app.kofipod.ai.buildAiHttpClient()) }
