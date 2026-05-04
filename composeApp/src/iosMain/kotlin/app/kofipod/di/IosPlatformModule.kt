@@ -7,6 +7,8 @@ import app.kofipod.background.AiSummaryScheduler
 import app.kofipod.background.IosAiSummaryScheduler
 import app.kofipod.network.IosNetworkMonitor
 import app.kofipod.network.NetworkMonitor
+import app.kofipod.opml.IosOpmlFilePort
+import app.kofipod.opml.OpmlFilePort
 import app.kofipod.ui.palette.IosPalettePort
 import app.kofipod.ui.palette.PalettePort
 import app.kofipod.ui.screens.settings.IosUpdateActionPort
@@ -30,4 +32,5 @@ val iosPlatformModule =
         single { UpdateChecker() }
         single<KeyVault> { IosKeyVaultStub() }
         single<AiSummaryScheduler> { IosAiSummaryScheduler() }
+        single<OpmlFilePort> { IosOpmlFilePort() }
     }

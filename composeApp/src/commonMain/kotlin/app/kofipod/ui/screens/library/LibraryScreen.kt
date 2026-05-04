@@ -79,7 +79,6 @@ fun LibraryScreen(
     val c = LocalKofipodColors.current
 
     var newListOpen by remember { mutableStateOf(false) }
-    var opmlInfoOpen by remember { mutableStateOf(false) }
     var pendingDeletePodcast by remember { mutableStateOf<Podcast?>(null) }
     var pendingDeleteList by remember { mutableStateOf<PodcastList?>(null) }
 
@@ -128,7 +127,7 @@ fun LibraryScreen(
                     onFindPodcast = onOpenSearch,
                     onCreateList = { newListOpen = true },
                     onOpenStarterPack = onOpenStarterPack,
-                    onImportOpml = { opmlInfoOpen = true },
+                    onImportOpml = { viewModel.importOpml() },
                 )
             }
         } else {
@@ -199,10 +198,6 @@ fun LibraryScreen(
                 newListOpen = false
             },
         )
-    }
-
-    if (opmlInfoOpen) {
-        OpmlComingSoonDialog(onDismiss = { opmlInfoOpen = false })
     }
 
     pendingDeletePodcast?.let { p ->
@@ -1068,44 +1063,6 @@ private fun StartActionRow(
         }
         Spacer(Modifier.width(10.dp))
         KPIcon(name = KPIconName.ChevronRight, color = c.textMute, size = 18.dp)
-    }
-}
-
-@Composable
-private fun OpmlComingSoonDialog(onDismiss: () -> Unit) {
-    val c = LocalKofipodColors.current
-    val r = LocalKofipodRadii.current
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
-            Modifier
-                .clip(RoundedCornerShape(r.lg))
-                .background(c.surface)
-                .padding(20.dp),
-        ) {
-            Text(
-                "OPML import — coming soon",
-                color = c.text,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-            )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                "We're working on importing subscriptions from an .opml file. For now, search and save each show, or try a starter pack.",
-                color = c.textSoft,
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-            )
-            Spacer(Modifier.height(16.dp))
-            Row {
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "Got it",
-                    color = c.purple,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable { onDismiss() }.padding(12.dp),
-                )
-            }
-        }
     }
 }
 

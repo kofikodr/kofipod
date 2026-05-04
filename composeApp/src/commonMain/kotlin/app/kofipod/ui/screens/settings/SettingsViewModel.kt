@@ -10,6 +10,8 @@ import app.kofipod.data.net.NetworkErrorHandler
 import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.data.repo.UpdateRepository
 import app.kofipod.data.repo.UpdateUiState
+import app.kofipod.opml.OpmlAction
+import app.kofipod.opml.OpmlController
 import app.kofipod.playback.PlaybackCache
 import app.kofipod.ui.theme.KofipodThemeMode
 import app.kofipod.ui.theme.ThemeSystem
@@ -52,6 +54,7 @@ data class SettingsUiState(
     val updateAction: UpdateAction = UpdateAction.Idle,
     val aiConnected: Boolean = false,
     val aiModel: GeminiModel = GeminiModel.Flash,
+    val opmlAction: OpmlAction = OpmlAction.Idle,
 )
 
 class SettingsViewModel(
@@ -65,6 +68,7 @@ class SettingsViewModel(
     private val updateActions: UpdateActionPort,
     private val aiConfig: AiConfigRepository,
     private val errors: NetworkErrorHandler,
+    private val opml: OpmlController,
 ) : ViewModel() {
     // Refreshes the displayed cache usage once per second while Settings is visible.
     private val cacheUsedFlow =
@@ -107,8 +111,9 @@ class SettingsViewModel(
                 updateActionFlow,
                 aiConfig.isKeyConfigured(),
                 aiConfig.model(),
-            ) { updateState, action, aiConnected, aiModel ->
-                AiAndUpdateState(updateState, action, aiConnected, aiModel)
+                opml.action,
+            ) { updateState, action, aiConnected, aiModel, opmlAction ->
+                AiAndUpdateState(updateState, action, aiConnected, aiModel, opmlAction)
             },
         ) { base, combined ->
             base.copy(
@@ -116,6 +121,7 @@ class SettingsViewModel(
                 updateAction = combined.action,
                 aiConnected = combined.aiConnected,
                 aiModel = combined.aiModel,
+                opmlAction = combined.opmlAction,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -181,6 +187,10 @@ class SettingsViewModel(
     }
 
     fun dismissUpdate() = viewModelScope.launch { updateRepo.dismissCurrentVersion() }
+
+    fun importOpml() = opml.importOpml()
+
+    fun exportOpml() = opml.exportOpml()
 }
 
 private data class AiAndUpdateState(
@@ -188,4 +198,5 @@ private data class AiAndUpdateState(
     val action: UpdateAction,
     val aiConnected: Boolean,
     val aiModel: GeminiModel,
+    val opmlAction: OpmlAction,
 )

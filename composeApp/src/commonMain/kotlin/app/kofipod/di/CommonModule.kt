@@ -42,6 +42,10 @@ import app.kofipod.data.repo.SearchSource
 import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.data.repo.StatsRepository
 import app.kofipod.data.repo.UpdateRepository
+import app.kofipod.domain.toSummary
+import app.kofipod.opml.OpmlController
+import app.kofipod.opml.OpmlRepository
+import app.kofipod.opml.PodcastFeedLookup
 import app.kofipod.ui.UiEventBus
 import app.kofipod.ui.palette.PaletteCache
 import app.kofipod.ui.screens.detail.EpisodeDetailViewModel
@@ -198,6 +202,19 @@ val commonDataModule =
                 appScope = get(org.koin.core.qualifier.named("appScope")),
             )
         }
+        single<PodcastFeedLookup> {
+            val api = get<PodcastIndexApi>()
+            PodcastFeedLookup { url -> api.podcastByFeedUrl(url).toSummary() }
+        }
+        single { OpmlRepository(library = get(), lookup = get<PodcastFeedLookup>()) }
+        single {
+            OpmlController(
+                repo = get(),
+                port = get(),
+                bus = get(),
+                appScope = get(org.koin.core.qualifier.named("appScope")),
+            )
+        }
         single { PaletteCache(port = get()) }
         single { app.kofipod.data.repo.PlaybackRepository(get()) }
         single<CoroutineScope>(qualifier = org.koin.core.qualifier.named("appScope")) {
@@ -222,7 +239,7 @@ val commonDataModule =
                 errors = get(),
             )
         }
-        viewModel { LibraryViewModel(get(), get(), get()) }
+        viewModel { LibraryViewModel(get(), get(), get(), get()) }
         viewModel { StarterPackViewModel(get(), get()) }
         viewModel { (listId: String?) -> LibraryDetailViewModel(listId, get(), get(), get(), get(), get()) }
         viewModel {
@@ -236,6 +253,7 @@ val commonDataModule =
                 updateActions = get<UpdateActionPort>(),
                 aiConfig = get(),
                 errors = get(),
+                opml = get(),
             )
         }
         viewModel { AiSetupViewModel(config = get(), client = get(), summaries = get(), discuss = get()) }

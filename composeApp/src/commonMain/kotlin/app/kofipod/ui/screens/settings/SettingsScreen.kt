@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kofipod.config.AppInfo
 import app.kofipod.data.repo.UpdateUiState
+import app.kofipod.opml.OpmlAction
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.primitives.SectionLabel
@@ -93,6 +94,38 @@ fun SettingsScreen(
             onDownload = viewModel::downloadUpdate,
             onInstall = viewModel::installUpdate,
             onDismiss = viewModel::dismissUpdate,
+        )
+
+        SectionLabel("Library", topSpacing = 22.dp)
+        val opmlAction = state.opmlAction
+        val opmlIdle = opmlAction is OpmlAction.Idle || opmlAction is OpmlAction.Error
+        SettingRow(
+            icon = KPIconName.Library,
+            title = "Import OPML",
+            subtitle =
+                when (opmlAction) {
+                    OpmlAction.Importing -> "Importing — this can take a moment for large files"
+                    is OpmlAction.Error -> opmlAction.message
+                    else -> "Add subscriptions from another podcast app"
+                },
+            onClick = if (opmlIdle) viewModel::importOpml else null,
+            trailing = {
+                KPIcon(name = KPIconName.ChevronRight, color = c.textMute, size = 18.dp)
+            },
+        )
+        Spacer(Modifier.height(8.dp))
+        SettingRow(
+            icon = KPIconName.Download,
+            title = "Export OPML",
+            subtitle =
+                when (opmlAction) {
+                    OpmlAction.Exporting -> "Saving…"
+                    else -> "Save your subscriptions to a file"
+                },
+            onClick = if (opmlIdle) viewModel::exportOpml else null,
+            trailing = {
+                KPIcon(name = KPIconName.ChevronRight, color = c.textMute, size = 18.dp)
+            },
         )
 
         SectionLabel("Backup", topSpacing = 22.dp)

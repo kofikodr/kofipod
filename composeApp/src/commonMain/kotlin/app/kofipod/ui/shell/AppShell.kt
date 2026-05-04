@@ -36,6 +36,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navOptions
+import app.kofipod.opml.OpmlPickerHost
 import app.kofipod.ui.UiEvent
 import app.kofipod.ui.UiEventBus
 import app.kofipod.ui.nav.DeepLinks
@@ -127,6 +128,9 @@ fun AppShell() {
             KofipodNavHost(nav)
         }
     }
+    // Hoisted at the shell level so SAF launchers stay rooted regardless of which
+    // screen triggered the import/export. No-op on iOS.
+    OpmlPickerHost()
 }
 
 private data class Tab(

@@ -39,6 +39,8 @@ class PodcastIndexApi(private val client: PodcastIndexClient) {
 
     suspend fun podcastByFeedId(feedId: Long): PodcastFeed = client.podcasts.byFeedId(id = feedId).feed
 
+    suspend fun podcastByFeedUrl(url: String): PodcastFeed = client.podcasts.byFeedUrl(url = url).feed
+
     suspend fun episodesByFeedId(
         feedId: Long,
         limit: Int = EPISODE_LIMIT,

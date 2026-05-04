@@ -13,6 +13,8 @@ import app.kofipod.downloads.DownloadEngine
 import app.kofipod.downloads.DownloadEngineApi
 import app.kofipod.network.AndroidNetworkMonitor
 import app.kofipod.network.NetworkMonitor
+import app.kofipod.opml.AndroidOpmlFilePort
+import app.kofipod.opml.OpmlFilePort
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.playback.PlaybackCache
 import app.kofipod.share.Sharer
@@ -53,4 +55,10 @@ val androidPlatformModule =
         single { UpdateInstaller(context = androidContext(), httpClient = get(), repo = get()) }
         single<UpdateActionPort> { AndroidUpdateActionPort(installer = get()) }
         single<KeyVault> { AndroidKeyVault(androidContext()) }
+        // The Android OPML port is a singleton that the picker-host composable subscribes
+        // to. Both the interface and the concrete type resolve to the same instance so the
+        // composable (which casts to the concrete) sees what the VM (which uses the
+        // interface) is signalling.
+        single { AndroidOpmlFilePort() }
+        single<OpmlFilePort> { get<AndroidOpmlFilePort>() }
     }
