@@ -91,6 +91,7 @@ fun AskGeminiScreen(
         onSubmit = viewModel::submit,
         onSubmitPreset = viewModel::submitPreset,
         onClearChat = viewModel::clearChat,
+        onRetry = viewModel::retry,
         onCitationTap = { ms ->
             scope.launch {
                 if (viewModel.seekToCitation(ms)) onOpenPlayer()
@@ -109,6 +110,7 @@ internal fun AskGeminiContent(
     onSubmit: () -> Unit,
     onSubmitPreset: (String) -> Unit,
     onClearChat: () -> Unit,
+    onRetry: () -> Unit,
     onCitationTap: (Long) -> Unit,
 ) {
     val c = LocalKofipodColors.current
@@ -145,6 +147,7 @@ internal fun AskGeminiContent(
                             error = state.error,
                             progress = state.progress,
                             onCitationTap = onCitationTap,
+                            onRetry = onRetry,
                         )
                     }
                 }
@@ -307,6 +310,7 @@ private fun ChatPane(
     error: AiError?,
     progress: DiscussProgress?,
     onCitationTap: (Long) -> Unit,
+    onRetry: () -> Unit,
 ) {
     val listState = rememberLazyListState()
     // Auto-scroll to the latest message every time the list grows. Without
@@ -335,7 +339,7 @@ private fun ChatPane(
             item { TypingIndicator() }
         }
         if (error != null) {
-            item { ErrorBubble(error) }
+            item { ErrorBubble(error = error, onRetry = onRetry) }
         }
     }
 }
@@ -430,7 +434,10 @@ private fun TypingIndicator() {
 }
 
 @Composable
-private fun ErrorBubble(error: AiError) {
+private fun ErrorBubble(
+    error: AiError,
+    onRetry: () -> Unit,
+) {
     val c = LocalKofipodColors.current
     val copy =
         when (error) {
@@ -445,18 +452,60 @@ private fun ErrorBubble(error: AiError) {
             AiError.Network -> "Couldn't reach Gemini. Check your connection."
             AiError.TranscriptUnavailable -> "Couldn't fetch this episode's transcript or audio."
             AiError.AudioTooLong -> "This episode is too long to discuss in this version."
-            is AiError.Unknown -> "Something went wrong. Try again."
+            // Differentiate 5xx (Gemini server-side) from anything else so
+            // the user knows whether to retry or whether their request was
+            // structurally rejected. The status code is shown when present
+            // because it's actionable for support / triage and never reveals
+            // the prompt or response body.
+            is AiError.Unknown ->
+                when {
+                    error.statusCode != null && error.statusCode in 500..599 ->
+                        "Gemini hit a server-side error (${error.statusCode}). Try again."
+                    error.statusCode != null ->
+                        "Something went wrong (status ${error.statusCode}). Try again."
+                    else -> "Something went wrong. Try again."
+                }
         }
-    Row {
-        Box(
-            Modifier
-                .clip(RoundedCornerShape(18.dp))
-                .background(c.surface)
-                .border(1.dp, c.warn, RoundedCornerShape(18.dp))
-                .padding(horizontal = 14.dp, vertical = 12.dp)
-                .testTag("askGeminiError"),
-        ) {
-            Text(copy, color = c.text, fontSize = 13.sp, lineHeight = 18.sp)
+    val showRetry =
+        when (error) {
+            // Configuration / content-shape errors don't recover by re-sending
+            // the same message — the user needs to fix their key, pick a
+            // different episode, etc. Hiding the button avoids tempting them
+            // into a loop that can't help.
+            AiError.NoKey, AiError.KeyInvalid, AiError.TranscriptUnavailable, AiError.AudioTooLong -> false
+            AiError.RateLimited, AiError.Network, is AiError.Unknown -> true
+        }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row {
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(c.surface)
+                    .border(1.dp, c.warn, RoundedCornerShape(18.dp))
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                    .testTag("askGeminiError"),
+            ) {
+                Text(copy, color = c.text, fontSize = 13.sp, lineHeight = 18.sp)
+            }
+        }
+        if (showRetry) {
+            Row {
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(c.surface)
+                        .border(1.dp, c.border, RoundedCornerShape(999.dp))
+                        .clickable { onRetry() }
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                        .testTag("askGeminiRetry")
+                        .semantics {
+                            role = Role.Button
+                            contentDescription = "Retry"
+                        },
+                ) {
+                    Text("Retry", color = c.purple, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
         }
     }
 }

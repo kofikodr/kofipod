@@ -28,6 +28,90 @@ Two non-consumable Google Play Billing v6+ products:
 
 Restore Purchase happens automatically on app start and via a manual button in Settings. Entitlement is recovered through Play Billing on new devices, not through Auto Backup — this prevents device-clone bypass and removes the ambiguity of "is my purchase tied to my device or my account."
 
+## Build flavors and distribution
+
+The codebase is GPL-3.0-or-later. Anyone can build it from source. Rather than fight that with a license-server check (rejected — see decision log), Kofipod ships **two product flavors** in a single Gradle module. This is the AntennaPod / Bitwarden / Signal model and it works.
+
+### Flavors
+
+| Flavor | Audience | BillingClient dep | Pro features | Paywall sheet |
+|---|---|---|---|---|
+| `play` | Google Play Store buyers | yes | gated by real entitlement check | shown to Free users |
+| `foss` | Source builds + F-Droid | **excluded** | unconditionally unlocked | never shown |
+
+`build.gradle.kts`:
+
+```kotlin
+android {
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("play") { dimension = "distribution" }
+        create("foss") { dimension = "distribution" }
+    }
+}
+```
+
+Source-set layout for `BillingClientPort`:
+
+- `androidMain/.../BillingClientPort.kt` — `expect`-shaped interface only (no implementation).
+- `playAndroid/.../BillingClientPort.kt` — real Google Play Billing v6+ implementation.
+- `fossAndroid/.../BillingClientPort.kt` — stub returning `Pro(source = FossBuild)` unconditionally.
+
+`ProEntitlementRepository` ends up with one production implementation that delegates to `BillingClientPort`; the FOSS port short-circuits the billing flow and the Paywall sheet is never reached because every paywalled action sees `Pro` already.
+
+### Distribution channels
+
+| Channel | Flavor | Status |
+|---|---|---|
+| Google Play Store | `play` | **primary**, the revenue product |
+| F-Droid | `foss` | secondary, eligible only because the FOSS flavor excludes the proprietary Play Billing dep. Submission lands later, after Pro launch stabilises. |
+| Source build | `foss` | supported and documented; standard `./gradlew :composeApp:assembleFossDebug` |
+| **GitHub Releases APK** | — | **discontinued.** Pre-built APKs are no longer published. |
+
+### Why drop GitHub Releases APKs
+
+GPL-3 requires *source* availability, not *binary* availability. Pre-built APKs in Releases compete with the paid Play Store build for zero benefit — every download is a free copy. Dropping them is honest: source-builders can build, F-Droid users can install, Play Store users can pay.
+
+The README needs a one-paragraph update directing users to Play Store (when live), F-Droid (when accepted), or self-build via the FOSS flavor.
+
+### Existing dev-friend users
+
+Two clean migration paths:
+
+1. **Move them to the FOSS flavor.** They keep everything working, full access, no billing surface. Recommended.
+2. **Issue Play Store promo codes** at launch. Play Console allows up to 500 free codes per IAP per quarter. Useful if you want them on the same flavor as paying users.
+
+### iOS
+
+`iosMain` is unaffected by the flavor split. iOS BillingClientPort actual remains a stub returning `Free` (or `Pro` if/when iOS becomes a focus and StoreKit lands).
+
+## Removed in this release: in-app updater
+
+Distributing Pro through Play Store + F-Droid eliminates the use case the in-app updater was built for (sideloading APKs from GitHub Releases). The entire `app.kofipod.update` package and its UI/DI bindings are deleted in pre-Slice-0 cleanup.
+
+### Why delete (not flag-disable)
+
+- Both real distribution channels handle updates natively. Play Store auto-updates apps; the F-Droid client polls the F-Droid repo daily and notifies users when a new tag is built. F-Droid considers in-app updaters a smell.
+- Source builders update via `git pull`. They don't need a button.
+- Dead code behind a flag rots — six months of stale lint warnings, broken iOS stubs, missing migrations. Git history preserves it if it's ever needed back.
+
+### Files removed
+
+- `commonMain/.../update/` (UpdateChecker, UpdateConfig, UpdateModels, VersionCompare, LocalApkPathStore — 5 files).
+- `androidMain/.../update/` (UpdateChecker.android, UpdateInstaller, AndroidLocalApkPathStore — 3 files).
+- `iosMain/.../update/UpdateChecker.ios.kt`.
+- `data/repo/UpdateRepository.kt`.
+- `ui/screens/settings/UpdateActionPort.kt` + `Android/IosUpdateActionPort` actuals.
+- `androidUnitTest/.../UpdateRepositoryTest.kt`.
+- DI bindings in `CommonModule.kt`, `AndroidModule.kt`, `IosPlatformModule.kt`.
+- The Settings screen "Check for update" entry.
+- The `files/updates/` runtime path (no longer written).
+
+### What stays
+
+- Version-display string in Settings (so users can confirm what they're running).
+- The existing `version.properties` flow + signing config — those still feed Play Store / F-Droid builds, just no longer feed an in-app fetcher.
+
 ## Free vs Pro — the line
 
 ### Free (today's app, forever)
@@ -42,6 +126,19 @@ Everything currently shipping. Specifically:
 - All bug fixes and core-app improvements.
 
 **Nothing currently free becomes paid in this release or any future release.** This is a hard rule.
+
+### AI tier policy
+
+The mental model: **Free generates, Pro saves.**
+
+- **Free generates** — Summary, Mentioned, and Discuss/Q&A all stay free under BYOK Gemini. The user pays Google directly for inference; Kofipod has no per-user inference cost.
+- **Pro saves** — Snippets, Bookmarks, Transcript & summary search, and PKM exports are the persistence/capture/search/share layer that wraps the AI output. Pro buyers can export the free-tier `EpisodeAiSummary` rows to Readwise / Obsidian / Notion / Markdown — capturing the AI knowledge into their own systems.
+
+Why AI does **not** move to Pro:
+
+1. **Friction stacking.** BYOK already costs ~10 minutes of setup (Gemini key + Google Cloud billing). Stacking a $12.99 Pro purchase on top creates three onboarding gates; conversion goes to zero.
+2. **The willingness-to-pay lever is exports, not generation.** Snipd's user research showed the podcast → Notion / Readwise / Obsidian pipeline is what users pay for. Pro already monetises that. Paywalling the AI itself would be double-charging for the same user-perceived value.
+3. **Composability.** The "Free generates, Pro saves" pitch is one sentence. "Limited free AI + Pro AI quotas + Pro saves" is muddy.
 
 ### Pro (paid, one-time)
 
@@ -261,7 +358,8 @@ Authored as guidance for the implementation plan agent. Actual ordering and gran
 
 | Slice | Scope | Notes |
 |---|---|---|
-| **0** | Pro entitlement plumbing | BillingClient, `ProEntitlementRepository`, Paywall sheet, restore-purchase. Gates a single toy feature for end-to-end validation. |
+| **Pre-0** | Cleanup | Delete `app.kofipod.update` package + UI + DI + tests (see "Removed in this release"). Self-contained commit; emulator gate before Slice 0 starts. |
+| **0** | Pro entitlement plumbing + flavor split | Add `play` / `foss` flavors. `BillingClientPort` expect/actual across `playAndroid` + `fossAndroid` source sets. `ProEntitlementRepository`, Paywall sheet, restore-purchase. Gates a single toy feature for end-to-end validation in both flavors. README update for new distribution policy. |
 | **1** | Bookmarks | Smallest real feature; exercises schema-bump + Pro-gate pattern. |
 | **2** | Library search (FTS5) | Small surface; lights up FTS index for later features. |
 | **3** | Snippets MVP — MP3 only | Editor, render, share. Proves foreground-service pattern without MP4 risk. |
@@ -299,3 +397,7 @@ Authored as guidance for the implementation plan agent. Actual ordering and gran
 - **MP4 chosen over MP3-only for v1** — research showed native MP4 outperforms hosted-page links 3–10× on social, and even MP3 in iMessage shows as an ugly file row vs MP4's inline preview. Media3 Transformer reduces the engineering risk that originally argued for MP3-first.
 - **No license-server check** — GPL-3.0 means anyone can build Pro from source. Most users will not. The Play Store binary is the revenue surface; OSS purity stays intact.
 - **Free trial rejected** — Play Billing IAP doesn't natively support trials for non-consumables; hand-rolled trials are fragile. If conversion underperforms, ship a launch discount instead.
+- **Two product flavors (`play` / `foss`)** chosen over single-binary-with-runtime-check. `foss` flavor excludes Play Billing entirely so F-Droid will accept it, and source-builders get full Pro features unconditionally. The `play` flavor is the revenue product. AntennaPod / Bitwarden / Signal use this same shape successfully.
+- **GitHub Releases APKs discontinued** — pre-built APKs were competing with the paid Play Store build. GPL-3 only requires source availability; binary availability is a project choice, not an obligation.
+- **AI features stay free under BYOK** — moving them to Pro would stack three onboarding gates (Pro IAP + Gemini key + Google Cloud billing) and double-charge for the Pro export pipeline that already monetises AI output. "Free generates, Pro saves" is the cleaner mental model.
+- **In-app updater removed** — distributing through Play Store + F-Droid means both real channels handle updates natively. The updater served only sideload-from-GitHub-Releases users, who no longer exist as a category. Deleted rather than flag-disabled to avoid dead-code rot.

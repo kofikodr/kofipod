@@ -141,6 +141,181 @@ class DiscussRepositoryTest {
         }
 
     @Test
+    fun retry_afterFailure_resendsLastQuestion_withoutInsertingDuplicateUserRow() =
+        runTest {
+            // Recovery loop after a transient 5xx / blank response / parse
+            // failure: the error bubble's Retry button must re-run the chat
+            // call against the SAME user message — not insert a second copy
+            // of "Why?" into the thread, and not silently drop the user's
+            // intent. On success, the error clears and the model row appears
+            // adjacent to the original user row.
+            var attempt = 0
+            val chatStub =
+                StubChatSummariser { _, _, _, _, _, question ->
+                    attempt += 1
+                    when (attempt) {
+                        1 -> Result.failure(AiErrorException(AiError.Unknown(503)))
+                        else -> Result.success(DiscussAnswerJson(answer = "Recovered: $question", citations = emptyList()))
+                    }
+                }
+            val (repo, db) = build(initialKey = "k", chat = chatStub)
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "https://example.com/t.vtt")
+
+            repo.send("ep1", "Why?")
+            advanceUntilIdle()
+            // Sanity: first attempt failed, error surfaced, user row stayed.
+            val afterFailure = repo.observeFor("ep1").first() as DiscussUiState.Ready
+            assertEquals(AiError.Unknown(503), afterFailure.error)
+            assertEquals(1, afterFailure.messages.size)
+
+            repo.retry("ep1")
+            advanceUntilIdle()
+
+            assertEquals(2, chatStub.callCount, "Retry must re-fire the chat call exactly once")
+            val afterRetry = repo.observeFor("ep1").first() as DiscussUiState.Ready
+            assertEquals(null, afterRetry.error, "Successful retry must clear the transient error")
+            assertEquals(
+                2,
+                afterRetry.messages.size,
+                "Retry must NOT insert a duplicate user row — total = original user + new model",
+            )
+            assertEquals(DiscussRole.User, afterRetry.messages[0].role)
+            assertEquals("Why?", afterRetry.messages[0].content, "Original user content must be preserved verbatim")
+            assertEquals(DiscussRole.Model, afterRetry.messages[1].role)
+            assertEquals("Recovered: Why?", afterRetry.messages[1].content)
+        }
+
+    @Test
+    fun retry_withoutPriorSession_isNoOp() =
+        runTest {
+            // Defensive no-op: a stray Retry tap from a code path that shouldn't
+            // be reachable (no chat exists yet for this episode) must not crash
+            // and must not synthesise an empty user row. Surfaces here so a
+            // future refactor that loosens the UI guard can't introduce a NPE
+            // in production.
+            val chatStub = StubChatSummariser.success("never called")
+            val (repo, db) = build(initialKey = "k", chat = chatStub)
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "https://example.com/t.vtt")
+
+            repo.retry("ep1")
+            advanceUntilIdle()
+
+            assertEquals(0, chatStub.callCount, "Retry without a prior message must NEVER reach the chat summariser")
+            assertEquals(
+                null,
+                db.discussSessionQueries.selectByEpisode("ep1").executeAsOneOrNull(),
+                "Retry must not synthesise an empty session",
+            )
+            val state = repo.observeFor("ep1").first() as DiscussUiState.Ready
+            assertEquals(null, state.error, "No-op retry must not surface a transient error")
+            assertEquals(false, state.inFlight, "No-op retry must not leave inFlight stuck")
+        }
+
+    @Test
+    fun retry_thatAlsoFails_resurfacesError_withoutInflatingUserRowCount() =
+        runTest {
+            // Both the initial send and the retry call fail. The error must
+            // re-surface rather than silently clear, and the user-row count
+            // must remain at exactly one — the `insertUser = false` contract
+            // on retry has to hold on the failure path the same way it holds
+            // on the success path.
+            val chatStub =
+                StubChatSummariser { _, _, _, _, _, _ ->
+                    Result.failure(AiErrorException(AiError.Unknown(503)))
+                }
+            val (repo, db) = build(initialKey = "k", chat = chatStub)
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "https://example.com/t.vtt")
+
+            repo.send("ep1", "Will this work?")
+            advanceUntilIdle()
+            val afterFirstFail = repo.observeFor("ep1").first() as DiscussUiState.Ready
+            assertEquals(AiError.Unknown(503), afterFirstFail.error)
+            assertEquals(1, afterFirstFail.messages.size)
+
+            repo.retry("ep1")
+            advanceUntilIdle()
+
+            assertEquals(2, chatStub.callCount, "Retry must re-fire the chat call exactly once")
+            val afterRetryFail = repo.observeFor("ep1").first() as DiscussUiState.Ready
+            assertEquals(
+                AiError.Unknown(503),
+                afterRetryFail.error,
+                "A failed retry must re-surface the error — never silently clear it",
+            )
+            assertEquals(
+                1,
+                afterRetryFail.messages.size,
+                "Failed retry must NOT insert a second user row — still exactly one user message",
+            )
+            assertEquals(DiscussRole.User, afterRetryFail.messages[0].role)
+            assertEquals("Will this work?", afterRetryFail.messages[0].content)
+        }
+
+    @Test
+    fun retry_whileSendIsInFlight_isDropped_andCancelStillTargetsTheRealSend() =
+        runTest {
+            // Two contracts in one test, both load-bearing for the Retry button:
+            //
+            //  1. A Retry tap landing while a previous send is parked at the
+            //     network must NOT spawn a second Gemini call. `runSend`'s own
+            //     inFlight guard already catches that, but contract #2 is the
+            //     reason we ALSO short-circuit at retry()'s entry.
+            //
+            //  2. The retry tap must NOT corrupt `activeJobs[episodeId]`.
+            //     Without the early-return at retry()'s entry, a bouncer Job
+            //     would be launched, hit the inFlight guard, complete fast,
+            //     and its `invokeOnCompletion { activeJobs - episodeId }`
+            //     handler would clobber the real send's entry — leaving a
+            //     subsequent `cancel(episodeId)` (or `clearForEpisode`) with
+            //     a completed no-op job to cancel and the actual chat call
+            //     running unsupervised. We pin contract #2 by issuing
+            //     `cancel(episodeId)` after the racy retry tap and asserting
+            //     that the real send was actually cancelled — which is only
+            //     possible if `activeJobs[episodeId]` still points at it.
+            val gate = CompletableDeferred<Result<DiscussAnswerJson>>()
+            val chatStub = StubChatSummariser { _, _, _, _, _, _ -> gate.await() }
+            val (repo, db) = build(initialKey = "k", chat = chatStub)
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "https://example.com/t.vtt")
+
+            repo.send("ep1", "What happened?")
+            testScheduler.runCurrent()
+            // Send is parked at the gate; retry tap should be dropped at
+            // retry()'s entry without launching a bouncer job.
+            repo.retry("ep1")
+            testScheduler.runCurrent()
+
+            // Cancel must reach the real in-flight send. The cancellation
+            // propagates through the parked `gate.await()`, finally clears
+            // inFlight, and no model row is persisted.
+            repo.cancel("ep1")
+            advanceUntilIdle()
+
+            val state = repo.observeFor("ep1").first() as DiscussUiState.Ready
+            assertEquals(
+                false,
+                state.inFlight,
+                "Cancel must clear inFlight — proves activeJobs[episodeId] still targeted the real send, " +
+                    "i.e. retry() didn't corrupt the entry with a bouncer job",
+            )
+            assertEquals(
+                1,
+                chatStub.callCount,
+                "Retry-during-in-flight-send must be dropped — only one chat call allowed",
+            )
+            assertEquals(
+                1,
+                state.messages.size,
+                "Cancelled send must not insert a model row — only the original user turn persists",
+            )
+            assertEquals(DiscussRole.User, state.messages[0].role)
+
+            // Drain the deferred so `runTest` doesn't see a dangling promise.
+            // The cancelled coroutine has already unwound; this completion
+            // has no consumer.
+            gate.complete(Result.success(DiscussAnswerJson(answer = "ignored", citations = emptyList())))
+        }
+
+    @Test
     fun send_secondConcurrent_isDropped_byInFlightGuard() =
         runTest {
             // Single-flight per episodeId — a rapid double-tap must NOT spawn
@@ -654,8 +829,10 @@ private class StubDiscussSource(private val transcript: String) : DiscussSource 
     override suspend fun loadContext(
         episode: Episode,
         download: Download?,
-    ): Result<DiscussContext> =
-        Result.success(DiscussContext.Available(transcript = transcript, fingerprint = episode.transcriptUrl.orEmpty()))
+    ): DiscussLoad =
+        DiscussLoad.Success(
+            DiscussContext.Available(transcript = transcript, fingerprint = episode.transcriptUrl.orEmpty()),
+        )
 }
 
 /**
@@ -671,8 +848,8 @@ private class StubAudioDiscussSource(
     override suspend fun loadContext(
         episode: Episode,
         download: Download?,
-    ): Result<DiscussContext> =
-        Result.success(
+    ): DiscussLoad =
+        DiscussLoad.Success(
             DiscussContext.AudioReady(
                 localPath = localPath,
                 mimeType = mimeType,

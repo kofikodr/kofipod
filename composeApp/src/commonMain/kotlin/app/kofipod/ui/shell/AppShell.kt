@@ -38,6 +38,8 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navOptions
+import app.kofipod.backup.BackupController
+import app.kofipod.backup.BackupPickerHost
 import app.kofipod.diagnostics.DiagnosticsConfigRepository
 import app.kofipod.opml.OpmlPickerHost
 import app.kofipod.ui.UiEvent
@@ -58,7 +60,14 @@ fun AppShell() {
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val bus: UiEventBus = koinInject()
+    val backupController: BackupController = koinInject()
     val snackbarHostState = remember { SnackbarHostState() }
+    // First-composition pass: if the previous process exited via a restore confirm,
+    // PendingRestore.consumeIfPresent already replaced the DB; surface a snackbar so
+    // the user knows their library was restored. Idempotent — flag clears on read.
+    LaunchedEffect(backupController) {
+        backupController.notifyRestoreCompletedIfPending()
+    }
     LaunchedEffect(bus) {
         bus.events.collect { event ->
             when (event) {
@@ -75,22 +84,6 @@ fun AppShell() {
             if (nav.currentDestination?.route != Route.Player::class.qualifiedName) {
                 nav.navigate(
                     Route.Player,
-                    navOptions {
-                        launchSingleTop = true
-                        popUpTo(nav.graph.findStartDestination().id) { inclusive = false }
-                    },
-                )
-            }
-        }
-    }
-    LaunchedEffect(nav) {
-        DeepLinks.openSettings.collect {
-            if (nav.currentDestination?.route != Route.Settings::class.qualifiedName) {
-                // Pop the current top (e.g. Player) before switching tab so the bottom
-                // nav state lines up with the user's mental model.
-                nav.popBackStack(Route.Player::class.qualifiedName!!, inclusive = true)
-                nav.navigate(
-                    Route.Settings,
                     navOptions {
                         launchSingleTop = true
                         popUpTo(nav.graph.findStartDestination().id) { inclusive = false }
@@ -133,8 +126,9 @@ fun AppShell() {
         }
     }
     // Hoisted at the shell level so SAF launchers stay rooted regardless of which
-    // screen triggered the import/export. No-op on iOS.
+    // screen triggered the import/export or backup pick. No-ops on iOS.
     OpmlPickerHost()
+    BackupPickerHost()
 
     // First-launch disclosure: gates all diagnostic sends until the user
     // taps "Got it" or "Open Settings". `initial = true` avoids a flash of

@@ -8,4 +8,5 @@ package app.kofipod.config
  */
 expect object AppInfo {
     val versionName: String
+    val versionCode: Int
 }
