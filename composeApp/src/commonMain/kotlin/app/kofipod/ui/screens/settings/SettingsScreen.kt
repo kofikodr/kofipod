@@ -211,6 +211,17 @@ fun SettingsScreen(
             onChange = { viewModel.setStreamCacheCap(it) },
         )
 
+        val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+        PrivacyDiagnosticsSection(
+            crashesEnabled = state.crashesEnabled,
+            usageEnabled = state.usageEnabled,
+            onCrashesEnabledChange = viewModel::setCrashesEnabled,
+            onUsageEnabledChange = viewModel::setUsageEnabled,
+            onOpenPrivacyPolicy = {
+                uriHandler.openUri("https://github.com/ebernie/kofipod/blob/master/docs/privacy.md")
+            },
+        )
+
         // Debug-only entry point to scheduler info screen; kept intentionally minimal.
         Spacer(Modifier.height(24.dp))
         Text(
