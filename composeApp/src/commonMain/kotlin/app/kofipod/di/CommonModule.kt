@@ -44,6 +44,9 @@ import app.kofipod.domain.toSummary
 import app.kofipod.opml.OpmlController
 import app.kofipod.opml.OpmlRepository
 import app.kofipod.opml.PodcastFeedLookup
+import app.kofipod.pro.BillingClientPort
+import app.kofipod.pro.EntitlementCache
+import app.kofipod.pro.ProEntitlementRepository
 import app.kofipod.ui.UiEventBus
 import app.kofipod.ui.palette.PaletteCache
 import app.kofipod.ui.screens.detail.EpisodeDetailViewModel
@@ -214,6 +217,13 @@ val commonDataModule =
         single { app.kofipod.data.repo.PlaybackRepository(get()) }
         single<CoroutineScope>(qualifier = org.koin.core.qualifier.named("appScope")) {
             CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        }
+        single {
+            ProEntitlementRepository(
+                cache = get<EntitlementCache>(),
+                port = get<BillingClientPort>(),
+                appScope = get(org.koin.core.qualifier.named("appScope")),
+            )
         }
         single {
             DownloadRepository(
