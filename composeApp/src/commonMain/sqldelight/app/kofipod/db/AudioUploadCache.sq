@@ -1,0 +1,40 @@
+-- Shared cache of Gemini Files API audio uploads. Owned by neither the Summary
+-- nor the Discuss pipeline — both write a row after a successful upload and both
+-- read before initiating one, so a 60 MB episode that gets summarised on Tuesday
+-- afternoon does not need a second upload when the user opens Discuss for the
+-- same episode on Tuesday evening.
+--
+-- expiresAtMs is set to uploadedAtMs + 47h (one hour short of Gemini's 48h Files
+-- API TTL). The buffer absorbs clock skew and Gemini-side propagation lag — we
+-- prefer a slightly early local invalidation over handing the model a `files/...`
+-- URI that has just been auto-purged. fingerprint mirrors the convention from
+-- EpisodeAiSummary.sourceFingerprint on the Audio path: Download.downloadedBytes
+-- as a decimal string. A re-downloaded (re-encoded, repaired, …) file gets a new
+-- byte count, which forces a fresh upload rather than referencing a stale URI.
+--
+-- Cascade with Episode so a deleted episode releases the cache row alongside
+-- its other AI artifacts.
+CREATE TABLE AudioUploadCache (
+    episodeId    TEXT NOT NULL PRIMARY KEY,
+    geminiUri    TEXT NOT NULL,
+    geminiName   TEXT NOT NULL,
+    mimeType     TEXT NOT NULL,
+    fingerprint  TEXT NOT NULL,
+    uploadedAtMs INTEGER NOT NULL,
+    expiresAtMs  INTEGER NOT NULL,
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
+);
+
+selectByEpisode:
+SELECT * FROM AudioUploadCache WHERE episodeId = ?;
+
+upsert:
+INSERT OR REPLACE INTO AudioUploadCache(
+    episodeId, geminiUri, geminiName, mimeType, fingerprint, uploadedAtMs, expiresAtMs
+) VALUES (?, ?, ?, ?, ?, ?, ?);
+
+deleteByEpisode:
+DELETE FROM AudioUploadCache WHERE episodeId = ?;
+
+deleteAll:
+DELETE FROM AudioUploadCache;

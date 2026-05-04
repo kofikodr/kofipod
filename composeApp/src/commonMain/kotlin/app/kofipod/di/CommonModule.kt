@@ -1,10 +1,27 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.di
 
+import app.kofipod.ai.AiConfigRepository
+import app.kofipod.ai.AiSummaryRepository
+import app.kofipod.ai.AudioDiscussSource
+import app.kofipod.ai.AudioSummariser
+import app.kofipod.ai.AudioUploadCoordinator
+import app.kofipod.ai.AudioUploader
+import app.kofipod.ai.ChatSummariser
+import app.kofipod.ai.DiscussContext
+import app.kofipod.ai.DiscussRepository
+import app.kofipod.ai.DiscussSource
+import app.kofipod.ai.GeminiClient
+import app.kofipod.ai.HttpTranscriptFetcher
+import app.kofipod.ai.SummarySource
+import app.kofipod.ai.TextSummariser
+import app.kofipod.ai.TranscriptDiscussSource
+import app.kofipod.ai.TranscriptFetcher
 import app.kofipod.data.api.GithubReleasesApi
 import app.kofipod.data.api.PodcastIndexApi
 import app.kofipod.data.db.DatabaseFactory
 import app.kofipod.data.db.buildDatabase
+import app.kofipod.data.net.NetworkErrorHandler
 import app.kofipod.data.net.buildHttpClient
 import app.kofipod.data.recommend.PodcastIndexRecommendationApi
 import app.kofipod.data.recommend.RecommendationApi
@@ -25,6 +42,7 @@ import app.kofipod.data.repo.SearchSource
 import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.data.repo.StatsRepository
 import app.kofipod.data.repo.UpdateRepository
+import app.kofipod.ui.UiEventBus
 import app.kofipod.ui.palette.PaletteCache
 import app.kofipod.ui.screens.detail.EpisodeDetailViewModel
 import app.kofipod.ui.screens.detail.PodcastDetailViewModel
@@ -37,6 +55,7 @@ import app.kofipod.ui.screens.scheduler.SchedulerInfoViewModel
 import app.kofipod.ui.screens.search.SearchViewModel
 import app.kofipod.ui.screens.settings.SettingsViewModel
 import app.kofipod.ui.screens.settings.UpdateActionPort
+import app.kofipod.ui.screens.settings.ai.AiSetupViewModel
 import app.kofipod.ui.screens.stats.StatsViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +66,8 @@ import org.koin.dsl.module
 val commonDataModule =
     module {
         single { buildHttpClient() }
+        single { UiEventBus() }
+        single { NetworkErrorHandler(get()) }
         single { PodcastIndexApi.create() }
         single { buildDatabase(get<DatabaseFactory>()) }
         single { LibraryRepository(get()) }
@@ -67,6 +88,116 @@ val commonDataModule =
         single { StatsRepository(get(), get()) }
         single { UpdateRepository(settings = get(), localApk = get()) }
         single { GithubReleasesApi(get()) }
+        // Use the dedicated AI HttpClient — never the shared one. See AiHttpClient.kt
+        // for the rationale (Gemini key travels in `?key=`; logging would leak it).
+        single { GeminiClient(client = app.kofipod.ai.buildAiHttpClient()) }
+        single<app.kofipod.ai.KeyValidator> { get<GeminiClient>() }
+        single<TextSummariser> { get<GeminiClient>() }
+        single<ChatSummariser> { get<GeminiClient>() }
+        // Narrow seam over `client.generateFromAudio`. The full upload pipeline
+        // is the coordinator's job; this binding is just the structured-summary
+        // call against an already-active file URI.
+        single<AudioSummariser> {
+            val gemini = get<GeminiClient>()
+            AudioSummariser { apiKey, model, fileUri, mimeType, prompt ->
+                gemini.generateFromAudio(
+                    apiKey = apiKey,
+                    model = model,
+                    fileUri = fileUri,
+                    mimeType = mimeType,
+                    prompt = prompt,
+                )
+            }
+        }
+        // Production AudioUploader: bridges the coordinator's single-call
+        // contract to GeminiClient's two primitives (resumable upload PUT
+        // + state poll). Kept as a fun interface so tests can substitute a
+        // synchronous fake and exercise the coordinator without the network.
+        single<AudioUploader> {
+            val gemini = get<GeminiClient>()
+            AudioUploader { apiKey, channel, mimeType, sizeBytes, displayName ->
+                gemini
+                    .uploadAudio(
+                        apiKey = apiKey,
+                        fileChannel = channel,
+                        mimeType = mimeType,
+                        sizeBytes = sizeBytes,
+                        displayName = displayName,
+                    ).fold(
+                        onSuccess = { uploaded -> gemini.pollUntilActive(apiKey, uploaded.name) },
+                        onFailure = { Result.failure(it) },
+                    )
+            }
+        }
+        // Coordinator owns the upload-or-reuse decision. Shared between the
+        // Summary and Discuss pipelines so a 60 MB upload doesn't have to run
+        // twice for the same episode within Gemini's 48h Files API TTL.
+        single { AudioUploadCoordinator(uploader = get<AudioUploader>(), db = get()) }
+        single {
+            AiConfigRepository(
+                keyVault = get(),
+                settings = get(),
+                appScope = get(org.koin.core.qualifier.named("appScope")),
+            )
+        }
+        single<TranscriptFetcher> { HttpTranscriptFetcher(get()) }
+        single<app.kofipod.ai.DownloadSource> {
+            val downloads = get<DownloadRepository>()
+            app.kofipod.ai.DownloadSource(downloads::forEpisodeFlow)
+        }
+        single {
+            AiSummaryRepository(
+                db = get(),
+                aiConfig = get(),
+                summariser = get<TextSummariser>(),
+                coordinator = get<AudioUploadCoordinator>(),
+                audio = get<AudioSummariser>(),
+                transcripts = get<TranscriptFetcher>(),
+                episodes = get<EpisodeSource>(),
+                downloads = get<app.kofipod.ai.DownloadSource>(),
+                appScope = get(org.koin.core.qualifier.named("appScope")),
+                scheduler = get<app.kofipod.background.AiSummaryScheduler>(),
+            )
+        }
+        // Composite source: transcript wins when present, audio sibling
+        // covers downloaded episodes that lack a publisher transcript.
+        // Mirrors AiSummaryRepository.pickSource's preference order so
+        // Summary and Discuss agree on which source they're using for any
+        // given episode.
+        single<DiscussSource> {
+            val transcript = TranscriptDiscussSource(transcripts = get<TranscriptFetcher>())
+            val audio = AudioDiscussSource()
+            DiscussSource { episode, download ->
+                val fromTranscript = transcript.loadContext(episode, download)
+                if (fromTranscript.getOrNull() is DiscussContext.NotAvailable) {
+                    audio.loadContext(episode, download)
+                } else {
+                    fromTranscript
+                }
+            }
+        }
+        // Bind the cached-summary read as a thin lambda over AiSummaryRepository.
+        // Going through a fun interface (rather than handing DiscussRepository a
+        // direct AiSummaryRepository reference) keeps the dependency surface
+        // tight and lets unit tests stub the read without standing up the whole
+        // summary stack.
+        single<SummarySource> {
+            val summary = get<AiSummaryRepository>()
+            SummarySource(summary::cachedFor)
+        }
+        single {
+            DiscussRepository(
+                db = get(),
+                aiConfig = get(),
+                chat = get<ChatSummariser>(),
+                source = get<DiscussSource>(),
+                coordinator = get<AudioUploadCoordinator>(),
+                episodes = get<EpisodeSource>(),
+                downloads = get<app.kofipod.ai.DownloadSource>(),
+                summaries = get<SummarySource>(),
+                appScope = get(org.koin.core.qualifier.named("appScope")),
+            )
+        }
         single { PaletteCache(port = get()) }
         single { app.kofipod.data.repo.PlaybackRepository(get()) }
         single<CoroutineScope>(qualifier = org.koin.core.qualifier.named("appScope")) {
@@ -88,11 +219,12 @@ val commonDataModule =
                 categories = get(),
                 recommendations = get<RecommendationsSource>(),
                 appScope = get(org.koin.core.qualifier.named("appScope")),
+                errors = get(),
             )
         }
         viewModel { LibraryViewModel(get(), get(), get()) }
-        viewModel { StarterPackViewModel(get()) }
-        viewModel { (listId: String?) -> LibraryDetailViewModel(listId, get(), get(), get(), get()) }
+        viewModel { StarterPackViewModel(get(), get()) }
+        viewModel { (listId: String?) -> LibraryDetailViewModel(listId, get(), get(), get(), get(), get()) }
         viewModel {
             SettingsViewModel(
                 repo = get(),
@@ -102,12 +234,38 @@ val commonDataModule =
                 updateChecker = get(),
                 updateRepo = get(),
                 updateActions = get<UpdateActionPort>(),
+                aiConfig = get(),
+                errors = get(),
+            )
+        }
+        viewModel { AiSetupViewModel(config = get(), client = get(), summaries = get(), discuss = get()) }
+        viewModel { (episodeId: String) ->
+            app.kofipod.ui.screens.detail.ai.AiSummaryViewModel(
+                episodeId = episodeId,
+                repo = get(),
+            )
+        }
+        viewModel { (episodeId: String) ->
+            app.kofipod.ui.screens.detail.ai.DiscussViewModel(
+                episodeId = episodeId,
+                repo = get(),
+            )
+        }
+        viewModel { (episodeId: String) ->
+            app.kofipod.ui.screens.askgemini.AskGeminiViewModel(
+                episodeId = episodeId,
+                repo = get(),
+                episodes = get<EpisodeSource>(),
+                library = get(),
+                playback = get(),
+                downloads = get(),
+                player = get(),
             )
         }
         viewModel { DownloadsViewModel(get()) }
         viewModel { SchedulerInfoViewModel(get()) }
         viewModel { (podcastId: String) ->
-            PodcastDetailViewModel(podcastId, get(), get(), get(), get(), get(), get(), get(), get())
+            PodcastDetailViewModel(podcastId, get(), get(), get(), get(), get(), get(), get(), get(), get())
         }
         viewModel { (episodeId: String) ->
             EpisodeDetailViewModel(
@@ -119,6 +277,7 @@ val commonDataModule =
                 player = get(),
                 sharer = get(),
                 chapters = get(),
+                aiConfig = get(),
             )
         }
         viewModel { PlayerViewModel(get(), get(), get(), get(), get(), get()) }

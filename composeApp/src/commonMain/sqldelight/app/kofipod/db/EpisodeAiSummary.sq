@@ -1,0 +1,40 @@
+-- One AI-generated summary per episode. Source of truth for the Summary tab on
+-- the episode detail screen. The (sourceKind, sourceFingerprint) pair is the
+-- cache-invalidation key — see docs/superpowers/specs/2026-04-26-ai-features-design.md.
+--
+-- Cascade with Episode so a deleted episode collects its summary.
+CREATE TABLE EpisodeAiSummary (
+    episodeId         TEXT NOT NULL PRIMARY KEY,
+    generatedAtMs     INTEGER NOT NULL,
+    modelId           TEXT NOT NULL,
+    -- 'transcript' (Slice 2) | 'audio' (Slice 2.5).
+    sourceKind        TEXT NOT NULL,
+    -- Transcript path: the fetched URL. Audio path: the local file's byte count
+    -- as a decimal string. Equality with the current best-available source's
+    -- fingerprint is the staleness signal.
+    sourceFingerprint TEXT NOT NULL,
+    summary           TEXT NOT NULL,
+    -- Populated in Slice 3. Default '[]' so Slice 2 inserts don't have to think
+    -- about JSON shape.
+    peopleJson        TEXT NOT NULL DEFAULT '[]',
+    thingsJson        TEXT NOT NULL DEFAULT '[]',
+    linksJson         TEXT NOT NULL DEFAULT '[]',
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
+);
+
+selectByEpisode:
+SELECT * FROM EpisodeAiSummary WHERE episodeId = ?;
+
+selectByEpisodeFlow:
+SELECT * FROM EpisodeAiSummary WHERE episodeId = ?;
+
+upsert:
+INSERT OR REPLACE INTO EpisodeAiSummary
+    (episodeId, generatedAtMs, modelId, sourceKind, sourceFingerprint, summary, peopleJson, thingsJson, linksJson)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteByEpisode:
+DELETE FROM EpisodeAiSummary WHERE episodeId = ?;
+
+deleteAll:
+DELETE FROM EpisodeAiSummary;

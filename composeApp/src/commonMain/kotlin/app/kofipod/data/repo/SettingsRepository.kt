@@ -3,6 +3,7 @@ package app.kofipod.data.repo
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToOneOrNull
+import app.kofipod.ai.GeminiModel
 import app.kofipod.db.KofipodDatabase
 import app.kofipod.ui.theme.KofipodThemeMode
 import kotlinx.coroutines.Dispatchers
@@ -67,6 +68,10 @@ class SettingsRepository(
 
     fun setSkipBack(sec: Int) = put(KEY_SKIP_BACK, sec.toString())
 
+    fun aiModel(): Flow<GeminiModel> = metaFlow(KEY_AI_MODEL).map { it?.let(GeminiModel.Companion::fromApiId) ?: GeminiModel.Flash }
+
+    fun setAiModel(model: GeminiModel) = put(KEY_AI_MODEL, model.apiId)
+
     fun autoUpdateCheckEnabled(): Flow<Boolean> = metaFlow(KEY_AUTO_UPDATE_CHECK).map { it?.toBoolean() ?: true }
 
     fun autoUpdateCheckEnabledNow(): Boolean = getMetaNow(KEY_AUTO_UPDATE_CHECK)?.toBoolean() ?: true
@@ -89,6 +94,7 @@ class SettingsRepository(
         const val KEY_SKIP_BACK = "skip_back_sec"
         const val KEY_SCHEDULER_RUNS = "scheduler_runs"
         const val KEY_AUTO_UPDATE_CHECK = "auto_update_check_enabled"
+        const val KEY_AI_MODEL = "ai_model_id"
 
         // Update-checker keys. These ride existing Auto Backup so the user's "skipped
         // v1.2.0" preference and last-checked timestamp persist across reinstalls. The

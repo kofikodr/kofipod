@@ -2,6 +2,7 @@
 package app.kofipod
 
 import android.app.Application
+import app.kofipod.ai.AiSummaryRepository
 import app.kofipod.di.androidPlatformModule
 import app.kofipod.di.commonDataModule
 import app.kofipod.ui.theme.ThemeSystem
@@ -24,5 +25,10 @@ class KofipodApplication : Application() {
         // clear it on cold start if the file isn't where the pointer says it is, so a
         // restored device doesn't crash on "Install".
         get<UpdateInstaller>(UpdateInstaller::class.java).reconcileDownloadedApk()
+        // Recover any AI summary requests that were mid-flight when the previous
+        // process died. Worker is the primary backstop while the app is killed,
+        // but we also kick on every cold start so a worker that was throttled
+        // (or never reached the OS scheduler) doesn't leave the marker stuck.
+        get<AiSummaryRepository>(AiSummaryRepository::class.java).resumePendingAsync()
     }
 }

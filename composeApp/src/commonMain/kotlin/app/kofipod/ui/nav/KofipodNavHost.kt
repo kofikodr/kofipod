@@ -12,6 +12,7 @@ import androidx.navigation.NavOptions
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
+import app.kofipod.ui.screens.askgemini.AskGeminiScreen
 import app.kofipod.ui.screens.detail.EpisodeDetailScreen
 import app.kofipod.ui.screens.detail.PodcastDetailScreen
 import app.kofipod.ui.screens.downloads.DownloadsScreen
@@ -22,6 +23,7 @@ import app.kofipod.ui.screens.player.PlayerScreen
 import app.kofipod.ui.screens.scheduler.SchedulerInfoScreen
 import app.kofipod.ui.screens.search.SearchScreen
 import app.kofipod.ui.screens.settings.SettingsScreen
+import app.kofipod.ui.screens.settings.ai.AiSetupScreen
 import app.kofipod.ui.screens.stats.StatsScreen
 
 @Composable
@@ -67,10 +69,16 @@ fun KofipodNavHost(navController: NavHostController) {
             )
         }
         composable<Route.Settings> {
-            SettingsScreen(onOpenScheduler = { navController.navigate(Route.SchedulerInfo) })
+            SettingsScreen(
+                onOpenScheduler = { navController.navigate(Route.SchedulerInfo) },
+                onOpenAiSetup = { navController.navigate(Route.AiSetup) },
+            )
         }
         composable<Route.SchedulerInfo> {
             SchedulerInfoScreen(onBack = { navController.popBackStack() })
+        }
+        composable<Route.AiSetup> {
+            AiSetupScreen(onBack = { navController.popBackStack() })
         }
         composable<Route.PodcastDetail> { entry ->
             val detail = entry.toRoute<Route.PodcastDetail>()
@@ -92,6 +100,21 @@ fun KofipodNavHost(navController: NavHostController) {
             val detail = entry.toRoute<Route.EpisodeDetail>()
             EpisodeDetailScreen(
                 episodeId = detail.episodeId,
+                onBack = { navController.popBackStack() },
+                onOpenPlayer = {
+                    navController.navigate(
+                        Route.Player,
+                        NavOptions.Builder().setLaunchSingleTop(true).build(),
+                    )
+                },
+                onOpenAiSetup = { navController.navigate(Route.AiSetup) },
+                onOpenAskGemini = { episodeId -> navController.navigate(Route.AskGemini(episodeId)) },
+            )
+        }
+        composable<Route.AskGemini> { entry ->
+            val ask = entry.toRoute<Route.AskGemini>()
+            AskGeminiScreen(
+                episodeId = ask.episodeId,
                 onBack = { navController.popBackStack() },
                 onOpenPlayer = {
                     navController.navigate(

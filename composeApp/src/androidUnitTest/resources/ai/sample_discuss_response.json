@@ -1,0 +1,7 @@
+{
+  "answer": "Toby pushed back on the framing that compilers are just text-to-machine-code translators — he argued the surface area of error messages, IDE integration, and language-server protocols means the compiler is closer to a UI layer than a backend tool.",
+  "citations": [
+    { "label": "12:34", "timestampMs": 754000 },
+    { "label": "18:02", "timestampMs": 1082000 }
+  ]
+}

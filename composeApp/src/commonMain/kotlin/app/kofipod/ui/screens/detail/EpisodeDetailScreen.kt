@@ -23,7 +23,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.kofipod.ai.AiSummaryUiState
 import app.kofipod.db.Episode
 import app.kofipod.db.EpisodeChapter
 import app.kofipod.db.Podcast
@@ -42,6 +46,10 @@ import app.kofipod.ui.primitives.KPButtonStyle
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.primitives.KofipodArtwork
+import app.kofipod.ui.screens.detail.ai.AiSummaryPanel
+import app.kofipod.ui.screens.detail.ai.AiSummaryViewModel
+import app.kofipod.ui.screens.detail.ai.DiscussTabPanel
+import app.kofipod.ui.screens.detail.ai.MentionedTabPanel
 import app.kofipod.ui.theme.LocalKofipodColors
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
@@ -51,6 +59,8 @@ fun EpisodeDetailScreen(
     episodeId: String,
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
+    onOpenAiSetup: () -> Unit,
+    onOpenAskGemini: (String) -> Unit,
     viewModel: EpisodeDetailViewModel = koinViewModel(parameters = { parametersOf(episodeId) }),
 ) {
     val state by viewModel.state.collectAsState()
@@ -69,6 +79,8 @@ fun EpisodeDetailScreen(
             viewModel.seekToChapter(startMs)
             if (!state.isCurrentEpisode) onOpenPlayer()
         },
+        onOpenAiSetup = onOpenAiSetup,
+        onOpenAskGemini = onOpenAskGemini,
     )
 }
 
@@ -87,6 +99,11 @@ internal fun EpisodeDetailContent(
     onDeleteDownload: () -> Unit,
     onDownload: () -> Unit,
     onChapterTap: (Long) -> Unit,
+    onOpenAiSetup: () -> Unit,
+    // Default no-op so existing Paparazzi snapshots that drive
+    // EpisodeDetailContent directly don't need to plumb the new callback.
+    // Production callers always pass a real navigator.
+    onOpenAskGemini: (String) -> Unit = {},
 ) {
     val c = LocalKofipodColors.current
 
@@ -114,6 +131,7 @@ internal fun EpisodeDetailContent(
                     episode = state.episode,
                     podcast = state.podcast,
                     chapters = state.chapters,
+                    summaryEnabled = state.summaryEnabled,
                     isPlayingThis = state.isPlayingThis,
                     isCurrentEpisode = state.isCurrentEpisode,
                     downloaded = state.downloaded,
@@ -123,6 +141,8 @@ internal fun EpisodeDetailContent(
                     onDeleteDownload = onDeleteDownload,
                     onDownload = onDownload,
                     onChapterTap = onChapterTap,
+                    onOpenAiSetup = onOpenAiSetup,
+                    onOpenAskGemini = onOpenAskGemini,
                 )
             }
         }
@@ -164,6 +184,7 @@ private fun EpisodeBody(
     episode: Episode,
     podcast: Podcast?,
     chapters: List<EpisodeChapter>,
+    summaryEnabled: Boolean,
     isPlayingThis: Boolean,
     isCurrentEpisode: Boolean,
     downloaded: Boolean,
@@ -173,6 +194,8 @@ private fun EpisodeBody(
     onDeleteDownload: () -> Unit,
     onDownload: () -> Unit,
     onChapterTap: (Long) -> Unit,
+    onOpenAiSetup: () -> Unit,
+    onOpenAskGemini: (String) -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Spacer(Modifier.height(8.dp))
@@ -223,11 +246,66 @@ private fun EpisodeBody(
         )
     }
 
-    if (chapters.isNotEmpty()) {
+    val visibleTabs =
+        remember(chapters.size, summaryEnabled) {
+            buildVisibleTabs(chapterCount = chapters.size, summaryEnabled = summaryEnabled)
+        }
+    if (visibleTabs.isNotEmpty()) {
         Spacer(Modifier.height(24.dp))
-        ChaptersSection(chapters = chapters, onChapterTap = onChapterTap)
+        var selected by rememberSaveable {
+            mutableStateOf(
+                visibleTabs.firstOrNull { it == EpisodeDetailTab.Summary } ?: visibleTabs.first(),
+            )
+        }
+        // The tab list shrinks dynamically (e.g. user disconnects key while screen is up).
+        // Snap selection back to a still-present tab so we don't render an empty content area.
+        if (selected !in visibleTabs) {
+            selected = visibleTabs.first()
+        }
+        // Pulled here (not inside the Mentioned branch) so the tab badge
+        // updates the moment a summary lands, even while the user is still
+        // looking at the Summary tab. Koin returns the same VM instance for
+        // the same episodeId, so the AiSummaryPanel below shares state with
+        // this collector — no double subscription.
+        val mentionedCount =
+            if (summaryEnabled) {
+                val aiVm: AiSummaryViewModel = koinViewModel(parameters = { parametersOf(episode.id) })
+                val aiState by aiVm.state.collectAsState()
+                aiState.mentionedCount()
+            } else {
+                0
+            }
+        EpisodeDetailTabRow(
+            tabs = visibleTabs,
+            selected = selected,
+            onSelect = { selected = it },
+            chapterCount = chapters.size,
+            mentionedCount = mentionedCount,
+        )
+        Spacer(Modifier.height(16.dp))
+        when (selected) {
+            EpisodeDetailTab.Chapters -> ChaptersSection(chapters = chapters, onChapterTap = onChapterTap)
+            EpisodeDetailTab.Summary ->
+                AiSummaryPanel(
+                    episodeId = episode.id,
+                    audioMinutes = (episode.durationSec / 60).toInt(),
+                    onOpenAiSetup = onOpenAiSetup,
+                )
+            EpisodeDetailTab.Mentioned -> MentionedTabPanel(episodeId = episode.id)
+            EpisodeDetailTab.Discuss ->
+                DiscussTabPanel(
+                    episodeId = episode.id,
+                    onOpenAskGemini = { onOpenAskGemini(episode.id) },
+                )
+        }
     }
 }
+
+private fun AiSummaryUiState.mentionedCount(): Int =
+    when (this) {
+        is AiSummaryUiState.Ready -> summary.people.size + summary.things.size + summary.links.size
+        else -> 0
+    }
 
 @Composable
 private fun ChaptersSection(
@@ -410,13 +488,13 @@ private fun ActionRow(
         KPButton(
             label = playButtonLabel(isPlayingThis = isPlayingThis, isCurrentEpisode = isCurrentEpisode),
             onClick = onPlay,
-            style = KPButtonStyle.SecondaryPurple,
+            style = KPButtonStyle.PrimaryPink,
             modifier = Modifier.weight(1f).testTag("episodePlayButton"),
         )
         CircleAction(
             icon = KPIconName.Check,
-            tint = if (played) c.success else c.purple,
-            background = c.purpleSoft,
+            tint = if (played) c.success else c.pink,
+            background = c.pinkSoft,
             onClick = onMarkPlayed,
             testTag = "episodeMarkPlayedButton",
         )
@@ -425,15 +503,15 @@ private fun ActionRow(
                 CircleAction(
                     icon = KPIconName.Trash,
                     tint = c.danger,
-                    background = c.purpleSoft,
+                    background = c.pinkSoft,
                     onClick = onDeleteDownload,
                     testTag = "episodeDeleteDownloadButton",
                 )
             TertiaryAction.Download ->
                 CircleAction(
                     icon = KPIconName.Download,
-                    tint = c.purple,
-                    background = c.purpleSoft,
+                    tint = c.pink,
+                    background = c.pinkSoft,
                     onClick = onDownload,
                     testTag = "episodeDownloadButton",
                 )

@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.di
 
+import app.kofipod.ai.AndroidKeyVault
+import app.kofipod.ai.KeyVault
+import app.kofipod.background.AiSummaryScheduler
+import app.kofipod.background.AndroidAiSummaryScheduler
 import app.kofipod.background.Notifier
 import app.kofipod.background.Scheduler
 import app.kofipod.data.db.DatabaseFactory
@@ -39,6 +43,7 @@ val androidPlatformModule =
             PlaybackCache(androidContext(), capBytes)
         }
         single { Scheduler(androidContext()) }
+        single<AiSummaryScheduler> { AndroidAiSummaryScheduler(androidContext()) }
         single { Notifier(androidContext()) }
         single { Sharer(androidContext()) }
         single { ThemeSystem(androidContext()) }
@@ -47,4 +52,5 @@ val androidPlatformModule =
         single { UpdateChecker(api = get(), repo = get()) }
         single { UpdateInstaller(context = androidContext(), httpClient = get(), repo = get()) }
         single<UpdateActionPort> { AndroidUpdateActionPort(installer = get()) }
+        single<KeyVault> { AndroidKeyVault(androidContext()) }
     }

@@ -3,6 +3,7 @@ package app.kofipod.ui.screens.detail
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.kofipod.ai.AiConfigRepository
 import app.kofipod.data.repo.ChaptersRepository
 import app.kofipod.data.repo.DownloadRepository
 import app.kofipod.data.repo.EpisodeSource
@@ -41,6 +42,11 @@ data class EpisodeDetailUiState(
     val played: Boolean = false,
     val loading: Boolean = true,
     val error: String? = null,
+    /**
+     * True when the user has connected a Gemini API key. Drives whether the AI
+     * tabs (Summary / Mentioned / Discuss) appear at all on the detail screen.
+     */
+    val summaryEnabled: Boolean = false,
 )
 
 class EpisodeDetailViewModel(
@@ -52,11 +58,13 @@ class EpisodeDetailViewModel(
     private val player: KofipodPlayer,
     private val sharer: Sharer,
     private val chapters: ChaptersRepository,
+    aiConfig: AiConfigRepository,
 ) : ViewModel() {
     private val error = MutableStateFlow<String?>(null)
 
     private val episodeFlow = episodes.episodeFlow(episodeId)
     private val chaptersFlow = chapters.chaptersFlow(episodeId)
+    private val summaryEnabledFlow = aiConfig.isKeyConfigured()
 
     // Derive the podcast as a Flow off the episode so the combine lambda doesn't need
     // a synchronous DB read on every emission. player.state ticks ~2/sec during
@@ -86,6 +94,7 @@ class EpisodeDetailViewModel(
             player.state,
             chaptersFlow,
             error,
+            summaryEnabledFlow,
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             val ep = values[0] as Episode?
@@ -95,6 +104,7 @@ class EpisodeDetailViewModel(
             val playerState = values[4] as app.kofipod.playback.PlayerState
             val chapterRows = values[5] as List<EpisodeChapter>
             val err = values[6] as String?
+            val summaryEnabled = values[7] as Boolean
             EpisodeDetailUiState(
                 episode = ep,
                 podcast = pod,
@@ -105,6 +115,7 @@ class EpisodeDetailViewModel(
                 played = ps.isPlayed(),
                 loading = ep == null && err == null,
                 error = err,
+                summaryEnabled = summaryEnabled,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EpisodeDetailUiState())
 

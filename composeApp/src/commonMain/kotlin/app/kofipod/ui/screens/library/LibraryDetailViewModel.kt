@@ -3,12 +3,14 @@ package app.kofipod.ui.screens.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.kofipod.data.net.NetworkErrorHandler
 import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.data.repo.LibraryRepository
 import app.kofipod.data.repo.RecentlyViewedRepository
 import app.kofipod.data.repo.SearchSource
 import app.kofipod.db.Podcast
 import app.kofipod.domain.PodcastSummary
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,6 +41,7 @@ class LibraryDetailViewModel(
     private val search: SearchSource,
     private val recentlyViewed: RecentlyViewedRepository,
     episodes: EpisodeSource,
+    private val errors: NetworkErrorHandler,
 ) : ViewModel() {
     private val searchQuery = MutableStateFlow("")
     private val searchResults = MutableStateFlow<List<PodcastSummary>>(emptyList())
@@ -120,7 +123,11 @@ class LibraryDetailViewModel(
                         searching.value = false
                     }
                     .onFailure {
-                        searchError.value = it.message ?: "Search failed"
+                        // Re-throw cancellation so a debounce-driven Job swap
+                        // doesn't surface as a search error in the UI; pass
+                        // every other failure through the centralised handler.
+                        if (it is CancellationException) throw it
+                        searchError.value = errors.handle(it, hasCachedData = false, fallback = "Search failed")
                         searching.value = false
                     }
             }
@@ -134,6 +141,6 @@ class LibraryDetailViewModel(
     )
 
     companion object {
-        const val DEBOUNCE_MS: Long = 350
+        const val DEBOUNCE_MS: Long = 600
     }
 }

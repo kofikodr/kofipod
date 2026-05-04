@@ -1,0 +1,14 @@
+-- Adds the EpisodeAiSummary table for the BYOK Gemini summary feature.
+-- See EpisodeAiSummary.sq for column-level documentation.
+CREATE TABLE EpisodeAiSummary (
+    episodeId         TEXT NOT NULL PRIMARY KEY,
+    generatedAtMs     INTEGER NOT NULL,
+    modelId           TEXT NOT NULL,
+    sourceKind        TEXT NOT NULL,
+    sourceFingerprint TEXT NOT NULL,
+    summary           TEXT NOT NULL,
+    peopleJson        TEXT NOT NULL DEFAULT '[]',
+    thingsJson        TEXT NOT NULL DEFAULT '[]',
+    linksJson         TEXT NOT NULL DEFAULT '[]',
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
+);

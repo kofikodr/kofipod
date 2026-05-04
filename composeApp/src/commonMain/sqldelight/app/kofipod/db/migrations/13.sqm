@@ -1,0 +1,7 @@
+-- Adds the PendingAiSummary table for the AI summary background-resume feature.
+-- See PendingAiSummary.sq for column-level documentation.
+CREATE TABLE PendingAiSummary (
+    episodeId    TEXT NOT NULL PRIMARY KEY,
+    requestedAtMs INTEGER NOT NULL,
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
+);
