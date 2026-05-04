@@ -11,12 +11,16 @@ package app.kofipod.diagnostics
  */
 interface CrashReporter {
     fun enable()
+
     fun disable()
+
     fun isEnabled(): Boolean
 }
 
 object NoOpCrashReporter : CrashReporter {
     override fun enable() = Unit
+
     override fun disable() = Unit
+
     override fun isEnabled(): Boolean = false
 }

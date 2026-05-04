@@ -11,12 +11,16 @@ package app.kofipod.diagnostics
  */
 interface Telemetry {
     fun enable()
+
     fun disable()
+
     fun track(event: TelemetryEvent)
 }
 
 object NoOpTelemetry : Telemetry {
     override fun enable() = Unit
+
     override fun disable() = Unit
+
     override fun track(event: TelemetryEvent) = Unit
 }
