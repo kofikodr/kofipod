@@ -3,6 +3,7 @@ package app.kofipod
 
 import android.app.Application
 import app.kofipod.ai.AiSummaryRepository
+import app.kofipod.diagnostics.DiagnosticsBootstrapper
 import app.kofipod.di.androidPlatformModule
 import app.kofipod.di.commonDataModule
 import app.kofipod.ui.theme.ThemeSystem
@@ -30,5 +31,9 @@ class KofipodApplication : Application() {
         // but we also kick on every cold start so a worker that was throttled
         // (or never reached the OS scheduler) doesn't leave the marker stuck.
         get<AiSummaryRepository>(AiSummaryRepository::class.java).resumePendingAsync()
+        // Wire diagnostics flag flows to SDK enable/disable. Until the user
+        // acknowledges the first-launch disclosure, both subsystems stay
+        // disabled regardless of toggle state.
+        get<DiagnosticsBootstrapper>(DiagnosticsBootstrapper::class.java).start()
     }
 }

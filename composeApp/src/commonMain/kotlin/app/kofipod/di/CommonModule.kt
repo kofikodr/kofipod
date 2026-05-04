@@ -221,6 +221,14 @@ val commonDataModule =
             CoroutineScope(SupervisorJob() + Dispatchers.Default)
         }
         single {
+            app.kofipod.diagnostics.DiagnosticsBootstrapper(
+                config = get(),
+                crashes = get(),
+                telemetry = get(),
+                appScope = get(org.koin.core.qualifier.named("appScope")),
+            )
+        }
+        single {
             DownloadRepository(
                 db = get(),
                 engine = get(),
