@@ -5,7 +5,6 @@ pluginManagement {
         google()
         mavenCentral()
         gradlePluginPortal()
-        maven("https://jitpack.io")
     }
 }
 plugins {

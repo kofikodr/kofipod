@@ -42,6 +42,6 @@ style:
       - value: 'com.google.android.**'
         reason: 'Android-only. Scope to androidMain.'
       - value: 'io.sentry.**'
-        reason: 'Crash reporting plumbing must stay platform-scoped. Scope to androidMain (KMP-side wraps via expect/actual).'
+        reason: 'Wrap behind app.kofipod.diagnostics expect/actual; do not import io.sentry.* from commonMain.'
       - value: 'com.aptabase.**'
         reason: 'Android-only telemetry SDK. Scope to androidMain.'

@@ -71,7 +71,6 @@ kotlin {
                 implementation(libs.koin.compose)
                 implementation(libs.koin.compose.viewmodel)
                 implementation(libs.podcastindex.sdk)
-                implementation(libs.sentry.kmp)
             }
         }
         val commonTest by getting {
@@ -96,6 +95,7 @@ kotlin {
                 implementation(libs.androidx.security.crypto)
                 implementation(libs.koin.android)
                 implementation(libs.aptabase)
+                implementation(libs.sentry.kmp)
             }
         }
         val iosMain by creating {
