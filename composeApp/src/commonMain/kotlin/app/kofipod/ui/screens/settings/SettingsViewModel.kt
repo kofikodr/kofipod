@@ -10,6 +10,7 @@ import app.kofipod.data.net.NetworkErrorHandler
 import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.data.repo.UpdateRepository
 import app.kofipod.data.repo.UpdateUiState
+import app.kofipod.diagnostics.DiagnosticsConfigRepository
 import app.kofipod.opml.OpmlAction
 import app.kofipod.opml.OpmlController
 import app.kofipod.playback.PlaybackCache
@@ -55,6 +56,9 @@ data class SettingsUiState(
     val aiConnected: Boolean = false,
     val aiModel: GeminiModel = GeminiModel.Flash,
     val opmlAction: OpmlAction = OpmlAction.Idle,
+    val crashesEnabled: Boolean = true,
+    val usageEnabled: Boolean = true,
+    val disclosureAcknowledged: Boolean = false,
 )
 
 class SettingsViewModel(
@@ -69,6 +73,7 @@ class SettingsViewModel(
     private val aiConfig: AiConfigRepository,
     private val errors: NetworkErrorHandler,
     private val opml: OpmlController,
+    private val diagnostics: DiagnosticsConfigRepository,
 ) : ViewModel() {
     // Refreshes the displayed cache usage once per second while Settings is visible.
     private val cacheUsedFlow =
@@ -115,13 +120,23 @@ class SettingsViewModel(
             ) { updateState, action, aiConnected, aiModel, opmlAction ->
                 AiAndUpdateState(updateState, action, aiConnected, aiModel, opmlAction)
             },
-        ) { base, combined ->
+            combine(
+                diagnostics.crashesEnabled,
+                diagnostics.usageEnabled,
+                diagnostics.disclosureAcknowledged,
+            ) { crashes, usage, ack ->
+                DiagnosticsState(crashes, usage, ack)
+            },
+        ) { base, combined, diag ->
             base.copy(
                 update = combined.updateState,
                 updateAction = combined.action,
                 aiConnected = combined.aiConnected,
                 aiModel = combined.aiModel,
                 opmlAction = combined.opmlAction,
+                crashesEnabled = diag.crashesEnabled,
+                usageEnabled = diag.usageEnabled,
+                disclosureAcknowledged = diag.disclosureAcknowledged,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -191,6 +206,15 @@ class SettingsViewModel(
     fun importOpml() = opml.importOpml()
 
     fun exportOpml() = opml.exportOpml()
+
+    fun setCrashesEnabled(enabled: Boolean) =
+        viewModelScope.launch { diagnostics.setCrashesEnabled(enabled) }
+
+    fun setUsageEnabled(enabled: Boolean) =
+        viewModelScope.launch { diagnostics.setUsageEnabled(enabled) }
+
+    fun acknowledgeDisclosure() =
+        viewModelScope.launch { diagnostics.acknowledgeDisclosure() }
 }
 
 private data class AiAndUpdateState(
@@ -199,4 +223,10 @@ private data class AiAndUpdateState(
     val aiConnected: Boolean,
     val aiModel: GeminiModel,
     val opmlAction: OpmlAction,
+)
+
+private data class DiagnosticsState(
+    val crashesEnabled: Boolean,
+    val usageEnabled: Boolean,
+    val disclosureAcknowledged: Boolean,
 )

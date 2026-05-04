@@ -262,6 +262,7 @@ val commonDataModule =
                 aiConfig = get(),
                 errors = get(),
                 opml = get(),
+                diagnostics = get(),
             )
         }
         viewModel { AiSetupViewModel(config = get(), client = get(), summaries = get(), discuss = get()) }
