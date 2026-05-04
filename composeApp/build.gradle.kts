@@ -14,6 +14,7 @@ plugins {
     alias(libs.plugins.paparazzi)
     alias(libs.plugins.ktlint)
     alias(libs.plugins.detekt)
+    alias(libs.plugins.sentry.android)
 }
 
 ktlint {
@@ -221,6 +222,35 @@ buildkonfig {
         buildConfigField(STRING, "SENTRY_DSN", readSecret("SENTRY_DSN"))
         buildConfigField(STRING, "APTABASE_APP_KEY", readSecret("APTABASE_APP_KEY"))
     }
+}
+
+// Sentry Gradle plugin uploads R8 mapping files to GlitchTip on release
+// builds, enabling deobfuscated stack traces. Disabled when DSN or auth
+// token are unset (forks without secrets, F-Droid, debug-only iteration).
+sentry {
+    val dsn = readSecret("SENTRY_DSN")
+    val authToken = System.getenv("SENTRY_AUTH_TOKEN").orEmpty()
+    val canUpload = dsn.isNotBlank() && authToken.isNotBlank()
+
+    autoUploadProguardMapping.set(canUpload)
+    includeProguardMapping.set(canUpload)
+    autoUploadNativeSymbols.set(false)
+    uploadNativeSymbols.set(false)
+    telemetry.set(false) // self-hosted GlitchTip — don't phone home to Sentry SaaS
+    autoInstallation { enabled.set(false) } // SDK deps managed manually via libs.versions.toml
+    tracingInstrumentation { enabled.set(false) }
+
+    if (canUpload) {
+        url.set(deriveUploadUrl(dsn))
+        org.set(System.getenv("SENTRY_ORG") ?: "kofipod")
+        projectName.set(System.getenv("SENTRY_PROJECT") ?: "kofipod-android")
+    }
+}
+
+fun deriveUploadUrl(dsn: String): String {
+    val withoutScheme = dsn.substringAfter("://")
+    val host = withoutScheme.substringAfter("@").substringBefore("/")
+    return "https://$host"
 }
 
 tasks.register("bumpVersion") {
