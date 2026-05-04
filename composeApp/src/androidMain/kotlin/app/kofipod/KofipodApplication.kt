@@ -4,6 +4,8 @@ package app.kofipod
 import android.app.Application
 import app.kofipod.ai.AiSummaryRepository
 import app.kofipod.diagnostics.DiagnosticsBootstrapper
+import app.kofipod.diagnostics.Telemetry
+import app.kofipod.diagnostics.TelemetryEvent
 import app.kofipod.di.androidPlatformModule
 import app.kofipod.di.commonDataModule
 import app.kofipod.ui.theme.ThemeSystem
@@ -35,5 +37,7 @@ class KofipodApplication : Application() {
         // acknowledges the first-launch disclosure, both subsystems stay
         // disabled regardless of toggle state.
         get<DiagnosticsBootstrapper>(DiagnosticsBootstrapper::class.java).start()
+        // Telemetry no-op when disabled or pre-acknowledgement, so this is safe.
+        get<Telemetry>(Telemetry::class.java).track(TelemetryEvent.AppOpened)
     }
 }

@@ -235,6 +235,7 @@ val commonDataModule =
                 settings = get(),
                 network = get(),
                 scope = get(org.koin.core.qualifier.named("appScope")),
+                telemetry = get(),
             )
         }
 
@@ -245,6 +246,7 @@ val commonDataModule =
                 recommendations = get<RecommendationsSource>(),
                 appScope = get(org.koin.core.qualifier.named("appScope")),
                 errors = get(),
+                telemetry = get(),
             )
         }
         viewModel { LibraryViewModel(get(), get(), get(), get()) }

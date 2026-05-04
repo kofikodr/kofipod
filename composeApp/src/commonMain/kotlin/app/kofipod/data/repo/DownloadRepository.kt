@@ -84,6 +84,7 @@ class DownloadRepository(
     private val settings: SettingsRepository,
     private val network: NetworkMonitor,
     scope: CoroutineScope,
+    private val telemetry: app.kofipod.diagnostics.Telemetry,
 ) {
     init {
         engine.events.onEach { p ->
@@ -96,7 +97,7 @@ class DownloadRepository(
                 }
                 DownloadProgress.State.Paused ->
                     db.downloadQueries.updateState("Paused", null, p.episodeId)
-                DownloadProgress.State.Completed ->
+                DownloadProgress.State.Completed -> {
                     db.downloadQueries.markCompleted(
                         localPath = p.localPath,
                         downloadedBytes = p.downloadedBytes,
@@ -104,6 +105,8 @@ class DownloadRepository(
                         completedAt = Clock.System.now().toEpochMilliseconds(),
                         episodeId = p.episodeId,
                     )
+                    telemetry.track(app.kofipod.diagnostics.TelemetryEvent.EpisodeDownloaded)
+                }
                 DownloadProgress.State.Failed ->
                     db.downloadQueries.updateState("Failed", p.errorMessage, p.episodeId)
             }
