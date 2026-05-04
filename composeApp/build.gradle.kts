@@ -145,6 +145,23 @@ android {
         versionName = appVersionName
         manifestPlaceholders["appLabel"] = "Kofipod"
     }
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("play") {
+            dimension = "distribution"
+            // play flavor is the revenue product; no applicationIdSuffix so it
+            // matches what's uploaded to Play Console.
+        }
+        create("foss") {
+            dimension = "distribution"
+            // foss flavor unconditionally unlocks Pro and excludes Play Billing.
+            // Use a distinct package so a foss build can be installed alongside
+            // a play build for verification.
+            applicationIdSuffix = ".foss"
+            versionNameSuffix = "-foss"
+            manifestPlaceholders["appLabel"] = "Kofipod (FOSS)"
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -187,7 +204,7 @@ android {
             variant.outputs.all {
                 val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
                 output.outputFileName =
-                    "kofipod-${variant.versionName}-${variant.versionCode}-${variant.buildType.name}.apk"
+                    "kofipod-${variant.flavorName}-${variant.versionName}-${variant.versionCode}-${variant.buildType.name}.apk"
             }
         }
     }
