@@ -8,6 +8,9 @@ import app.kofipod.data.repo.LibraryRepository
 import app.kofipod.data.repo.StatsRepository
 import app.kofipod.db.Podcast
 import app.kofipod.db.PodcastList
+import app.kofipod.opml.OpmlAction
+import app.kofipod.opml.OpmlController
+import app.kofipod.util.slugifyName
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -27,7 +30,10 @@ class LibraryViewModel(
     private val repo: LibraryRepository,
     episodes: EpisodeSource,
     stats: StatsRepository,
+    private val opml: OpmlController,
 ) : ViewModel() {
+    val opmlAction: StateFlow<OpmlAction> = opml.action
+
     val state: StateFlow<LibraryUiState> =
         combine(
             repo.listsFlow(),
@@ -55,11 +61,8 @@ class LibraryViewModel(
 
     fun createList(name: String) {
         if (name.isBlank()) return
-        val id =
-            name.lowercase()
-                .replace(Regex("[^a-z0-9]+"), "-")
-                .trim('-')
-                .ifBlank { "list-${Clock.System.now().toEpochMilliseconds()}" }
+        val existing = state.value.groups.mapNotNull { it.list?.id }.toSet()
+        val id = slugifyName(name, existing)
         val position = state.value.groups.count { it.list != null }
         repo.createList(id, name.trim(), position, Clock.System.now().toEpochMilliseconds())
     }
@@ -67,4 +70,6 @@ class LibraryViewModel(
     fun deletePodcast(podcastId: String) = repo.deletePodcast(podcastId)
 
     fun deleteList(listId: String) = repo.deleteList(listId)
+
+    fun importOpml() = opml.importOpml()
 }
