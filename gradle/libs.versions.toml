@@ -27,7 +27,7 @@ ktlintGradle = "12.1.2"
 detekt = "1.23.8"
 sentryKmp = "0.15.0"
 sentryAndroidGradle = "6.6.0"
-aptabase = "0.0.6"
+aptabase = "0.0.8"
 
 [libraries]
 compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
@@ -66,7 +66,7 @@ koin-compose = { module = "io.insert-koin:koin-compose", version.ref = "koinComp
 koin-compose-viewmodel = { module = "io.insert-koin:koin-compose-viewmodel", version.ref = "koinCompose" }
 podcastindex-sdk = { module = "io.github.mr3y-the-programmer:podcastindex-sdk-ktor3", version.ref = "podcastindex" }
 sentry-kmp = { module = "io.sentry:sentry-kotlin-multiplatform", version.ref = "sentryKmp" }
-aptabase = { module = "com.aptabase:aptabase", version.ref = "aptabase" }
+aptabase = { module = "com.github.aptabase:aptabase-kotlin", version.ref = "aptabase" }
 junit = { module = "junit:junit", version.ref = "junit" }
 
 [plugins]
