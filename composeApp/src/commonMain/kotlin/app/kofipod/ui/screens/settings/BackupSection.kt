@@ -3,12 +3,14 @@ package app.kofipod.ui.screens.settings
 
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.kofipod.backup.BackupAction
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
@@ -21,14 +23,15 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
 /**
- * Four-row Backup section + restore confirmation dialog. Mirrors the OPML import/export
- * pair in [SettingsScreen]: each row is a `SettingRow`, the action's progress is shown
- * inline as the subtitle, errors clear via tap-anywhere-else (handled in the controller's
+ * Backup section + restore confirmation dialog. Mirrors the OPML import/export pair in
+ * [SettingsScreen]: each row is a `SettingRow`, the action's progress is shown inline
+ * as the subtitle, errors clear via tap-anywhere-else (handled in the controller's
  * `dismissError`).
  *
- * The static "About automatic system backup" explainer is rendered only when the user
- * has NOT picked a SAF folder. Once a folder is configured, the SAF backup is the
- * authoritative path and the Auto Backup explainer would only confuse the mental model.
+ * Until the user picks a SAF folder, only the "Backup folder" row + a one-line note
+ * about Auto Backup are shown — the other rows would have nothing to act on. Once a
+ * folder is configured, the note disappears and Last backup / Back up now / Restore
+ * become visible.
  */
 @Composable
 internal fun BackupSection(
@@ -59,12 +62,25 @@ internal fun BackupSection(
             KPIcon(name = KPIconName.ChevronRight, color = c.textMute, size = 18.dp)
         },
     )
+
+    if (!hasFolder) {
+        // Until a folder is picked, only Auto Backup is in play. Surface that as a
+        // single muted line rather than a full row so the section stays compact.
+        Text(
+            "Limited (25MB) app backup via Google App Auto Backup in place",
+            color = c.textMute,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(start = 56.dp, top = 4.dp, end = 16.dp),
+        )
+        return
+    }
+
     Spacer(Modifier.height(8.dp))
 
     SettingRow(
         icon = KPIconName.Clock,
         title = "Last backup",
-        subtitle = lastBackupSubtitle(state.lastBackupAtMs, hasFolder = hasFolder),
+        subtitle = lastBackupSubtitle(state.lastBackupAtMs),
     )
     Spacer(Modifier.height(8.dp))
 
@@ -75,11 +91,10 @@ internal fun BackupSection(
             when {
                 backupAction is BackupAction.BackingUp -> "Backing up…"
                 errorMessage != null -> errorMessage
-                !hasFolder -> "Pick a folder above to enable"
                 else -> "Write a backup file to your folder"
             },
-        // Disable while another op is in flight (BackingUp / Restoring) and when no folder.
-        onClick = if (idle && hasFolder) onBackupNow else null,
+        // Disable while another op is in flight (BackingUp / Restoring).
+        onClick = if (idle) onBackupNow else null,
         trailing = {
             KPIcon(name = KPIconName.ChevronRight, color = c.textMute, size = 18.dp)
         },
@@ -95,25 +110,11 @@ internal fun BackupSection(
                 errorMessage != null && backupAction !is BackupAction.BackingUp -> errorMessage
                 else -> "Replace all data with a backup file you pick"
             },
-        // Restore is independent of the picked folder URI — the SAF document picker
-        // can read from anywhere — so we don't gate on hasFolder.
         onClick = if (idle) onRestore else null,
         trailing = {
             KPIcon(name = KPIconName.ChevronRight, color = c.textMute, size = 18.dp)
         },
     )
-
-    if (!hasFolder) {
-        Spacer(Modifier.height(12.dp))
-        SettingRow(
-            icon = KPIconName.Folder,
-            title = "About automatic system backup",
-            subtitle =
-                "Until you pick a folder above, your library is also backed up automatically " +
-                    "by Android (if enabled in Settings → System → Backup). Auto Backup is " +
-                    "limited to 25 MB and excludes audio downloads.",
-        )
-    }
 
     val pending = state.pendingRestoreConfirm
     if (pending != null) {
@@ -141,11 +142,8 @@ internal fun BackupSection(
     }
 }
 
-private fun lastBackupSubtitle(
-    lastBackupAtMs: Long?,
-    hasFolder: Boolean,
-): String {
-    if (lastBackupAtMs == null) return if (hasFolder) "Never" else "Never — no folder picked yet"
+private fun lastBackupSubtitle(lastBackupAtMs: Long?): String {
+    if (lastBackupAtMs == null) return "Never"
     val ageMs = Clock.System.now().toEpochMilliseconds() - lastBackupAtMs
     val minutes = ageMs / 60_000L
     return when {
