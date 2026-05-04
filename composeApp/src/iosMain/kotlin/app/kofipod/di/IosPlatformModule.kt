@@ -9,7 +9,9 @@ import app.kofipod.network.IosNetworkMonitor
 import app.kofipod.network.NetworkMonitor
 import app.kofipod.opml.IosOpmlFilePort
 import app.kofipod.opml.OpmlFilePort
+import app.kofipod.pro.BillingClientPort
 import app.kofipod.pro.EntitlementCache
+import app.kofipod.pro.IosBillingClientPort
 import app.kofipod.pro.IosEntitlementCache
 import app.kofipod.ui.palette.IosPalettePort
 import app.kofipod.ui.palette.PalettePort
@@ -25,6 +27,7 @@ val iosPlatformModule =
         single<NetworkMonitor> { IosNetworkMonitor() }
         single<PalettePort> { IosPalettePort() }
         single<KeyVault> { IosKeyVaultStub() }
+        single<BillingClientPort> { IosBillingClientPort() }
         single<EntitlementCache> { IosEntitlementCache() }
         single<AiSummaryScheduler> { IosAiSummaryScheduler() }
         single<OpmlFilePort> { IosOpmlFilePort() }
