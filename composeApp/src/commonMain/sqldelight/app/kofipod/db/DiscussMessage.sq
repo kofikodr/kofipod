@@ -1,0 +1,45 @@
+-- Multi-turn Q&A messages within a DiscussSession. Role is the wire string
+-- Gemini's API expects ('user' | 'model'); see DiscussRole.kt for the typed
+-- mapping. Cite-ms timestamps live inside citationsJson as
+-- [{ "label": "12:34", "timestampMs": 754000 }] — same lenient JSON-on-text
+-- pattern as EpisodeAiSummary's entity columns.
+--
+-- The (sessionId, createdAtMs) index is sized for the dominant query: load
+-- one chat in chronological order. id is the synthetic primary key so two
+-- messages emitted within the same millisecond (e.g. an immediate auto-reply
+-- in tests) stay distinguishable.
+--
+-- Cascade with DiscussSession so clearing a session collects every message.
+CREATE TABLE DiscussMessage (
+    id            TEXT NOT NULL PRIMARY KEY,
+    sessionId     TEXT NOT NULL,
+    role          TEXT NOT NULL,
+    content       TEXT NOT NULL,
+    citationsJson TEXT NOT NULL DEFAULT '[]',
+    createdAtMs   INTEGER NOT NULL,
+    FOREIGN KEY (sessionId) REFERENCES DiscussSession(id) ON DELETE CASCADE
+);
+
+CREATE INDEX DiscussMessage_bySession ON DiscussMessage(sessionId, createdAtMs);
+
+selectBySessionFlow:
+SELECT * FROM DiscussMessage WHERE sessionId = ? ORDER BY createdAtMs ASC, id ASC;
+
+countBySession:
+SELECT COUNT(*) AS c FROM DiscussMessage WHERE sessionId = ?;
+
+lastUserBySession:
+SELECT * FROM DiscussMessage
+WHERE sessionId = ? AND role = 'user'
+ORDER BY createdAtMs DESC, id DESC
+LIMIT 1;
+
+insert:
+INSERT INTO DiscussMessage (id, sessionId, role, content, citationsJson, createdAtMs)
+VALUES (?, ?, ?, ?, ?, ?);
+
+deleteBySession:
+DELETE FROM DiscussMessage WHERE sessionId = ?;
+
+deleteAll:
+DELETE FROM DiscussMessage;

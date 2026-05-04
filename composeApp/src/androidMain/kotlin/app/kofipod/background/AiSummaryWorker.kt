@@ -5,14 +5,24 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import app.kofipod.ai.AiSummaryRepository
+import app.kofipod.ai.DiscussRepository
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
 /**
- * Drains [app.kofipod.db.PendingAiSummary] markers — the AI pipeline's
+ * Drains [app.kofipod.db.PendingAiOperation] markers — the AI pipelines'
  * resume-after-process-death backstop. Enqueued by [AiSummaryScheduler]
  * every time the user taps Generate, so an OS process kill during a 58 MB
  * audio upload can be recovered without the user re-tapping on next launch.
+ *
+ * Two consumers, one worker (per the generalised marker table):
+ *  - [AiSummaryRepository.resumePending] re-fires the full Summary pipeline
+ *    for `kind = 'summary'` rows. Single-flight per episode, joins any
+ *    appScope job already running.
+ *  - [DiscussRepository.cleanStaleDiscussUploads] just deletes `kind =
+ *    'discuss_upload'` rows. Recovery for a chat send is intentionally
+ *    user-driven (re-tap send) — re-firing minutes later, with the user no
+ *    longer watching the screen, would be jarring.
  *
  * Always returns [Result.success]. The pipeline's surfaced errors are
  * user-facing (Error card with explicit Retry); auto-retrying through the
@@ -23,22 +33,21 @@ class AiSummaryWorker(
     context: Context,
     params: WorkerParameters,
 ) : CoroutineWorker(context, params), KoinComponent {
-    private val repo: AiSummaryRepository by inject()
+    private val summaryRepo: AiSummaryRepository by inject()
+    private val discussRepo: DiscussRepository by inject()
 
-    override suspend fun doWork(): Result =
-        runCatching {
-            // resumePending() is single-flight per episode and joins any
-            // appScope job already running for the same id, so a worker
-            // running while the foreground pipeline is still alive is a
-            // cheap no-op rather than a duplicate request.
-            //
-            // Note: a worker fire that hits an active appScope job will
-            // short-circuit through the in-flight guard and return success
-            // even though the marker is still in the DB. That's expected —
-            // the appScope job's `finally` block owns the delete, and the
-            // KEEP policy on [AiSummaryScheduler] caps the queued worker
-            // count at one regardless of how many enqueue calls fired.
-            repo.resumePending()
-            Result.success()
-        }.getOrElse { Result.retry() }
+    override suspend fun doWork(): Result {
+        // Wrap each consumer independently so a thrown exception in one
+        // doesn't prevent the other from running. resumePending() catches
+        // its own AiError surface internally, but a corrupt-DB or driver-
+        // level throw could escape — without this split, the discuss
+        // marker sweep would be skipped and stale rows would accumulate
+        // until the next clean worker fire.
+        val summaryFailed = runCatching { summaryRepo.resumePending() }.isFailure
+        runCatching { discussRepo.cleanStaleDiscussUploads() }
+        // Only retry when the summary side actually threw — discuss
+        // cleanup is idempotent and a failure there isn't worth re-running
+        // the (potentially expensive) summary resume for.
+        return if (summaryFailed) Result.retry() else Result.success()
+    }
 }

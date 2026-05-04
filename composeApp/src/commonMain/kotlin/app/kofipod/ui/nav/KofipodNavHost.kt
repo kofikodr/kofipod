@@ -12,6 +12,7 @@ import androidx.navigation.NavOptions
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
+import app.kofipod.ui.screens.askgemini.AskGeminiScreen
 import app.kofipod.ui.screens.detail.EpisodeDetailScreen
 import app.kofipod.ui.screens.detail.PodcastDetailScreen
 import app.kofipod.ui.screens.downloads.DownloadsScreen
@@ -107,6 +108,20 @@ fun KofipodNavHost(navController: NavHostController) {
                     )
                 },
                 onOpenAiSetup = { navController.navigate(Route.AiSetup) },
+                onOpenAskGemini = { episodeId -> navController.navigate(Route.AskGemini(episodeId)) },
+            )
+        }
+        composable<Route.AskGemini> { entry ->
+            val ask = entry.toRoute<Route.AskGemini>()
+            AskGeminiScreen(
+                episodeId = ask.episodeId,
+                onBack = { navController.popBackStack() },
+                onOpenPlayer = {
+                    navController.navigate(
+                        Route.Player,
+                        NavOptions.Builder().setLaunchSingleTop(true).build(),
+                    )
+                },
             )
         }
         composable<Route.Player>(

@@ -64,8 +64,8 @@ There is no in-app sign-in, no OAuth client to maintain, and no `GOOGLE_SERVER_C
 
 SQLDelight database name: `KofipodDatabase`, package `app.kofipod.db`. Schema files under `composeApp/src/commonMain/sqldelight/app/kofipod/db/`:
 
-- Tables: `Podcast.sq`, `Episode.sq`, `EpisodeChapter.sq`, `EpisodeAiSummary.sq`, `PodcastList.sq`, `Download.sq`, `PlaybackState.sq`, `RecentPodcastView.sq`, `SyncMeta.sq`.
-- Migrations in `migrations/` — current schema version is **12**. Add a new `N.sqm` file rather than editing existing tables. Dev installs auto-migrate; if a migration ever fails on an emulator, uninstall and reinstall to rebuild from `Schema.create`.
+- Tables: `Podcast.sq`, `Episode.sq`, `EpisodeChapter.sq`, `EpisodeAiSummary.sq`, `PendingAiOperation.sq`, `AudioUploadCache.sq`, `DiscussSession.sq`, `DiscussMessage.sq`, `PodcastList.sq`, `Download.sq`, `PlaybackState.sq`, `RecentPodcastView.sq`, `SyncMeta.sq`.
+- Migrations in `migrations/` — current schema version is **15**. Add a new `N.sqm` file rather than editing existing tables. Dev installs auto-migrate; if a migration ever fails on an emulator, uninstall and reinstall to rebuild from `Schema.create`.
 
 ### Navigation
 
@@ -92,14 +92,28 @@ The detail screen's episode list was tuned for scroll-during-playback. Do not me
 
 BYOK (bring-your-own-key) Gemini integration. Lives entirely in `app.kofipod.ai/`:
 
-- `GeminiClient.kt` — Ktor wrapper over `generativelanguage.googleapis.com`. Handles `validate`, `generateFromText`, the Files API audio pipeline (`uploadAudio` → `pollUntilActive` → `generateFromAudio` → best-effort `deleteFile`), and structured-output decoding (`responseMimeType: application/json` + `responseSchema` → `AiSummaryJson`).
-- `AiSummaryRepository.kt` — picks transcript path when `episode.transcriptUrl` is non-blank, audio fallback when the episode is downloaded, else surfaces `Idle(available = null)`. Single-flight per episodeId via a `Mutex`. Runs on the named `"appScope"` so navigation away mid-pipeline doesn't cancel the request.
+- `GeminiClient.kt` — Ktor wrapper over `generativelanguage.googleapis.com`. Pure HTTP shim: `validate`, `generateFromText`, the Files API primitives (`uploadAudio`, `pollUntilActive`, `generateFromAudio`, `deleteFile`), and the multi-turn `chat` surface. Structured-output decoding (`responseMimeType: application/json` + `responseSchema` → `AiSummaryJson` / `DiscussAnswerJson`) lives here too. Orchestration of the audio pipeline does **not** — `summariseAudio` was removed in favour of `AudioUploadCoordinator`.
+- `AudioUploadCoordinator.kt` — owns "give me a Gemini Files API URI for this episode's audio." Both `AiSummaryRepository` and `DiscussRepository` go through `acquire(...)`, which checks the shared `AudioUploadCache` table and either reuses a non-expired URI (within Gemini's 48h Files API TTL minus a 1h safety margin) or runs the upload via the `AudioUploader` seam. Per-episode `Mutex` collapses concurrent calls to one upload.
+- `AiSummaryRepository.kt` — picks transcript path when `episode.transcriptUrl` is non-blank, audio fallback when the episode is downloaded, else surfaces `Idle(available = null)`. Single-flight per episodeId via a `Mutex`. Runs on the named `"appScope"` so navigation away mid-pipeline doesn't cancel the request. Audio path goes through `AudioUploadCoordinator` (upload-or-cache) → `AudioSummariser` (`generateFromAudio` over the resulting URI).
 - `AiConfigRepository.kt` + `AndroidKeyVault.kt` — the user's Gemini key lives in `kofipod_secure` `EncryptedSharedPreferences`, **not** in BuildKonfig. Both that prefs file and the cached-summary table are excluded from Auto Backup (see `backup_rules.xml`) so a device migration starts clean. The key never enters logs, the prompt body, or the response body — `GeminiClient` only logs operation names + status codes via the `Kofipod-AI` tag.
 - `EpisodeAiSummary` table caches one row per episode: prose summary plus three JSON columns (`peopleJson`, `thingsJson`, `linksJson`) holding `[{name, subtitle}]` for people/things and `[{label, url}]` for links. Decoders fall back to an empty list on parse failure rather than tearing down the Ready card; the person/thing decoders also accept the legacy flat-string array shape so cached rows from before Slice 3.5 still render.
 
-UI lives under `ui/screens/detail/ai/`. The episode-detail tab strip surfaces `Summary | Mentioned | Discuss` (plus `Chapters` when present). Summary is prose-only; Mentioned renders one filtered section at a time (People / Books·things / Links) with rows that tap through to a Google search (`googleSearchUrl(name, subtitle)`) — links open their actual URL. Discuss is still a placeholder. **Disconnect** in Settings wipes both the key and every cached summary by calling `AiSummaryRepository.clearAll()`, which also cancels in-flight pipelines so a late upload can't write back against the just-cleared table.
+UI lives under `ui/screens/detail/ai/` (tab cards) and `ui/screens/askgemini/` (full-screen chat). The episode-detail tab strip order is `Chapters | Summary | Mentioned | Discuss` (Chapters only present when the episode has them). Summary is prose-only; Mentioned renders one filtered section at a time (People / Books·things / Links) with rows that tap through to a Google search (`googleSearchUrl(name, subtitle)`) — links open their actual URL. Discuss surfaces an idle suggestion + composer-stub (or "Continue your chat" card when messages exist); tapping anything navigates to the full-screen `AskGeminiScreen` where the real input + message thread live.
 
-When extending the wire shape (e.g. adding a new entity field), update `AiSummaryJson`, `SUMMARY_RESPONSE_SCHEMA`, `AiPrompts.episodeSummaryPrompt`, the repo's encode/decode helpers, and the fixture at `androidUnitTest/resources/ai/sample_response.json` together — `AiSummaryJsonTest` is the canary that catches schema drift, but only if the fixture is current.
+The Discuss / Q&A pipeline mirrors the Summary repo's shape:
+- `DiscussRepository.kt` — single-flight per episodeId via `sendLock`; runs on `appScope` so navigation away mid-call doesn't cancel; tracks live `Job`s in `activeJobs` so `clearForEpisode(episodeId)` (the trashcan affordance) and `clearAll()` (Disconnect) can cancel + drain before wiping rows. Audio path goes through `AudioUploadCoordinator` for upload-or-cache, then `chat()` with `ChatContext.Audio`.
+- `DiscussSource.kt` — strategy seam for resolving the textual / audio context one episode sends to Gemini. `TranscriptDiscussSource` (publisher transcript) and `AudioDiscussSource` (downloaded audio) ship together; a composite source binding in `CommonModule` picks transcript-first, audio-fallback otherwise. The `DiscussContext` sealed type carries either `Available(transcript)` or `AudioReady(localPath, mimeType, sizeBytes, fingerprint)`.
+- `ChatContext` (sealed) parameterises `ChatSummariser.chat(...)`'s first user turn — `Transcript(text)` sends a text part, `Audio(fileUri, mimeType)` sends a `fileData` part referencing an already-uploaded Files API resource. Adding e.g. `Video(...)` is one new variant + one `when` branch.
+- `DiscussSession` + `DiscussMessage` tables persist one open chat per episode (UNIQUE on `episodeId`). `citationsJson` carries `[{label, timestampMs}]`. Messages cascade with the session via FK.
+- `GeminiClient.chat(...)` is the multi-turn surface; the `Content` DTO has an optional `role` field and `GenerateContentRequest` has an optional `systemInstruction` so the system prompt + citation rules don't have to live inside every user turn.
+- History sent to the model is capped at the last 20 turns inside `DiscussRepository`; older messages stay in the DB but don't go to the model.
+- Audio chats trigger a "long chat uses more quota" banner once the user reaches `AUDIO_TURN_WARNING_THRESHOLD = 5` user turns. Transcript chats never trigger it (replay is cheap).
+
+**Resume markers + worker.** The `PendingAiOperation` table is generalised over `kind ∈ {'summary', 'discuss_upload'}` (composite PK on `(episodeId, kind)`). `AiSummaryWorker` is the single WorkManager consumer: it calls `AiSummaryRepository.resumePending()` (which re-fires Summary pipelines for `kind='summary'` rows) and then `DiscussRepository.cleanStaleDiscussUploads()` (which just deletes `kind='discuss_upload'` rows — Discuss recovery is intentionally user-driven via re-tap, not silent re-fire). The two consumers are wrapped in independent `runCatching` blocks so an exception from one doesn't skip the other.
+
+**Disconnect** in Settings wipes the key, every cached summary, every cached chat, AND every cached Files API upload row by calling `config.disconnect()` → `summaries.clearAll()` → `discuss.clearAll()`. `summaries.clearAll()` cascades to `coordinator.clearAll()` so the shared upload cache is wiped exactly once. We do **not** call `GeminiClient.deleteFile` on Disconnect — the 48h Files API TTL handles server-side cleanup. All steps cancel in-flight pipelines so a late network completion can't write back against the just-cleared tables.
+
+When extending the wire shape (Summary side: new entity field; Discuss side: new citation field), update the JSON DTO, the matching `*_RESPONSE_SCHEMA`, the prompt copy, the repo's encode/decode helpers, and the canary fixture together. Summary canary: `androidUnitTest/resources/ai/sample_response.json` + `AiSummaryJsonTest`. Discuss canary: `androidUnitTest/resources/ai/sample_discuss_response.json` + `DiscussWireTest`.
 
 ## Testing conventions
 
@@ -111,7 +125,7 @@ When adding emulator-verified features, the expected workflow is: assemble debug
 
 ## Koin ViewModel factories
 
-Any change that adds a dependency to a `ViewModel` constructor must also update the corresponding `viewModel { ... }` factory in `CommonModule.kt`. `PodcastDetailViewModel` has grown to 9 positional params — if you add another, bump the factory in lockstep.
+Any change that adds a dependency to a `ViewModel` constructor must also update the corresponding `viewModel { ... }` factory in `CommonModule.kt`. `PodcastDetailViewModel` has grown to 9 positional params — if you add another, bump the factory in lockstep. `AskGeminiViewModel` (the Discuss full-screen) takes 7 deps because citation taps replicate `EpisodeDetailViewModel.seekToChapter`'s seek-or-play logic; if Phase 2 lifts that into a shared helper, both VMs should call through it instead of duplicating params.
 
 ## Build targets / versions
 

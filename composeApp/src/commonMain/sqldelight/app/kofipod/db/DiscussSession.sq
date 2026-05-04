@@ -1,0 +1,35 @@
+-- One open Discuss / Q&A chat session per episode. The UNIQUE constraint on
+-- episodeId enforces one-session-per-episode at the DB level so the upsert
+-- below is the only insertion path — no risk of two parallel sends spawning
+-- duplicate sessions for the same episode.
+--
+-- updatedAtMs is bumped on every message append so the "Continue your chat"
+-- card can sort or filter without joining DiscussMessage.
+--
+-- Cascade with Episode so a deleted episode collects its chat.
+CREATE TABLE DiscussSession (
+    id          TEXT NOT NULL PRIMARY KEY,
+    episodeId   TEXT NOT NULL UNIQUE,
+    createdAtMs INTEGER NOT NULL,
+    updatedAtMs INTEGER NOT NULL,
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
+);
+
+selectByEpisode:
+SELECT * FROM DiscussSession WHERE episodeId = ?;
+
+selectByEpisodeFlow:
+SELECT * FROM DiscussSession WHERE episodeId = ?;
+
+insert:
+INSERT INTO DiscussSession (id, episodeId, createdAtMs, updatedAtMs)
+VALUES (?, ?, ?, ?);
+
+touch:
+UPDATE DiscussSession SET updatedAtMs = ? WHERE id = ?;
+
+deleteByEpisode:
+DELETE FROM DiscussSession WHERE episodeId = ?;
+
+deleteAll:
+DELETE FROM DiscussSession;

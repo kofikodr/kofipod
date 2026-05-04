@@ -9,6 +9,7 @@ import app.kofipod.data.repo.RecentlyViewedRepository
 import app.kofipod.data.repo.SearchSource
 import app.kofipod.db.Podcast
 import app.kofipod.domain.PodcastSummary
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -120,6 +121,7 @@ class LibraryDetailViewModel(
                         searching.value = false
                     }
                     .onFailure {
+                        if (it is CancellationException) throw it
                         searchError.value = it.message ?: "Search failed"
                         searching.value = false
                     }
@@ -134,6 +136,6 @@ class LibraryDetailViewModel(
     )
 
     companion object {
-        const val DEBOUNCE_MS: Long = 350
+        const val DEBOUNCE_MS: Long = 600
     }
 }

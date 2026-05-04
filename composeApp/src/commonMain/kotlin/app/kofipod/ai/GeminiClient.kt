@@ -56,27 +56,44 @@ fun interface TextSummariser {
 }
 
 /**
- * Seam over the audio-summarisation pipeline (upload → poll → generate → delete)
- * so [AiSummaryRepository] can be unit-tested against a synchronous fake. The
- * production wiring (in `CommonModule`) opens the local audio file via the
- * [openLocalFileChannel] expect-fun, then delegates to [GeminiClient.summariseAudio].
+ * Seam over the multi-turn Discuss / Q&A call so [DiscussRepository] can be
+ * unit-tested against a synchronous fake. Same rationale as [TextSummariser];
+ * production [GeminiClient] is the only real implementation. Returns the parsed
+ * [DiscussAnswerJson] — wire-shape mapping happens inside [GeminiClient] so
+ * the repository never sees raw JSON.
+ *
+ * [context] is the source material — text or an uploaded audio reference —
+ * sent as the first user turn (with a synthetic model acknowledgement so the
+ * conversation alternates strictly user/model). [history] holds the prior real
+ * turns; [question] is the new user turn.
  */
-fun interface AudioSummariser {
-    /**
-     * @param onStage receives [GenerationStage.Preparing] before upload starts and
-     *   [GenerationStage.Analysing] after the upload finalises. The repository
-     *   uses these transitions to drive the staged progress UI without having to
-     *   own the underlying multi-step pipeline. Tests can ignore the callback.
-     */
-    suspend fun summariseAudio(
+fun interface ChatSummariser {
+    suspend fun chat(
         apiKey: String,
         model: GeminiModel,
-        prompt: String,
-        localPath: String,
+        systemPrompt: String,
+        context: ChatContext,
+        history: List<DiscussTurn>,
+        question: String,
+    ): Result<DiscussAnswerJson>
+}
+
+/**
+ * Seam over [GeminiClient.generateFromAudio] so [AiSummaryRepository] can be
+ * unit-tested against a synchronous fake. Narrower than the pre-coordinator
+ * [AudioSummariser] (which owned upload+poll+generate+delete in one call) —
+ * [AudioUploadCoordinator] now owns the upload/poll lifecycle, and this seam
+ * is just the structured-summary call against an already-active file URI.
+ *
+ * Production binding: a thin lambda over [GeminiClient.generateFromAudio].
+ */
+fun interface AudioSummariser {
+    suspend fun summariseFromAudio(
+        apiKey: String,
+        model: GeminiModel,
+        fileUri: String,
         mimeType: String,
-        sizeBytes: Long,
-        displayName: String,
-        onStage: (GenerationStage) -> Unit,
+        prompt: String,
     ): Result<AiSummaryJson>
 }
 
@@ -108,7 +125,7 @@ data class UploadedFile(
  * The API key is passed at request scope (the `?key=` query param), never persisted
  * into the client, so the same instance survives a key rotation without rebuild.
  */
-class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummariser {
+class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummariser, ChatSummariser {
     /**
      * Issues a 4-token completion request. Returns [Result.success] on HTTP 200 and
      * [Result.failure] wrapping an [AiError] otherwise.
@@ -187,7 +204,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
             logHttpFailure("generateFromText", response.status.value)
             return Result.failure(AiErrorException(response.status.toAiError()))
         }
-        return decodeStructuredResponse(response, "generateFromText")
+        return decodeResponse<AiSummaryJson>(response, "generateFromText") { it.summary.isBlank() }
     }
 
     /**
@@ -376,7 +393,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
                 }
 
             if (response.status.isSuccess()) {
-                return decodeStructuredResponse(response, "generateFromAudio")
+                return decodeResponse<AiSummaryJson>(response, "generateFromAudio") { it.summary.isBlank() }
             }
             val transient = response.status.value in TRANSIENT_5XX
             if (transient && attempt < GENERATE_MAX_RETRIES) {
@@ -388,45 +405,6 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
             val bodyText = runCatching { response.bodyAsText() }.getOrNull().orEmpty()
             logHttpFailure("generateFromAudio", response.status.value)
             return Result.failure(AiErrorException(response.status.toAudioAiError(bodyText)))
-        }
-    }
-
-    /**
-     * Orchestrates the full audio pipeline: [uploadAudio] → [pollUntilActive] →
-     * [generateFromAudio] → best-effort [deleteFile]. This is the path
-     * [AiSummaryRepository] takes for the audio fallback; tests can use the
-     * primitive methods directly via [GeminiClientAudioTest].
-     *
-     * The cleanup runs in `finally` so the uploaded file is removed even when
-     * generation fails — otherwise a failed retry could leave duplicates lying
-     * around for 48h until Gemini's auto-purge kicks in.
-     */
-    suspend fun summariseAudio(
-        apiKey: String,
-        model: GeminiModel,
-        prompt: String,
-        fileChannel: ByteReadChannel,
-        mimeType: String,
-        sizeBytes: Long,
-        displayName: String,
-        onStage: (GenerationStage) -> Unit = {},
-    ): Result<AiSummaryJson> {
-        onStage(GenerationStage.Preparing)
-        val uploaded =
-            uploadAudio(apiKey, fileChannel, mimeType, sizeBytes, displayName)
-                .getOrElse { return Result.failure(it) }
-        return try {
-            // Upload byte stream is now on Gemini's side. The poll + generate
-            // round-trip is the slow tail (Gemini transcribes + reasons over
-            // the audio), so flip the stage indicator here so the UI doesn't
-            // sit on "Uploading" while we're really waiting on the model.
-            onStage(GenerationStage.Analysing)
-            val active =
-                pollUntilActive(apiKey, uploaded.name)
-                    .getOrElse { return Result.failure(it) }
-            generateFromAudio(apiKey, model, active.uri, active.mimeType, prompt)
-        } finally {
-            deleteFile(apiKey, uploaded.name)
         }
     }
 
@@ -471,21 +449,49 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         )
 
     /**
-     * Pulls the JSON document out of a successful `generateContent` response and
-     * parses it as [AiSummaryJson]. Treats four cases as failures:
+     * Pulls the JSON document out of a successful `generateContent` response,
+     * parses it as [T], and validates the result via [isBlankEnvelope] — a
+     * model-emitted but empty answer is indistinguishable from a failed run
+     * as far as the user cares, so callers pass a per-shape blank check.
      *
-     *  - empty/blank candidate text → [AiError.Unknown]
-     *  - JSON parse failure → [AiError.Unknown] (we log the exception type
-     *    only — never the body, which can carry transcript content)
-     *  - empty `summary` → [AiError.Unknown] (a valid envelope with nothing to
-     *    show is indistinguishable from a failed run as far as the user cares)
-     *  - non-`STOP` finish reason → still passes through, but logged so a
-     *    truncation report has a forensic breadcrumb.
+     * Inline + reified so the kotlinx-serialization codegen resolves the
+     * right serializer at the call site. Two callers today (summary +
+     * discuss); structured-output additions land here as `decodeResponse<X>`.
      */
-    private suspend fun decodeStructuredResponse(
+    private suspend inline fun <reified T : Any> decodeResponse(
         response: HttpResponse,
         op: String,
-    ): Result<AiSummaryJson> {
+        isBlankEnvelope: (T) -> Boolean,
+    ): Result<T> {
+        val text =
+            extractCandidateText(response, op)
+                .getOrElse { return Result.failure(it) }
+        val structured =
+            runCatching { aiJson.decodeFromString<T>(text) }
+                .getOrElse {
+                    logParseFailure(op, it)
+                    return Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
+                }
+        if (isBlankEnvelope(structured)) {
+            return Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
+        }
+        return Result.success(structured)
+    }
+
+    /**
+     * Shared response-envelope unwrap. Treats three cases as failures:
+     *  - parse failure on the outer GenerateContentResponse → [AiError.Unknown]
+     *  - empty/blank candidate text → [AiError.Unknown]
+     *  - non-`STOP` finish reason → still passes through but logged so a
+     *    truncation report has a forensic breadcrumb.
+     *
+     * Splits Gemini's multi-part candidate body (one part per stream chunk)
+     * back into a single string, trimmed.
+     */
+    private suspend fun extractCandidateText(
+        response: HttpResponse,
+        op: String,
+    ): Result<String> {
         val parsed =
             runCatching { response.body<GenerateContentResponse>() }
                 .getOrElse {
@@ -493,9 +499,6 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
                     return Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
                 }
         val candidate = parsed.candidates.firstOrNull()
-        // Gemini can split a single response across multiple `parts` (e.g. one
-        // per stream chunk). Joining all non-blank text preserves the JSON
-        // body even if the model emits it across boundaries.
         val text =
             candidate
                 ?.content?.parts
@@ -509,17 +512,96 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         if (text.isNullOrBlank()) {
             return Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
         }
-        val structured =
-            runCatching { aiJson.decodeFromString<AiSummaryJson>(text) }
-                .getOrElse {
-                    logParseFailure(op, it)
-                    return Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
-                }
-        if (structured.summary.isBlank()) {
-            return Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
-        }
-        return Result.success(structured)
+        return Result.success(text)
     }
+
+    /**
+     * Multi-turn Q&A call. Builds the `contents` array as
+     *
+     * ```
+     *   [user(<context>), model(TRANSCRIPT_ACK), ...history, user(question)]
+     * ```
+     *
+     * where `<context>` is either a text part (transcript) or a `fileData`
+     * part referencing an already-uploaded Files API audio resource. The
+     * system instruction lands on a separate top-level field. The schema
+     * pins the response shape to [DiscussAnswerJson] so citations come back
+     * structured rather than embedded in prose. Same status-code mapping as
+     * the other surfaces — 400/401/403 → KeyInvalid, 429 → RateLimited,
+     * transport → Network, anything else → Unknown.
+     *
+     * No retries on transient 5xx. A chat retry would burn input tokens for
+     * the full context every time (audio re-processing on Gemini's side, or
+     * a full transcript re-read). The user's Retry button is the right
+     * re-entry point.
+     */
+    override suspend fun chat(
+        apiKey: String,
+        model: GeminiModel,
+        systemPrompt: String,
+        context: ChatContext,
+        history: List<DiscussTurn>,
+        question: String,
+    ): Result<DiscussAnswerJson> {
+        val firstUserParts: List<Part> =
+            when (context) {
+                is ChatContext.Transcript ->
+                    listOf(Part(text = DiscussPrompts.transcriptTurn(context.text)))
+                is ChatContext.Audio ->
+                    listOf(
+                        Part(fileData = FileData(mimeType = context.mimeType, fileUri = context.fileUri)),
+                        Part(text = DiscussPrompts.AUDIO_CONTEXT_PREAMBLE),
+                    )
+            }
+        val contents =
+            buildList {
+                add(Content(parts = firstUserParts, role = ROLE_USER))
+                add(Content(parts = listOf(Part(text = DiscussPrompts.TRANSCRIPT_ACK)), role = ROLE_MODEL))
+                history.forEach { turn ->
+                    add(Content(parts = listOf(Part(text = turn.text)), role = turn.role.wire))
+                }
+                add(Content(parts = listOf(Part(text = question)), role = ROLE_USER))
+            }
+        val response: HttpResponse =
+            runCatching {
+                client.post("$BASE_URL/v1beta/models/${model.apiId}:generateContent") {
+                    contentType(ContentType.Application.Json)
+                    url { parameters.append("key", apiKey) }
+                    setBody(
+                        GenerateContentRequest(
+                            contents = contents,
+                            generationConfig = chatGenerationConfig(),
+                            systemInstruction = Content(parts = listOf(Part(text = systemPrompt))),
+                        ),
+                    )
+                }
+            }.getOrElse {
+                logTransportFailure("chat", it)
+                return Result.failure(AiErrorException(AiError.Network))
+            }
+
+        if (!response.status.isSuccess()) {
+            logHttpFailure("chat", response.status.value)
+            return Result.failure(AiErrorException(response.status.toAiError()))
+        }
+        return decodeResponse<DiscussAnswerJson>(response, "chat") { it.answer.isBlank() }
+    }
+
+    /**
+     * Generation config for the multi-turn chat path. Same thinking-disabled
+     * + structured-JSON shape as [summaryGenerationConfig], but pinned to
+     * [DISCUSS_RESPONSE_SCHEMA] and a smaller token cap because individual
+     * answers are short and a runaway response is more annoying than a
+     * truncated one in chat.
+     */
+    private fun chatGenerationConfig(): GenerationConfig =
+        GenerationConfig(
+            maxOutputTokens = CHAT_MAX_OUTPUT_TOKENS,
+            temperature = CHAT_TEMPERATURE,
+            thinkingConfig = ThinkingConfig(thinkingBudget = 0),
+            responseMimeType = "application/json",
+            responseSchema = DISCUSS_RESPONSE_SCHEMA,
+        )
 
     private fun HttpStatusCode.toAiError(): AiError =
         when (this) {
@@ -575,6 +657,21 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         // ceiling against runaway responses.
         private const val SUMMARY_MAX_OUTPUT_TOKENS = 8192
         private const val SUMMARY_TEMPERATURE = 0.4
+
+        // Chat answers stay short by spec (one paragraph by default), so a
+        // 2048-token cap is comfortable headroom and a tighter ceiling against
+        // a runaway turn — a chat reply that bleeds across the screen is more
+        // jarring than a summary that does the same. Slightly lower temperature
+        // than the summary path because Q&A wants grounded recall, not flair.
+        private const val CHAT_MAX_OUTPUT_TOKENS = 2048
+        private const val CHAT_TEMPERATURE = 0.3
+
+        // Wire role strings expected by Gemini's multi-turn API. Pinned here
+        // (not stringified at call sites) so the only sources of truth are
+        // this file and DiscussRole.kt, and a typo would surface as a 400
+        // from a single canonical location.
+        private const val ROLE_USER = "user"
+        private const val ROLE_MODEL = "model"
 
         private const val DEFAULT_POLL_INTERVAL_MS = 2_000L
         private const val DEFAULT_POLL_TIMEOUT_MS = 5L * 60 * 1000
@@ -642,10 +739,23 @@ fun Throwable.toAiError(): AiError =
 private data class GenerateContentRequest(
     val contents: List<Content>,
     val generationConfig: GenerationConfig,
+    // Optional system-instruction channel — Gemini honours it when set, ignores
+    // when omitted. Single-shot summary calls leave it null; the multi-turn
+    // chat path uses it to carry the persona + citation rules so they don't
+    // have to be re-sent inside every user turn.
+    val systemInstruction: Content? = null,
 )
 
+/**
+ * One slot of a `contents` array. `role` is required by Gemini for multi-turn
+ * (`"user"` or `"model"`); single-shot calls omit it and Gemini infers `"user"`.
+ * Kept optional so existing summary callers don't need to set it.
+ */
 @Serializable
-private data class Content(val parts: List<Part>)
+private data class Content(
+    val parts: List<Part>,
+    val role: String? = null,
+)
 
 @Serializable
 private data class Part(

@@ -48,6 +48,7 @@ import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.primitives.KofipodArtwork
 import app.kofipod.ui.screens.detail.ai.AiSummaryPanel
 import app.kofipod.ui.screens.detail.ai.AiSummaryViewModel
+import app.kofipod.ui.screens.detail.ai.DiscussTabPanel
 import app.kofipod.ui.screens.detail.ai.MentionedTabPanel
 import app.kofipod.ui.theme.LocalKofipodColors
 import org.koin.compose.viewmodel.koinViewModel
@@ -59,6 +60,7 @@ fun EpisodeDetailScreen(
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
     onOpenAiSetup: () -> Unit,
+    onOpenAskGemini: (String) -> Unit,
     viewModel: EpisodeDetailViewModel = koinViewModel(parameters = { parametersOf(episodeId) }),
 ) {
     val state by viewModel.state.collectAsState()
@@ -78,6 +80,7 @@ fun EpisodeDetailScreen(
             if (!state.isCurrentEpisode) onOpenPlayer()
         },
         onOpenAiSetup = onOpenAiSetup,
+        onOpenAskGemini = onOpenAskGemini,
     )
 }
 
@@ -97,6 +100,10 @@ internal fun EpisodeDetailContent(
     onDownload: () -> Unit,
     onChapterTap: (Long) -> Unit,
     onOpenAiSetup: () -> Unit,
+    // Default no-op so existing Paparazzi snapshots that drive
+    // EpisodeDetailContent directly don't need to plumb the new callback.
+    // Production callers always pass a real navigator.
+    onOpenAskGemini: (String) -> Unit = {},
 ) {
     val c = LocalKofipodColors.current
 
@@ -135,6 +142,7 @@ internal fun EpisodeDetailContent(
                     onDownload = onDownload,
                     onChapterTap = onChapterTap,
                     onOpenAiSetup = onOpenAiSetup,
+                    onOpenAskGemini = onOpenAskGemini,
                 )
             }
         }
@@ -187,6 +195,7 @@ private fun EpisodeBody(
     onDownload: () -> Unit,
     onChapterTap: (Long) -> Unit,
     onOpenAiSetup: () -> Unit,
+    onOpenAskGemini: (String) -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Spacer(Modifier.height(8.dp))
@@ -283,7 +292,11 @@ private fun EpisodeBody(
                     onOpenAiSetup = onOpenAiSetup,
                 )
             EpisodeDetailTab.Mentioned -> MentionedTabPanel(episodeId = episode.id)
-            EpisodeDetailTab.Discuss -> ComingSoonCard(label = "Ask Gemini about this episode — coming soon.")
+            EpisodeDetailTab.Discuss ->
+                DiscussTabPanel(
+                    episodeId = episode.id,
+                    onOpenAskGemini = { onOpenAskGemini(episode.id) },
+                )
         }
     }
 }
@@ -293,25 +306,6 @@ private fun AiSummaryUiState.mentionedCount(): Int =
         is AiSummaryUiState.Ready -> summary.people.size + summary.things.size + summary.links.size
         else -> 0
     }
-
-@Composable
-private fun ComingSoonCard(label: String) {
-    val c = LocalKofipodColors.current
-    androidx.compose.foundation.layout.Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(c.surface)
-            .padding(20.dp),
-    ) {
-        Text(
-            label,
-            color = c.textMute,
-            fontSize = 13.sp,
-            lineHeight = 18.sp,
-        )
-    }
-}
 
 @Composable
 private fun ChaptersSection(

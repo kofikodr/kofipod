@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import app.kofipod.ai.AiConfigRepository
 import app.kofipod.ai.AiError
 import app.kofipod.ai.AiSummaryRepository
+import app.kofipod.ai.DiscussRepository
 import app.kofipod.ai.GeminiModel
 import app.kofipod.ai.KeyValidator
 import app.kofipod.ai.toAiError
@@ -29,6 +30,7 @@ class AiSetupViewModel(
     private val config: AiConfigRepository,
     private val client: KeyValidator,
     private val summaries: AiSummaryRepository,
+    private val discuss: DiscussRepository,
 ) : ViewModel() {
     private val pasteValue = MutableStateFlow("")
     private val verifying = MutableStateFlow(false)
@@ -107,6 +109,10 @@ class AiSetupViewModel(
             // disconnect removes both halves of the user's AI footprint.
             config.disconnect()
             summaries.clearAll()
+            // Mirror the summary wipe for chat history. Both halves of the
+            // user's AI footprint go in lockstep so a future reconnect starts
+            // clean — same contract as the Slice 4 design.
+            discuss.clearAll()
             showDisconnectConfirm.value = false
             pasteValue.value = ""
         }

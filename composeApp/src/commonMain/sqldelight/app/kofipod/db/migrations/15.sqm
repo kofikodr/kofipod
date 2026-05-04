@@ -1,0 +1,34 @@
+-- Generalises the AI resume-marker table from summary-only to a kind-discriminated
+-- shape (Summary | DiscussUpload), and adds a shared Gemini Files API upload cache
+-- so the Discuss audio fallback can reuse a file URI uploaded by the Summary path
+-- (and vice versa) within the 48h Files API TTL.
+--
+-- Migration order: live PendingAiSummary rows are copied into PendingAiOperation
+-- with kind='summary' BEFORE the old table is dropped, so a marker written by a
+-- pre-15 install survives the schema bump and the next worker fire still resumes
+-- it. The whole migration runs in one SQLDelight transaction so the window where
+-- both tables exist is not observable to app logic.
+
+CREATE TABLE PendingAiOperation (
+    episodeId     TEXT NOT NULL,
+    kind          TEXT NOT NULL,
+    requestedAtMs INTEGER NOT NULL,
+    PRIMARY KEY (episodeId, kind),
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
+);
+
+INSERT INTO PendingAiOperation (episodeId, kind, requestedAtMs)
+SELECT episodeId, 'summary', requestedAtMs FROM PendingAiSummary;
+
+DROP TABLE PendingAiSummary;
+
+CREATE TABLE AudioUploadCache (
+    episodeId    TEXT NOT NULL PRIMARY KEY,
+    geminiUri    TEXT NOT NULL,
+    geminiName   TEXT NOT NULL,
+    mimeType     TEXT NOT NULL,
+    fingerprint  TEXT NOT NULL,
+    uploadedAtMs INTEGER NOT NULL,
+    expiresAtMs  INTEGER NOT NULL,
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
+);

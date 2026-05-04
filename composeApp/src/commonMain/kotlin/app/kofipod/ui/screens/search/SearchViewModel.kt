@@ -177,7 +177,7 @@ class SearchViewModel(
     }
 
     companion object {
-        const val DEBOUNCE_MS: Long = 350
+        const val DEBOUNCE_MS: Long = 600
 
         // Long enough for PullToRefreshBox to observe recsLoading=true and play its retract
         // animation cleanly when we short-circuit (e.g. daily cap hit, no API call needed).

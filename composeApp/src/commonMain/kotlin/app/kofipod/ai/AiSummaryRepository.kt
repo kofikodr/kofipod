@@ -67,6 +67,13 @@ class AiSummaryRepository(
     private val db: KofipodDatabase,
     private val aiConfig: AiConfigRepository,
     private val summariser: TextSummariser,
+    // Owns the upload-or-reuse-cached decision. Shared with [DiscussRepository]
+    // so a Summary-side upload survives long enough for a Discuss session on
+    // the same episode to skip re-uploading.
+    private val coordinator: AudioUploadCoordinator,
+    // Narrow seam over `client.generateFromAudio`. The full upload pipeline
+    // is the coordinator's job; this seam is only the structured-summary
+    // call against an already-active file URI.
     private val audio: AudioSummariser,
     private val transcripts: TranscriptFetcher,
     private val episodes: EpisodeSource,
@@ -112,6 +119,20 @@ class AiSummaryRepository(
      * `generate(id)` simultaneously must not double-fire the network request.
      */
     private val generateLock = Mutex()
+
+    /**
+     * Read-only projection of the cached summary, independent of key state or
+     * in-flight pipeline. Consumed by [DiscussRepository] (via the
+     * [SummarySource] seam) to derive episode-specific suggestion prompts —
+     * we want the entity lists even when the user is mid-session and
+     * [observeFor] would render Generating/Idle.
+     */
+    fun cachedFor(episodeId: String): Flow<AiSummary?> =
+        db.episodeAiSummaryQueries
+            .selectByEpisodeFlow(episodeId)
+            .asFlow()
+            .mapToOneOrNull(Dispatchers.Default)
+            .map { row -> row?.toDomain() }
 
     fun observeFor(episodeId: String): Flow<AiSummaryUiState> {
         val cachedFlow: Flow<DbEpisodeAiSummary?> =
@@ -196,7 +217,11 @@ class AiSummaryRepository(
                     // pipeline reaches its first network suspension point so a
                     // mid-upload process death still leaves a recoverable row.
                     withContext(ioContext) {
-                        db.pendingAiSummaryQueries.upsert(episodeId, clock.now().toEpochMilliseconds())
+                        db.pendingAiOperationQueries.upsert(
+                            episodeId = episodeId,
+                            kind = PendingOperationKind.Summary.wire,
+                            requestedAtMs = clock.now().toEpochMilliseconds(),
+                        )
                     }
                 }
                 runGenerate(episodeId)
@@ -241,8 +266,15 @@ class AiSummaryRepository(
      */
     suspend fun resumePending() {
         // Read the markers off-main — the queries are tiny but SQLDelight
-        // doesn't enforce off-main I/O on its own.
-        val pending = withContext(ioContext) { db.pendingAiSummaryQueries.selectAll().executeAsList() }
+        // doesn't enforce off-main I/O on its own. Filter to Summary kind so
+        // the worker doesn't try to re-fire DiscussUpload markers (those
+        // belong to [DiscussRepository.cleanStaleDiscussUploads]).
+        val pending =
+            withContext(ioContext) {
+                db.pendingAiOperationQueries
+                    .selectByKind(PendingOperationKind.Summary.wire)
+                    .executeAsList()
+            }
         // Run sequentially rather than in parallel: most users have one
         // in-flight summary at a time, and parallelising over multiple keys
         // worth of audio uploads would burn the user's metered budget faster
@@ -299,9 +331,17 @@ class AiSummaryRepository(
             db.episodeAiSummaryQueries.deleteAll()
             // Disconnect must also wipe pending markers; otherwise the
             // worker would resume a request the user has explicitly opted
-            // out of, against a vault that no longer holds a key.
-            db.pendingAiSummaryQueries.deleteAll()
+            // out of, against a vault that no longer holds a key. We delete
+            // ONLY the summary kind here — DiscussRepository owns its own
+            // markers and clears them in its own clearAll.
+            db.pendingAiOperationQueries.deleteByKind(PendingOperationKind.Summary.wire)
         }
+        // Clear the shared upload cache too. We don't call deleteFile on
+        // Gemini's side (locked design decision: let the 48h TTL handle it),
+        // but the local row pointing to those URIs has to go so a future
+        // reconnect uploads fresh rather than handing the new key a URI
+        // uploaded under the old one.
+        coordinator.clearAll()
     }
 
     // -----------------------------------------------------------------------
@@ -354,7 +394,10 @@ class AiSummaryRepository(
             // does NOT exercise the wrapper directly — the production
             // guarantee is by inspection.
             withContext(NonCancellable) {
-                db.pendingAiSummaryQueries.deleteByEpisode(episodeId)
+                db.pendingAiOperationQueries.deleteByEpisodeAndKind(
+                    episodeId = episodeId,
+                    kind = PendingOperationKind.Summary.wire,
+                )
             }
         }
     }
@@ -437,8 +480,8 @@ class AiSummaryRepository(
         }
         // pickSource returns Audio only when `download.localPath` is non-blank
         // (and the lock guarantees the snapshot we captured is what reaches
-        // here), so the !! is safe — `download` and its localPath are present.
-        val localPath = download!!.localPath!!
+        // here), so `download` and its localPath are present.
+        val downloadSnap = download!!
         val key = aiConfig.currentKey()
         if (key.isNullOrBlank()) {
             surface(episodeId, AiError.NoKey)
@@ -446,24 +489,36 @@ class AiSummaryRepository(
         }
         val model = aiConfig.model().first()
 
-        val mimeType = episode.enclosureMimeType.ifBlank { DEFAULT_AUDIO_MIME }
-        val sizeBytes = download.downloadedBytes
+        val sizeBytes = downloadSnap.downloadedBytes
         val prompt = AiPrompts.episodeSummaryPrompt(localeTag = currentLocaleTag())
 
-        // Initial stage; the AudioSummariser will flip us to Analysing as soon
-        // as upload finalises. We seed Preparing here so the panel renders the
-        // size cue immediately, even before the first byte goes out.
+        // Initial stage; the coordinator will flip us to Analysing as soon as
+        // the upload finalises. We seed Preparing here so the panel renders
+        // the size cue immediately, even before the first byte goes out.
         setStage(episodeId, GenerationStage.Preparing, sizeBytes = sizeBytes)
+        val acquired =
+            coordinator
+                .acquire(
+                    apiKey = key,
+                    episode = episode,
+                    download = downloadSnap,
+                    onStage = { stage -> setStage(episodeId, stage, sizeBytes = sizeBytes) },
+                ).getOrElse { throwable ->
+                    surface(episodeId, throwable.toAiError())
+                    return
+                }
+        // On a fresh upload the coordinator already pushed us to Analysing
+        // via onStage; on a cache hit it didn't fire onStage at all so the
+        // panel is still on Preparing — flip to Analysing here so the user
+        // sees forward motion regardless of the cache outcome.
+        if (acquired.fromCache) setStage(episodeId, GenerationStage.Analysing, sizeBytes = sizeBytes)
         val structured: AiSummaryJson =
-            audio.summariseAudio(
+            audio.summariseFromAudio(
                 apiKey = key,
                 model = model,
+                fileUri = acquired.fileUri,
+                mimeType = acquired.mimeType,
                 prompt = prompt,
-                localPath = localPath,
-                mimeType = mimeType,
-                sizeBytes = sizeBytes,
-                displayName = "kofipod-$episodeId",
-                onStage = { stage -> setStage(episodeId, stage, sizeBytes = sizeBytes) },
             ).getOrElse { throwable ->
                 surface(episodeId, throwable.toAiError())
                 return
@@ -562,16 +617,6 @@ class AiSummaryRepository(
         // and matches the user-facing "8 hours" copy in the AudioTooLong
         // error card.
         const val AUDIO_MAX_DURATION_SEC = 8L * 3600
-
-        // Falls through when the episode's RSS enclosure doesn't declare a
-        // type. Most podcast feeds do, but a misconfigured one shouldn't
-        // block summarisation.
-        const val DEFAULT_AUDIO_MIME = "audio/mpeg"
-
-        // Mirrors `Download.state` writes from `DownloadRepository` (which
-        // mirrors `DownloadProgress.State.Completed`). A partial download is
-        // not summarisable.
-        const val DOWNLOAD_STATE_COMPLETED = "Completed"
 
         // Lenient on read so a forward-compatible schema bump (e.g. adding a
         // confidence score per entity) doesn't surface as a parse error and

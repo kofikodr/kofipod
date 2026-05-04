@@ -247,7 +247,8 @@ class AiSummaryRepositoryTest {
             // path / mime / size, the persisted row keeps the fingerprint we
             // just summarised, and the source kind is preserved.
             val audio = StubAudioSummariser(returns = StubAudioSummariser.summary("Audio episode summary."))
-            val (repo, db) = build(initialKey = "k", audio = audio)
+            val uploader = StubAudioUploader()
+            val (repo, db) = build(initialKey = "k", audio = audio, uploader = uploader)
             insertEpisode(
                 db,
                 episodeId = "ep1",
@@ -261,12 +262,20 @@ class AiSummaryRepositoryTest {
             repo.generate("ep1")
             advanceUntilIdle()
 
+            // Coordinator must invoke the uploader with the right size + mime,
+            // then hand the resulting URI to AudioSummariser. Pinning both
+            // ends keeps the upload-or-cache decision honest.
+            assertEquals(1, uploader.calls.size, "Audio path must reach the uploader exactly once on a cache miss")
+            assertEquals("audio/x-m4a", uploader.calls[0].mimeType)
+            assertEquals(9_876_543L, uploader.calls[0].sizeBytes)
             assertEquals(1, audio.calls.size, "Audio path must reach AudioSummariser exactly once")
             val call = audio.calls[0]
             assertEquals("k", call.apiKey)
-            assertEquals("/tmp/ep1.m4a", call.localPath)
             assertEquals("audio/x-m4a", call.mimeType)
-            assertEquals(9_876_543L, call.sizeBytes)
+            assertTrue(
+                call.fileUri.isNotBlank(),
+                "AudioSummariser must receive the active Files API URI from the coordinator",
+            )
 
             val state = repo.observeFor("ep1").first()
             val ready = assertIs<AiSummaryUiState.Ready>(state, "Audio happy path must end in Ready, got $state")
@@ -573,22 +582,18 @@ class AiSummaryRepositoryTest {
     fun generate_audioPath_emitsAnalysingStage_afterUploadFinalises() =
         runTest {
             // The whole point of the staged progress card is that the panel
-            // can see *which* step is running. The repo wires the Audio path's
-            // onStage callback into setStage(); without an assertion that the
-            // observable Generating state actually flips to Analysing when
-            // the summariser invokes onStage, that wiring could regress
-            // silently — the panel would just sit on Preparing forever.
+            // can see *which* step is running. The coordinator fires onStage
+            // (Preparing → Analysing) around the upload; the repo wires that
+            // into setStage(). Pinning the Analysing tick — the contract that
+            // a panel sitting on Preparing flips to Analysing once the upload
+            // finalises — guards against a regression that drops or short-
+            // circuits the onStage forwarding.
             val gate = CompletableDeferred<Result<AiSummaryJson>>()
-            val audio =
-                StubAudioSummariser { call ->
-                    // Simulate the GeminiClient calling back as soon as the
-                    // resumable upload finalises and the poll/generate phase
-                    // begins. Real production wiring lives in
-                    // `GeminiClient.summariseAudio` — this stub is just standing
-                    // in for that call site.
-                    call.onStage(GenerationStage.Analysing)
-                    gate.await()
-                }
+            // Block AudioSummariser so the pipeline parks AFTER the coordinator
+            // has emitted its full Preparing → Analysing sequence but before
+            // setStage(Formatting) lands. The observable Generating stage at
+            // that point must be Analysing.
+            val audio = StubAudioSummariser { gate.await() }
             val (repo, db) = build(initialKey = "k", audio = audio)
             insertEpisode(db, episodeId = "ep1", transcriptUrl = "", durationSec = 1800L)
             insertCompletedDownload(db, episodeId = "ep1", localPath = "/tmp/ep1.mp3", downloadedBytes = 5_000_000)
@@ -598,7 +603,11 @@ class AiSummaryRepositoryTest {
 
             val state = repo.observeFor("ep1").first()
             val generating = assertIs<AiSummaryUiState.Generating>(state)
-            assertEquals(GenerationStage.Analysing, generating.stage, "onStage(Analysing) must surface in the observable Generating")
+            assertEquals(
+                GenerationStage.Analysing,
+                generating.stage,
+                "Coordinator's onStage(Analysing) must surface in the observable Generating",
+            )
             assertEquals(5_000_000L, generating.sizeBytes, "Audio path must carry the upload size into the Generating state")
 
             // Tidy up so runTest doesn't trip the "uncompleted job" check.
@@ -646,7 +655,7 @@ class AiSummaryRepositoryTest {
             repo.generate("ep1")
             testScheduler.runCurrent()
 
-            val pending = db.pendingAiSummaryQueries.selectAll().executeAsList()
+            val pending = db.pendingAiOperationQueries.selectAll().executeAsList()
             assertEquals(1, pending.size, "Generate must persist a pending marker for resume coverage")
             assertEquals("ep1", pending[0].episodeId)
             assertEquals(1, scheduler.enqueueCount, "Generate must enqueue the resume worker exactly once")
@@ -675,7 +684,7 @@ class AiSummaryRepositoryTest {
             advanceUntilIdle()
 
             assertTrue(
-                db.pendingAiSummaryQueries.selectAll().executeAsList().isEmpty(),
+                db.pendingAiOperationQueries.selectAll().executeAsList().isEmpty(),
                 "Successful summarisation must clear the pending marker",
             )
         }
@@ -698,7 +707,7 @@ class AiSummaryRepositoryTest {
             advanceUntilIdle()
 
             assertTrue(
-                db.pendingAiSummaryQueries.selectAll().executeAsList().isEmpty(),
+                db.pendingAiOperationQueries.selectAll().executeAsList().isEmpty(),
                 "Surfaced error must clear the pending marker — user owns the retry decision",
             )
         }
@@ -717,7 +726,7 @@ class AiSummaryRepositoryTest {
             repo.generate("ep1")
             testScheduler.runCurrent()
             assertTrue(
-                db.pendingAiSummaryQueries.selectAll().executeAsList().isNotEmpty(),
+                db.pendingAiOperationQueries.selectAll().executeAsList().isNotEmpty(),
                 "Fixture: marker must exist during the run for the delete-on-cancel claim to be meaningful",
             )
 
@@ -726,7 +735,7 @@ class AiSummaryRepositoryTest {
             advanceUntilIdle()
 
             assertTrue(
-                db.pendingAiSummaryQueries.selectAll().executeAsList().isEmpty(),
+                db.pendingAiOperationQueries.selectAll().executeAsList().isEmpty(),
                 "Cancel must clear the pending marker — worker must not re-fire after user opted out",
             )
         }
@@ -767,8 +776,8 @@ class AiSummaryRepositoryTest {
                 // uses the same Podcast row across episodes (insertEpisode
                 // re-upserts pod1) so this is fine.
             )
-            db.pendingAiSummaryQueries.upsert("epA", 0L)
-            db.pendingAiSummaryQueries.upsert("epB", 0L)
+            db.pendingAiOperationQueries.upsert("epA", "summary", 0L)
+            db.pendingAiOperationQueries.upsert("epB", "summary", 0L)
 
             val resume = backgroundScope.launch { repo.resumePending() }
             // Park inside the first gate; without sequential semantics, the
@@ -805,7 +814,7 @@ class AiSummaryRepositoryTest {
             // Simulate "process died last time before runGenerate's finally
             // could clear the marker" by writing one directly without going
             // through generate().
-            db.pendingAiSummaryQueries.upsert("ep1", 0L)
+            db.pendingAiOperationQueries.upsert("ep1", "summary", 0L)
 
             repo.resumePending()
             advanceUntilIdle()
@@ -814,7 +823,7 @@ class AiSummaryRepositoryTest {
             val ready = assertIs<AiSummaryUiState.Ready>(state, "resumePending must drive the pipeline to Ready, got $state")
             assertEquals("recovered", ready.summary.summary)
             assertTrue(
-                db.pendingAiSummaryQueries.selectAll().executeAsList().isEmpty(),
+                db.pendingAiOperationQueries.selectAll().executeAsList().isEmpty(),
                 "Successful resume must clear the marker, just like a fresh generate()",
             )
         }
@@ -825,12 +834,12 @@ class AiSummaryRepositoryTest {
             // Disconnect must not leave behind markers — the worker would
             // resume requests against a vault that no longer holds a key.
             val (repo, db) = build(initialKey = "k")
-            db.pendingAiSummaryQueries.upsert("ep1", 0L)
+            db.pendingAiOperationQueries.upsert("ep1", "summary", 0L)
 
             repo.clearAll()
 
             assertTrue(
-                db.pendingAiSummaryQueries.selectAll().executeAsList().isEmpty(),
+                db.pendingAiOperationQueries.selectAll().executeAsList().isEmpty(),
                 "clearAll must wipe pending markers alongside the cached summary table",
             )
         }
@@ -900,6 +909,7 @@ class AiSummaryRepositoryTest {
         transcripts: TranscriptFetcher = StubTranscriptFetcher.success(""),
         summariser: TextSummariser = StubSummariser(returns = StubSummariser.summary("default")),
         audio: AudioSummariser = StubAudioSummariser(returns = StubAudioSummariser.summary("audio default")),
+        uploader: StubAudioUploader = StubAudioUploader(),
         audioFallbackEnabled: Boolean = true,
         scheduler: RecordingScheduler = RecordingScheduler(),
     ): Fixture {
@@ -914,11 +924,23 @@ class AiSummaryRepositoryTest {
         val coroutineScope = CoroutineScope(testDispatcher)
         val aiConfig = AiConfigRepository(keyVault = vault, settings = settings, appScope = coroutineScope)
         testScheduler.runCurrent()
+        // Use the real coordinator with a stub uploader so the cache write +
+        // expiry plumbing exercises the same code path production does. The
+        // openFile lambda returns an empty channel — the stub uploader doesn't
+        // actually drain it.
+        val coordinator =
+            AudioUploadCoordinator(
+                uploader = uploader,
+                db = db,
+                openFile = { io.ktor.utils.io.ByteReadChannel.Empty },
+                ioContext = testDispatcher,
+            )
         val repo =
             AiSummaryRepository(
                 db = db,
                 aiConfig = aiConfig,
                 summariser = summariser,
+                coordinator = coordinator,
                 audio = audio,
                 transcripts = transcripts,
                 episodes = DbEpisodeSource(db),
@@ -1036,17 +1058,14 @@ private class StubAudioSummariser(
 
     val calls: MutableList<StubAudioCall> = mutableListOf()
 
-    override suspend fun summariseAudio(
+    override suspend fun summariseFromAudio(
         apiKey: String,
         model: GeminiModel,
-        prompt: String,
-        localPath: String,
+        fileUri: String,
         mimeType: String,
-        sizeBytes: Long,
-        displayName: String,
-        onStage: (GenerationStage) -> Unit,
+        prompt: String,
     ): Result<AiSummaryJson> {
-        val call = StubAudioCall(apiKey, model, prompt, localPath, mimeType, sizeBytes, displayName, onStage)
+        val call = StubAudioCall(apiKey, model, fileUri, mimeType, prompt)
         calls += call
         return handler(call)
     }
@@ -1056,17 +1075,52 @@ private class StubAudioSummariser(
     }
 }
 
-// `data class` would synthesise componentN/equals over `onStage`, which is
-// pointless for a function reference and noisy in failure messages.
-private class StubAudioCall(
+private data class StubAudioCall(
     val apiKey: String,
     val model: GeminiModel,
+    val fileUri: String,
+    val mimeType: String,
     val prompt: String,
-    val localPath: String,
+)
+
+/**
+ * Stub uploader that returns a fixed [UploadedFile] without touching the
+ * network. Records each call so tests can assert "the coordinator skipped
+ * upload on cache hit" by counting `calls`. Failure mode + onStage hook
+ * exercise the coordinator's error path + stage callback wiring.
+ */
+private class StubAudioUploader(
+    private val handler: suspend (StubUploadCall) -> Result<UploadedFile> = { call ->
+        Result.success(
+            UploadedFile(
+                name = "files/${call.displayName}",
+                uri = "https://example.com/${call.displayName}",
+                mimeType = call.mimeType,
+                state = "ACTIVE",
+            ),
+        )
+    },
+) : AudioUploader {
+    val calls: MutableList<StubUploadCall> = mutableListOf()
+
+    override suspend fun upload(
+        apiKey: String,
+        channel: io.ktor.utils.io.ByteReadChannel,
+        mimeType: String,
+        sizeBytes: Long,
+        displayName: String,
+    ): Result<UploadedFile> {
+        val call = StubUploadCall(apiKey, mimeType, sizeBytes, displayName)
+        calls += call
+        return handler(call)
+    }
+}
+
+private data class StubUploadCall(
+    val apiKey: String,
     val mimeType: String,
     val sizeBytes: Long,
     val displayName: String,
-    val onStage: (GenerationStage) -> Unit,
 )
 
 private class DbDownloadSource(private val db: KofipodDatabase) : DownloadSource {

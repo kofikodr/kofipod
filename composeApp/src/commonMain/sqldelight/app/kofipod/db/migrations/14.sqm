@@ -1,0 +1,21 @@
+-- Adds the per-episode Discuss / Q&A feature tables. See DiscussSession.sq and
+-- DiscussMessage.sq for column-level documentation.
+CREATE TABLE DiscussSession (
+    id          TEXT NOT NULL PRIMARY KEY,
+    episodeId   TEXT NOT NULL UNIQUE,
+    createdAtMs INTEGER NOT NULL,
+    updatedAtMs INTEGER NOT NULL,
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
+);
+
+CREATE TABLE DiscussMessage (
+    id            TEXT NOT NULL PRIMARY KEY,
+    sessionId     TEXT NOT NULL,
+    role          TEXT NOT NULL,
+    content       TEXT NOT NULL,
+    citationsJson TEXT NOT NULL DEFAULT '[]',
+    createdAtMs   INTEGER NOT NULL,
+    FOREIGN KEY (sessionId) REFERENCES DiscussSession(id) ON DELETE CASCADE
+);
+
+CREATE INDEX DiscussMessage_bySession ON DiscussMessage(sessionId, createdAtMs);

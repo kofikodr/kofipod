@@ -50,6 +50,13 @@ enum class KPIconName {
 
     /** Four-point sparkle / "AI" indicator. */
     Sparkle,
+
+    /**
+     * Upward chevron used inside the circular composer send button on the
+     * Discuss / Ask Gemini surface. Distinct from [Back] (which points left)
+     * so the assistive-tech label can stay action-specific.
+     */
+    Send,
 }
 
 @Composable
@@ -410,6 +417,17 @@ private fun buildKPIconPath(
                 moveTo(20f * scale, 4f * scale)
                 lineTo(20f * scale, 9f * scale)
                 lineTo(15f * scale, 9f * scale)
+            }
+        KPIconName.Send ->
+            Path().apply {
+                // Vertical shaft + arrow head, sized to read clearly inside the
+                // 36dp pink composer button. Stem ends short of the circle edge
+                // so the stroke join with the head doesn't get clipped.
+                moveTo(12f * scale, 19f * scale)
+                lineTo(12f * scale, 5f * scale)
+                moveTo(6f * scale, 11f * scale)
+                lineTo(12f * scale, 5f * scale)
+                lineTo(18f * scale, 11f * scale)
             }
         KPIconName.Sparkle ->
             Path().apply {

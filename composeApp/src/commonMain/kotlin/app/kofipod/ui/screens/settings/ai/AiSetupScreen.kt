@@ -336,7 +336,7 @@ private fun DisconnectConfirmDialog(
         text = {
             Text(
                 "Your saved key will be removed from this device. AI features will be hidden " +
-                    "until you connect again. Cached AI summaries will also be removed from this device.",
+                    "until you connect again. Cached AI insights will also be removed from this device.",
                 color = c.textMute,
                 fontSize = 13.sp,
             )

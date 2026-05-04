@@ -1,0 +1,46 @@
+-- Generalised resume markers for AI pipelines that span more than the lifetime
+-- of one process tick. One row per (episodeId, kind) — composite PK so a Summary
+-- and a DiscussUpload for the same episode can pend independently.
+--
+-- kind values are wire strings produced by `PendingOperationKind.wire`:
+--   'summary'         — written by AiSummaryRepository.generate() / launchGenerate().
+--                       Worker drains via repo.resumePending(), which re-fires the
+--                       full pipeline (transcript or audio) for the surviving rows.
+--   'discuss_upload'  — written by DiscussRepository.runSend() before the audio
+--                       upload starts. Recovery is intentionally light: the worker
+--                       just clears stale rows on next launch (see
+--                       DiscussRepository.cleanStaleDiscussUploads). Re-firing a
+--                       chat send minutes later, with the user no longer watching
+--                       the screen, would be jarring.
+--
+-- Cascades with Episode so a deleted episode collects its markers — a request
+-- against a row that no longer exists has no defensible behaviour.
+CREATE TABLE PendingAiOperation (
+    episodeId     TEXT NOT NULL,
+    kind          TEXT NOT NULL,
+    requestedAtMs INTEGER NOT NULL,
+    PRIMARY KEY (episodeId, kind),
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
+);
+
+upsert:
+INSERT OR REPLACE INTO PendingAiOperation(episodeId, kind, requestedAtMs)
+VALUES (?, ?, ?);
+
+deleteByEpisodeAndKind:
+DELETE FROM PendingAiOperation WHERE episodeId = ? AND kind = ?;
+
+deleteByEpisode:
+DELETE FROM PendingAiOperation WHERE episodeId = ?;
+
+deleteByKind:
+DELETE FROM PendingAiOperation WHERE kind = ?;
+
+deleteAll:
+DELETE FROM PendingAiOperation;
+
+selectAll:
+SELECT * FROM PendingAiOperation;
+
+selectByKind:
+SELECT * FROM PendingAiOperation WHERE kind = ?;

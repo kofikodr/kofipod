@@ -10,7 +10,6 @@ import app.kofipod.ai.AiSummaryRepository
 import app.kofipod.ai.AudioSummariser
 import app.kofipod.ai.DownloadSource
 import app.kofipod.ai.GeminiModel
-import app.kofipod.ai.GenerationStage
 import app.kofipod.ai.KeyValidator
 import app.kofipod.ai.KeyVault
 import app.kofipod.ai.TextSummariser
@@ -268,17 +267,41 @@ class AiSetupViewModelTest {
         }
 
     @Test
-    fun confirmDisconnect_alsoWipesCachedSummaries() =
+    fun confirmDisconnect_alsoWipesCachedSummaries_andDiscussSessions_andUploadCache() =
         runVmTest {
-            // Slice 4 contract: Disconnect removes both halves of the user's AI
-            // footprint. The dialog copy promises this; the call site is the
-            // only place that wires it up. A regression here would leave
-            // summaries on disk after the key is gone — surprising and a quiet
-            // privacy footgun.
+            // Disconnect contract (now Phase 2): Disconnect removes the key,
+            // every cached summary, every chat session, AND every cached
+            // Files API upload row. The dialog copy promises this; the call
+            // site (confirmDisconnect → summaries.clearAll → discuss.clearAll)
+            // is the only place that wires it up. A regression that drops any
+            // of the three table wipes would leave stale rows on disk after
+            // the key is gone — quiet privacy + state-pollution issue.
             val vault = FakeKeyVault(initial = "to-be-revoked")
             val (vm, db) = newVmWithDb(vault = vault)
             seedSummaryRow(db, episodeId = "ep-1")
             seedSummaryRow(db, episodeId = "ep-2")
+            // Seed a Discuss session + message AND an audio upload cache row.
+            // Without these, the test couldn't catch a regression that drops
+            // discuss.clearAll() or coordinator.clearAll() from the disconnect
+            // sequence — the existing summary-only assertion would still pass.
+            db.discussSessionQueries.insert(id = "s-1", episodeId = "ep-1", createdAtMs = 0L, updatedAtMs = 0L)
+            db.discussMessageQueries.insert(
+                id = "m-1",
+                sessionId = "s-1",
+                role = "user",
+                content = "stale q",
+                citationsJson = "[]",
+                createdAtMs = 0L,
+            )
+            db.audioUploadCacheQueries.upsert(
+                episodeId = "ep-1",
+                geminiUri = "https://gemini/stale",
+                geminiName = "files/stale",
+                mimeType = "audio/mpeg",
+                fingerprint = "1",
+                uploadedAtMs = 0L,
+                expiresAtMs = Long.MAX_VALUE,
+            )
             vm.requestDisconnect()
 
             vm.confirmDisconnect()
@@ -289,6 +312,17 @@ class AiSetupViewModelTest {
                 db.episodeAiSummaryQueries.selectByEpisode("ep-1").executeAsList().isEmpty() &&
                     db.episodeAiSummaryQueries.selectByEpisode("ep-2").executeAsList().isEmpty(),
                 "Confirm must wipe ALL cached summaries — leaving any behind violates the dialog's promise",
+            )
+            assertEquals(
+                null,
+                db.discussSessionQueries.selectByEpisode("ep-1").executeAsOneOrNull(),
+                "Confirm must wipe Discuss sessions — chat history travels with the key",
+            )
+            assertEquals(
+                null,
+                db.audioUploadCacheQueries.selectByEpisode("ep-1").executeAsOneOrNull(),
+                "Confirm must wipe AudioUploadCache rows — a stale URI from the old key would " +
+                    "otherwise survive into the next reconnect",
             )
         }
 
@@ -355,6 +389,7 @@ class AiSetupViewModelTest {
                 db = db,
                 aiConfig = config,
                 summariser = NoopTextSummariser,
+                coordinator = noopCoordinator(db, testDispatcher),
                 audio = NoopAudioSummariser,
                 transcripts = NoopTranscriptFetcher,
                 episodes = EmptyEpisodeSource,
@@ -363,8 +398,31 @@ class AiSetupViewModelTest {
                 scheduler = NoopScheduler,
                 ioContext = testDispatcher,
             )
+        // Real DiscussRepository against the in-memory DB so confirmDisconnect's
+        // discuss.clearAll() exercises the actual SQL, not a stub. The chat
+        // seam + summary seam are no-ops because no test in this file sends a
+        // turn — only the disconnect path runs through here.
+        val discuss =
+            app.kofipod.ai.DiscussRepository(
+                db = db,
+                aiConfig = config,
+                chat = NoopChatSummariser,
+                source = NoopDiscussSource,
+                coordinator = noopCoordinator(db, testDispatcher),
+                episodes = EmptyEpisodeSource,
+                downloads = EmptyDownloadSource,
+                summaries = NoopSummarySource,
+                appScope = appScope,
+                ioContext = testDispatcher,
+            )
         advanceUntilIdle()
-        val vm = AiSetupViewModel(config = config, client = validator, summaries = summaries)
+        val vm =
+            AiSetupViewModel(
+                config = config,
+                client = validator,
+                summaries = summaries,
+                discuss = discuss,
+            )
         // The VM exposes `state` via stateIn(WhileSubscribed); without an active
         // collector its `.value` is frozen on the initial AiSetupUiState() and
         // assertions can't observe MutableStateFlow updates flowing through `combine`.
@@ -443,17 +501,34 @@ class AiSetupViewModelTest {
     }
 
     private object NoopAudioSummariser : AudioSummariser {
-        override suspend fun summariseAudio(
+        override suspend fun summariseFromAudio(
             apiKey: String,
             model: GeminiModel,
-            prompt: String,
-            localPath: String,
+            fileUri: String,
             mimeType: String,
-            sizeBytes: Long,
-            displayName: String,
-            onStage: (GenerationStage) -> Unit,
+            prompt: String,
         ): Result<AiSummaryJson> = error("AiSetupViewModelTest must not exercise the audio summariser")
     }
+
+    /**
+     * Real coordinator wired against the in-memory DB so the cache-table
+     * delete in confirmDisconnect exercises actual SQL. The uploader is a
+     * no-op error so an unintended audio path surfaces as a test failure
+     * rather than a silent network call.
+     */
+    private fun noopCoordinator(
+        db: KofipodDatabase,
+        testDispatcher: kotlin.coroutines.CoroutineContext,
+    ): app.kofipod.ai.AudioUploadCoordinator =
+        app.kofipod.ai.AudioUploadCoordinator(
+            uploader =
+                app.kofipod.ai.AudioUploader { _, _, _, _, _ ->
+                    error("AiSetupViewModelTest must not exercise the audio uploader")
+                },
+            db = db,
+            openFile = { io.ktor.utils.io.ByteReadChannel.Empty },
+            ioContext = testDispatcher,
+        )
 
     private object NoopTranscriptFetcher : TranscriptFetcher {
         override suspend fun fetch(url: String): Result<String> = error("AiSetupViewModelTest must not exercise the transcript fetcher")
@@ -475,5 +550,27 @@ class AiSetupViewModelTest {
             feedId: Long,
             nowMillis: Long,
         ): RefreshResult = RefreshResult(emptyList(), 0)
+    }
+
+    private object NoopChatSummariser : app.kofipod.ai.ChatSummariser {
+        override suspend fun chat(
+            apiKey: String,
+            model: GeminiModel,
+            systemPrompt: String,
+            context: app.kofipod.ai.ChatContext,
+            history: List<app.kofipod.ai.DiscussTurn>,
+            question: String,
+        ): Result<app.kofipod.ai.DiscussAnswerJson> = error("AiSetupViewModelTest must not exercise the chat summariser")
+    }
+
+    private object NoopDiscussSource : app.kofipod.ai.DiscussSource {
+        override suspend fun loadContext(
+            episode: Episode,
+            download: app.kofipod.db.Download?,
+        ): Result<app.kofipod.ai.DiscussContext> = Result.success(app.kofipod.ai.DiscussContext.NotAvailable)
+    }
+
+    private object NoopSummarySource : app.kofipod.ai.SummarySource {
+        override fun cachedFor(episodeId: String): Flow<app.kofipod.ai.AiSummary?> = flowOf(null)
     }
 }

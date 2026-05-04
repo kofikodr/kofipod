@@ -4,7 +4,6 @@ package app.kofipod.ui.screens.detail.ai
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -132,7 +131,7 @@ private fun IdleCard(
     val c = LocalKofipodColors.current
     PanelCard(modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            AiAssistChip()
+            AiPillChip(label = "AI ASSIST")
             Spacer(Modifier.weight(1f))
             Text(
                 "OPTIONAL",
@@ -178,35 +177,6 @@ private fun IdleCard(
 }
 
 /**
- * "AI ASSIST" chip — pinkSoft pill with sparkle prefix and bold mono label.
- * Distinct from [EyebrowChip] which uses different copy + sits above the
- * Ready/Error cards; keeping them separate avoids the temptation to thread
- * the label through as a parameter and grow a generic chip API on a single
- * caller.
- */
-@Composable
-private fun AiAssistChip() {
-    val c = LocalKofipodColors.current
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(c.pinkSoft)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        KPIcon(name = KPIconName.Sparkle, color = c.pink, size = 11.dp)
-        Spacer(Modifier.width(4.dp))
-        Text(
-            "AI ASSIST",
-            color = c.pink,
-            fontSize = 10.sp,
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
-        )
-    }
-}
-
-/**
  * Staged-progress card. Replaces a single "Summarising…" indicator with a
  * three-row checklist that surfaces which step of the generate pipeline is
  * actually running (Preparing → Analysing → Formatting), the upload size for
@@ -228,7 +198,7 @@ private fun GeneratingCard(
     val labels = stageLabels(state.sourceKind)
     PanelCard(modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            GeneratingChip()
+            AiPillChip(label = "GENERATING…")
             Spacer(Modifier.weight(1f))
             CancelButton(onCancel)
         }
@@ -385,28 +355,6 @@ private fun StageBullet(indicator: StageIndicator) {
 }
 
 @Composable
-private fun GeneratingChip() {
-    val c = LocalKofipodColors.current
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(c.pinkSoft)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        KPIcon(name = KPIconName.Sparkle, color = c.pink, size = 11.dp)
-        Spacer(Modifier.width(4.dp))
-        Text(
-            "GENERATING…",
-            color = c.pink,
-            fontSize = 10.sp,
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
-        )
-    }
-}
-
-@Composable
 private fun CancelButton(onCancel: () -> Unit) {
     val c = LocalKofipodColors.current
     Row(
@@ -442,7 +390,7 @@ private fun ReadyCard(
 ) {
     val c = LocalKofipodColors.current
     PanelCard(modifier = modifier) {
-        EyebrowChip()
+        AiPillChip(label = "AI SUMMARY")
         Spacer(Modifier.height(8.dp))
         Text(
             "Summary",
@@ -500,7 +448,7 @@ private fun ErrorCard(
     val c = LocalKofipodColors.current
     val presentation = errorPresentation(error)
     PanelCard(modifier = modifier) {
-        EyebrowChip()
+        AiPillChip(label = "AI SUMMARY")
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.Top) {
             ErrorIconBadge(name = presentation.icon)
@@ -543,61 +491,6 @@ private fun ErrorCard(
 // -----------------------------------------------------------------------------
 
 @Composable
-private fun PanelCard(
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    val c = LocalKofipodColors.current
-    Column(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
-                .background(c.surface)
-                .border(1.dp, c.border, RoundedCornerShape(20.dp))
-                .padding(16.dp),
-    ) {
-        content()
-    }
-}
-
-@Composable
-private fun SparkleBadge() {
-    val c = LocalKofipodColors.current
-    Box(
-        Modifier
-            .size(36.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(c.pinkSoft),
-        contentAlignment = Alignment.Center,
-    ) {
-        KPIcon(name = KPIconName.Sparkle, color = c.pink, size = 18.dp)
-    }
-}
-
-@Composable
-private fun EyebrowChip() {
-    val c = LocalKofipodColors.current
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(c.pinkSoft)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        KPIcon(name = KPIconName.Sparkle, color = c.pink, size = 11.dp)
-        Spacer(Modifier.width(4.dp))
-        Text(
-            "AI SUMMARY",
-            color = c.pink,
-            fontSize = 10.sp,
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
-        )
-    }
-}
-
-@Composable
 private fun ErrorIconBadge(name: KPIconName) {
     val c = LocalKofipodColors.current
     Box(
@@ -608,38 +501,6 @@ private fun ErrorIconBadge(name: KPIconName) {
         contentAlignment = Alignment.Center,
     ) {
         KPIcon(name = name, color = c.pink, size = 18.dp)
-    }
-}
-
-@Composable
-private fun DashedGenerateButton(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val c = LocalKofipodColors.current
-    // Solid border in v1 — Compose lacks first-class dashed strokes for borders
-    // and a stable PathEffect-based implementation is more code than the visual
-    // delta is worth right now. Tracked under "later polish".
-    Row(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(999.dp))
-                .border(width = 1.5.dp, color = c.pink, shape = RoundedCornerShape(999.dp))
-                .clickable { onClick() }
-                .padding(vertical = 12.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        KPIcon(name = KPIconName.Sparkle, color = c.pink, size = 14.dp)
-        Spacer(Modifier.width(8.dp))
-        Text(
-            label,
-            color = c.pink,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-        )
     }
 }
 
