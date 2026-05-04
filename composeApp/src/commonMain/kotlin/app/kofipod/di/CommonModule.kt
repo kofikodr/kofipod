@@ -5,6 +5,7 @@ import app.kofipod.data.api.GithubReleasesApi
 import app.kofipod.data.api.PodcastIndexApi
 import app.kofipod.data.db.DatabaseFactory
 import app.kofipod.data.db.buildDatabase
+import app.kofipod.data.net.NetworkErrorHandler
 import app.kofipod.data.net.buildHttpClient
 import app.kofipod.data.recommend.PodcastIndexRecommendationApi
 import app.kofipod.data.recommend.RecommendationApi
@@ -25,6 +26,7 @@ import app.kofipod.data.repo.SearchSource
 import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.data.repo.StatsRepository
 import app.kofipod.data.repo.UpdateRepository
+import app.kofipod.ui.UiEventBus
 import app.kofipod.ui.palette.PaletteCache
 import app.kofipod.ui.screens.detail.EpisodeDetailViewModel
 import app.kofipod.ui.screens.detail.PodcastDetailViewModel
@@ -47,6 +49,8 @@ import org.koin.dsl.module
 val commonDataModule =
     module {
         single { buildHttpClient() }
+        single { UiEventBus() }
+        single { NetworkErrorHandler(get()) }
         single { PodcastIndexApi.create() }
         single { buildDatabase(get<DatabaseFactory>()) }
         single { LibraryRepository(get()) }
@@ -88,11 +92,12 @@ val commonDataModule =
                 categories = get(),
                 recommendations = get<RecommendationsSource>(),
                 appScope = get(org.koin.core.qualifier.named("appScope")),
+                errors = get(),
             )
         }
         viewModel { LibraryViewModel(get(), get(), get()) }
-        viewModel { StarterPackViewModel(get()) }
-        viewModel { (listId: String?) -> LibraryDetailViewModel(listId, get(), get(), get(), get()) }
+        viewModel { StarterPackViewModel(get(), get()) }
+        viewModel { (listId: String?) -> LibraryDetailViewModel(listId, get(), get(), get(), get(), get()) }
         viewModel {
             SettingsViewModel(
                 repo = get(),
@@ -102,12 +107,13 @@ val commonDataModule =
                 updateChecker = get(),
                 updateRepo = get(),
                 updateActions = get<UpdateActionPort>(),
+                errors = get(),
             )
         }
         viewModel { DownloadsViewModel(get()) }
         viewModel { SchedulerInfoViewModel(get()) }
         viewModel { (podcastId: String) ->
-            PodcastDetailViewModel(podcastId, get(), get(), get(), get(), get(), get(), get(), get())
+            PodcastDetailViewModel(podcastId, get(), get(), get(), get(), get(), get(), get(), get(), get())
         }
         viewModel { (episodeId: String) ->
             EpisodeDetailViewModel(

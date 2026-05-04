@@ -17,10 +17,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,6 +36,8 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navOptions
+import app.kofipod.ui.UiEvent
+import app.kofipod.ui.UiEventBus
 import app.kofipod.ui.nav.DeepLinks
 import app.kofipod.ui.nav.KofipodNavHost
 import app.kofipod.ui.nav.Route
@@ -39,12 +45,26 @@ import app.kofipod.ui.player.MiniPlayer
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.theme.LocalKofipodColors
+import org.koin.compose.koinInject
 
 @Composable
 fun AppShell() {
     val nav = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
+    val bus: UiEventBus = koinInject()
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(bus) {
+        bus.events.collect { event ->
+            when (event) {
+                is UiEvent.Snackbar -> {
+                    // Replace any in-flight snackbar so back-to-back failures don't queue.
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                    snackbarHostState.showSnackbar(message = event.message)
+                }
+            }
+        }
+    }
     LaunchedEffect(nav) {
         DeepLinks.openPlayer.collect {
             if (nav.currentDestination?.route != Route.Player::class.qualifiedName) {
@@ -75,8 +95,18 @@ fun AppShell() {
         }
     }
     val onPlayerScreen = currentRoute == Route.Player::class.qualifiedName
+    val c = LocalKofipodColors.current
     Scaffold(
-        containerColor = LocalKofipodColors.current.bg,
+        containerColor = c.bg,
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = c.surface,
+                    contentColor = c.text,
+                )
+            }
+        },
         bottomBar = {
             Column {
                 if (!onPlayerScreen) {

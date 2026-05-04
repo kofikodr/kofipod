@@ -4,6 +4,7 @@ package app.kofipod.ui.screens.detail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.kofipod.data.api.PodcastIndexApi
+import app.kofipod.data.net.NetworkErrorHandler
 import app.kofipod.data.repo.DownloadRepository
 import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.data.repo.LibraryRepository
@@ -75,6 +76,7 @@ class PodcastDetailViewModel(
     private val downloads: DownloadRepository,
     private val sharer: Sharer,
     private val recentlyViewed: RecentlyViewedRepository,
+    private val errors: NetworkErrorHandler,
 ) : ViewModel() {
     private val remoteSummary = MutableStateFlow<PodcastSummary?>(null)
     private val remoteEpisodes = MutableStateFlow<List<EpisodePreview>>(emptyList())
@@ -195,12 +197,29 @@ class PodcastDetailViewModel(
                                 withContext(Dispatchers.Default) { downloads.evictUntilUnderCap() }
                             }
                         }
-                        .onFailure { error.value = it.message ?: "Failed to refresh episodes" }
+                        .onFailure {
+                            // Refreshing while in-library: stored episodes are already cached, so
+                            // route connectivity errors to the global snackbar instead of the
+                            // empty-state error field.
+                            error.value =
+                                errors.handle(
+                                    it,
+                                    hasCachedData = state.value.storedEpisodes.isNotEmpty(),
+                                    fallback = "Failed to refresh episodes",
+                                )
+                        }
                 } else {
                     runCatching {
                         val eps = api.episodesByFeedId(feedId, limit = remoteLimit.value)
                         remoteEpisodes.value = eps.map { it.toPreview() }
-                    }.onFailure { error.value = it.message ?: "Failed to refresh" }
+                    }.onFailure {
+                        error.value =
+                            errors.handle(
+                                it,
+                                hasCachedData = state.value.remoteEpisodes.isNotEmpty(),
+                                fallback = "Failed to refresh",
+                            )
+                    }
                 }
             } finally {
                 _refreshing.value = false
@@ -242,7 +261,13 @@ class PodcastDetailViewModel(
                 }
                 val eps = api.episodesByFeedId(feedId, limit = remoteLimit.value)
                 remoteEpisodes.value = eps.map { it.toPreview() }
-            }.onFailure { error.value = it.message ?: "Failed to load podcast" }
+            }.onFailure {
+                // If user already has the podcast in the library or stored episodes, treat
+                // the failure as transient (snackbar) and keep showing cached data. Otherwise
+                // surface the friendly empty-state message in the screen.
+                val hasCache = state.value.inLibrary || state.value.storedEpisodes.isNotEmpty()
+                error.value = errors.handle(it, hasCachedData = hasCache, fallback = "Failed to load podcast")
+            }
             loading.value = false
             loadingMore.value = false
         }
@@ -345,7 +370,14 @@ class PodcastDetailViewModel(
         viewModelScope.launch {
             val feedId = podcastId.toLongOrNull() ?: return@launch
             runCatching { episodes.refresh(podcastId, feedId, Clock.System.now().toEpochMilliseconds()) }
-                .onFailure { error.value = it.message ?: "Failed to save episodes" }
+                .onFailure {
+                    error.value =
+                        errors.handle(
+                            it,
+                            hasCachedData = state.value.storedEpisodes.isNotEmpty(),
+                            fallback = "Failed to save episodes",
+                        )
+                }
         }
     }
 }

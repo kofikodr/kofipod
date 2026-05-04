@@ -3,6 +3,7 @@ package app.kofipod.ui.screens.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.kofipod.data.net.NetworkErrorHandler
 import app.kofipod.data.repo.DiscoverySource
 import app.kofipod.domain.PodcastSummary
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,7 +17,10 @@ data class StarterPackUiState(
     val error: String? = null,
 )
 
-class StarterPackViewModel(private val discovery: DiscoverySource) : ViewModel() {
+class StarterPackViewModel(
+    private val discovery: DiscoverySource,
+    private val errors: NetworkErrorHandler,
+) : ViewModel() {
     private val _state = MutableStateFlow(StarterPackUiState())
     val state: StateFlow<StarterPackUiState> = _state.asStateFlow()
 
@@ -32,7 +36,17 @@ class StarterPackViewModel(private val discovery: DiscoverySource) : ViewModel()
                     _state.value = StarterPackUiState(loading = false, picks = picks)
                 }
                 .onFailure { e ->
-                    _state.value = _state.value.copy(loading = false, error = e.message ?: "Couldn't load trending podcasts")
+                    val hasCache = _state.value.picks.isNotEmpty()
+                    _state.value =
+                        _state.value.copy(
+                            loading = false,
+                            error =
+                                errors.handle(
+                                    e,
+                                    hasCachedData = hasCache,
+                                    fallback = "Couldn't load trending podcasts",
+                                ),
+                        )
                 }
         }
     }
