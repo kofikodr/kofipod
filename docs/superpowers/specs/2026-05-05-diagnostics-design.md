@@ -8,7 +8,7 @@
 
 - Receive crash reports with readable, deobfuscated stack traces from production users.
 - Receive lightweight, anonymized usage signal (event counts only) to know which features are used.
-- Default OFF. Explicit opt-in per-channel in Settings.
+- Default ON, with a one-time first-launch disclosure and a per-channel toggle in Settings to turn off.
 - No PII, no install IDs, no advertising IDs, no Google Play Services dependency.
 - License-clean for a GPL-3 OSS app distributed via F-Droid.
 - Operating cost in the single-digit USD/month, fixed.
@@ -39,12 +39,12 @@ New section in `SettingsScreen` titled **"Privacy & Diagnostics"**, placed below
 ```
 Privacy & Diagnostics
 ─────────────────────
-[ ] Send crash reports
+[x] Send crash reports
     Help fix bugs by sharing anonymous crash details when the
     app crashes. No personal information.
     ▸ What's sent?
 
-[ ] Share anonymous usage data
+[x] Share anonymous usage data
     Help prioritize features by sharing counts of how often
     they're used. No identifiers, no IP address stored.
     ▸ What's sent?
@@ -52,17 +52,29 @@ Privacy & Diagnostics
 Read the privacy policy ›
 ```
 
-Both switches default OFF. Tapping "What's sent?" expands an inline disclosure listing the literal payload fields. Tapping "Read the privacy policy" opens `https://github.com/<repo>/blob/master/docs/privacy.md` in a browser.
+Both switches default ON. Tapping "What's sent?" expands an inline disclosure listing the literal payload fields. Tapping "Read the privacy policy" opens `https://github.com/<repo>/blob/master/docs/privacy.md` in a browser.
 
 ### First-launch behavior
 
-No onboarding prompt. Toggles stay off until the user opts in. The app must remain fully functional with both toggles off.
+Both toggles default ON, but no diagnostic data is sent until the user has acknowledged a **first-launch disclosure**. On the first launch after this feature ships, a non-blocking bottom sheet appears once with copy along the lines of:
+
+> Kofipod sends anonymous crash reports and usage counts so the developer can fix bugs and prioritize features. No personal information, no tracking across apps. You can turn either off in **Settings → Privacy & Diagnostics** at any time.
+>
+> [ Got it ]   [ Open Settings ]
+
+Tapping "Got it" sets a `diagnostics.disclosure.acknowledged = true` flag in `kofipod_secure` prefs and unlocks the senders. "Open Settings" deep-links to the new section. Until acknowledged, both `CrashReporter` and `Telemetry` stay disabled regardless of the toggle state — no covert sends.
+
+Existing users on app update see the disclosure once on next launch (the flag is unset for them). The app must remain fully functional with either or both toggles off.
 
 ### State persistence
 
-Two booleans stored in `kofipod_secure` `EncryptedSharedPreferences` (the existing prefs file used by `AndroidKeyVault`). This file is excluded from Auto Backup, so toggles do **not** survive device migration — fail-safe (a new device starts with diagnostics off).
+Three flags stored in `kofipod_secure` `EncryptedSharedPreferences` (the existing prefs file used by `AndroidKeyVault`). This file is excluded from Auto Backup, so flags do **not** survive device migration — every new install starts with the disclosure ungated and toggles defaulting to ON, but no sends occur until acknowledged.
 
-Keys: `diagnostics.crashes.enabled`, `diagnostics.usage.enabled`.
+Keys:
+
+- `diagnostics.crashes.enabled` — default `true`
+- `diagnostics.usage.enabled` — default `true`
+- `diagnostics.disclosure.acknowledged` — default `false`
 
 ## Architecture
 
@@ -89,8 +101,10 @@ diagnostics/
 interface DiagnosticsConfigRepository {
     val crashesEnabled: Flow<Boolean>
     val usageEnabled: Flow<Boolean>
+    val disclosureAcknowledged: Flow<Boolean>
     suspend fun setCrashesEnabled(enabled: Boolean)
     suspend fun setUsageEnabled(enabled: Boolean)
+    suspend fun acknowledgeDisclosure()
 }
 ```
 
@@ -183,7 +197,7 @@ enum class AiPath(val value: String) { TRANSCRIPT("transcript"), AUDIO("audio") 
 
 `DiagnosticsConfigRepository`, `CrashReporter`, `Telemetry` are Koin singletons.
 
-A single `DiagnosticsBootstrapper` collects the two toggle flows on `appScope` and calls `enable()` / `disable()` on the matching component when the toggle changes. Started from `KofipodApplication.onCreate` (Android) — kicked off after Koin is up and before any activity launches.
+A single `DiagnosticsBootstrapper` combines each toggle flow with `disclosureAcknowledged` and calls `enable()` / `disable()` on the matching component when the effective state changes. Until the user has acknowledged the first-launch disclosure, both subsystems stay disabled regardless of toggle state. Started from `KofipodApplication.onCreate` (Android) — kicked off after Koin is up and before any activity launches.
 
 ```kotlin
 class DiagnosticsBootstrapper(
@@ -193,10 +207,10 @@ class DiagnosticsBootstrapper(
     private val appScope: CoroutineScope,
 ) {
     fun start() {
-        config.crashesEnabled
+        combine(config.crashesEnabled, config.disclosureAcknowledged) { on, ack -> on && ack }
             .onEach { if (it) crashes.enable() else crashes.disable() }
             .launchIn(appScope)
-        config.usageEnabled
+        combine(config.usageEnabled, config.disclosureAcknowledged) { on, ack -> on && ack }
             .onEach { if (it) telemetry.enable() else telemetry.disable() }
             .launchIn(appScope)
     }
@@ -205,9 +219,11 @@ class DiagnosticsBootstrapper(
 
 ### Settings UI wiring
 
-`SettingsViewModel` exposes two new `StateFlow<Boolean>` mirroring `DiagnosticsConfigRepository` and two action methods (`setCrashesEnabled`, `setUsageEnabled`). The new section in `SettingsScreen` consumes them.
+`SettingsViewModel` exposes two new `StateFlow<Boolean>` mirroring `DiagnosticsConfigRepository.crashesEnabled` / `usageEnabled` and two action methods (`setCrashesEnabled`, `setUsageEnabled`). The new section in `SettingsScreen` consumes them.
 
-The new "What's sent?" disclosures are static Compose content — no extra state.
+The first-launch disclosure is hosted by `AppShell` (or whichever Compose composable wraps the bottom-nav root). It observes `disclosureAcknowledged` and renders a `ModalBottomSheet` once when the value is `false`. Tapping "Got it" or "Open Settings" both call `acknowledgeDisclosure()`; "Open Settings" additionally navigates to `Route.Settings`.
+
+The "What's sent?" disclosures inside Settings are static Compose content — no extra state.
 
 ### Detekt / ktlint considerations
 
@@ -310,7 +326,7 @@ Cloud free tier. Account on aptabase.com, app key copied into `local.properties`
 
 New file `docs/privacy.md` committed to the repo, linked from the Settings screen. Lists the two tables above verbatim plus:
 
-- The two toggles, default state, and where they're stored.
+- The two toggles (default ON in non-F-Droid builds, gated behind a one-time first-launch disclosure that must be acknowledged before any send) and where the flags are stored.
 - The hosting model (GlitchTip on Railway, Aptabase cloud) so users can audit the network destinations.
 - The data retention policy (30 days for crashes, 12 months for events — Aptabase default).
 - A statement that turning off a toggle stops further sends but does **not** delete data already sent.
@@ -321,24 +337,28 @@ New file `docs/privacy.md` committed to the repo, linked from the Settings scree
 
 - `CrashReporterScrubberTest` — given a synthetic Sentry event with breadcrumbs containing Gemini URLs, query SQL, and an episode title, assert the scrubbed event has those redacted/dropped.
 - `TelemetryEventTest` — round-trip every `TelemetryEvent` subtype through `name` and `props`, assert no value contains a non-enum string.
-- `DiagnosticsConfigRepositoryTest` — toggle persistence, default-off behavior, flow emission.
+- `DiagnosticsConfigRepositoryTest` — flag persistence, default values (`crashes=true`, `usage=true`, `acknowledged=false`), flow emission.
+- `DiagnosticsBootstrapperTest` — fakes confirm that `enable()` is **not** called while disclosure is unacknowledged even if a toggle is on; `enable()` is called on the matching component the moment acknowledgement flips true.
 
 ### Integration tests (Compose UI)
 
-- `SettingsDiagnosticsTest` — both switches default off, flipping persists across recomposition, "What's sent?" disclosure expands and shows expected text.
+- `FirstLaunchDisclosureTest` — disclosure renders when `acknowledged=false`, "Got it" persists acknowledgement and dismisses, "Open Settings" persists and navigates.
+- `SettingsDiagnosticsTest` — both switches default ON, flipping persists across recomposition, "What's sent?" disclosure expands and shows expected text.
 
 ### Paparazzi snapshot
 
-- New snapshot of the "Privacy & Diagnostics" section in both light and dark themes, both toggles off, then both toggles on with disclosures expanded.
+- New snapshot of the "Privacy & Diagnostics" Settings section in light and dark themes (toggles ON, disclosures collapsed; toggles OFF, disclosures expanded).
+- New snapshot of the first-launch bottom sheet in light and dark themes.
 
 ### Manual verification
 
 After implementation, on a debug build with DSN/key configured:
 
-1. Toggle crashes ON, force a synthetic exception via a hidden long-press in the About screen (debug-only). Confirm event arrives in GlitchTip with deobfuscated stack.
-2. Toggle usage ON, perform each `TelemetryEvent`, confirm events arrive in Aptabase dashboard.
-3. Toggle both OFF, repeat 1+2, confirm nothing arrives over a 60-second window (use `mitmproxy` or Charles to verify no outbound requests to crash.kofipod.app or aptabase.com).
-4. Test ProGuard rules on a release build by running it on the emulator and confirming the SDKs still init.
+1. Fresh install: confirm the first-launch disclosure appears, no events leave the device until "Got it" is tapped (`mitmproxy` shows zero outbound to GlitchTip / Aptabase pre-acknowledgement).
+2. After acknowledgement, confirm `app_opened` arrives in Aptabase and a forced synthetic exception (debug-only hidden long-press in About) arrives in GlitchTip with a deobfuscated stack.
+3. Toggle crashes OFF in Settings: confirm subsequent forced exceptions do not arrive.
+4. Toggle usage OFF: confirm subsequent `TelemetryEvent`s do not arrive.
+5. Test ProGuard rules on a release build by running it on the emulator and confirming both SDKs still init when toggles are on.
 
 The hidden long-press from step 1 is debug-build-only and does not ship in release.
 
@@ -354,4 +374,5 @@ The hidden long-press from step 1 is debug-build-only and does not ship in relea
 - **Aptabase self-host.** Defer until cloud free tier is exceeded. Sketch a follow-up plan when MAU justifies it.
 - **GlitchTip backup automation.** Initial setup uses Railway's manual snapshots; automate weekly Postgres dump → S3 in a follow-up.
 - **F-Droid build.** F-Droid's build is reproducible-from-source. Since DSN/key are read from `local.properties` (env in CI), F-Droid's builds will have empty values and both subsystems will be permanently disabled — exactly what F-Droid wants. No build flavor needed.
+- **F-Droid Tracking anti-feature flag.** With diagnostics defaulting ON in non-F-Droid release builds, F-Droid's metadata may flag the app's *non-F-Droid* binary with a Tracking anti-feature even though F-Droid's own builds are inert. The first-launch disclosure plus per-channel toggles in Settings is the standard mitigation; document the posture clearly in `docs/privacy.md` and the F-Droid metadata so users understand which build is which.
 - **Crash review cadence.** Maintainer to check GlitchTip weekly. No automated paging.
