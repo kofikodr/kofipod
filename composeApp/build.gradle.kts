@@ -78,6 +78,7 @@ kotlin {
                 implementation(kotlin("test"))
                 @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
                 implementation(compose.uiTest)
+                implementation(libs.kotlinx.coroutines.test)
             }
         }
         val androidMain by getting {

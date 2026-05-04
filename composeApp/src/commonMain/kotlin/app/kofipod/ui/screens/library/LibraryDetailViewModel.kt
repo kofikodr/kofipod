@@ -3,6 +3,7 @@ package app.kofipod.ui.screens.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.kofipod.data.net.NetworkErrorHandler
 import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.data.repo.LibraryRepository
 import app.kofipod.data.repo.RecentlyViewedRepository
@@ -40,6 +41,7 @@ class LibraryDetailViewModel(
     private val search: SearchSource,
     private val recentlyViewed: RecentlyViewedRepository,
     episodes: EpisodeSource,
+    private val errors: NetworkErrorHandler,
 ) : ViewModel() {
     private val searchQuery = MutableStateFlow("")
     private val searchResults = MutableStateFlow<List<PodcastSummary>>(emptyList())
@@ -121,8 +123,11 @@ class LibraryDetailViewModel(
                         searching.value = false
                     }
                     .onFailure {
+                        // Re-throw cancellation so a debounce-driven Job swap
+                        // doesn't surface as a search error in the UI; pass
+                        // every other failure through the centralised handler.
                         if (it is CancellationException) throw it
-                        searchError.value = it.message ?: "Search failed"
+                        searchError.value = errors.handle(it, hasCachedData = false, fallback = "Search failed")
                         searching.value = false
                     }
             }

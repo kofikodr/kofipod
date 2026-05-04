@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import app.kofipod.ai.AiConfigRepository
 import app.kofipod.ai.GeminiModel
 import app.kofipod.background.Scheduler
+import app.kofipod.data.net.NetworkErrorHandler
 import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.data.repo.UpdateRepository
 import app.kofipod.data.repo.UpdateUiState
@@ -63,6 +64,7 @@ class SettingsViewModel(
     // Wrapped in an interface so commonMain VM stays Android-free.
     private val updateActions: UpdateActionPort,
     private val aiConfig: AiConfigRepository,
+    private val errors: NetworkErrorHandler,
 ) : ViewModel() {
     // Refreshes the displayed cache usage once per second while Settings is visible.
     private val cacheUsedFlow =
@@ -146,7 +148,10 @@ class SettingsViewModel(
             updateActionFlow.value = UpdateAction.Checking
             runCatching { updateChecker.check(force = true) }
                 .onSuccess { updateActionFlow.value = UpdateAction.Idle }
-                .onFailure { updateActionFlow.value = UpdateAction.Error("Check failed: ${it.message ?: "network error"}") }
+                .onFailure {
+                    val msg = errors.handle(it, hasCachedData = false, fallback = "network error") ?: "network error"
+                    updateActionFlow.value = UpdateAction.Error("Check failed: $msg")
+                }
         }
 
     fun downloadUpdate() {
@@ -159,7 +164,10 @@ class SettingsViewModel(
                 }
             }
                 .onSuccess { updateActionFlow.value = UpdateAction.Idle }
-                .onFailure { updateActionFlow.value = UpdateAction.Error("Download failed: ${it.message ?: "unknown"}") }
+                .onFailure {
+                    val msg = errors.handle(it, hasCachedData = false, fallback = "unknown") ?: "unknown"
+                    updateActionFlow.value = UpdateAction.Error("Download failed: $msg")
+                }
         }
     }
 

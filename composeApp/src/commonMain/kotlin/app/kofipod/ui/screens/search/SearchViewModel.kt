@@ -4,6 +4,7 @@ package app.kofipod.ui.screens.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.kofipod.data.api.PodcastIndexApi
+import app.kofipod.data.net.NetworkErrorHandler
 import app.kofipod.data.recommend.RecommendationsRepository
 import app.kofipod.data.recommend.RecommendationsSource
 import app.kofipod.data.recommend.ReshuffleResult
@@ -11,7 +12,6 @@ import app.kofipod.data.repo.CategoriesSource
 import app.kofipod.data.repo.SearchSource
 import app.kofipod.domain.PodcastSummary
 import com.mr3y.podcastindex.model.Category
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -51,6 +51,7 @@ class SearchViewModel(
     categories: CategoriesSource,
     private val recommendations: RecommendationsSource,
     private val appScope: CoroutineScope,
+    private val errors: NetworkErrorHandler,
 ) : ViewModel() {
     private val _state = MutableStateFlow(SearchUiState(popularCategories = categories.popular()))
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
@@ -165,12 +166,15 @@ class SearchViewModel(
                             hasMore = results.size >= limit,
                         )
                 }.onFailure { e ->
-                    if (e is CancellationException) throw e
+                    // Search has no cached results to fall back on, so always surface the
+                    // friendly message inline. Snackbar is reserved for screens with a cache.
+                    // NetworkErrorHandler.handle() rethrows CancellationException internally,
+                    // so we don't need a local guard here.
                     _state.value =
                         _state.value.copy(
                             loading = false,
                             loadingMore = false,
-                            error = e.message ?: "Search failed",
+                            error = errors.handle(e, hasCachedData = false, fallback = "Search failed"),
                         )
                 }
             }
