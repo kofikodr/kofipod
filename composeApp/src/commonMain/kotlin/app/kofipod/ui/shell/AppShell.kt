@@ -33,12 +33,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navOptions
+import app.kofipod.diagnostics.DiagnosticsConfigRepository
 import app.kofipod.opml.OpmlPickerHost
 import app.kofipod.ui.UiEvent
 import app.kofipod.ui.UiEventBus
+import kotlinx.coroutines.launch
 import app.kofipod.ui.nav.DeepLinks
 import app.kofipod.ui.nav.KofipodNavHost
 import app.kofipod.ui.nav.Route
@@ -131,6 +135,29 @@ fun AppShell() {
     // Hoisted at the shell level so SAF launchers stay rooted regardless of which
     // screen triggered the import/export. No-op on iOS.
     OpmlPickerHost()
+
+    // First-launch disclosure: gates all diagnostic sends until the user
+    // taps "Got it" or "Open Settings". `initial = true` avoids a flash of
+    // the sheet on every launch — the first real emission either confirms
+    // true (sheet stays hidden) or flips to false (sheet appears).
+    val diagnostics: DiagnosticsConfigRepository = koinInject()
+    val acknowledged by diagnostics.disclosureAcknowledged.collectAsState(initial = true)
+    val ackScope = rememberCoroutineScope()
+    DiagnosticsDisclosureSheet(
+        visible = !acknowledged,
+        onAcknowledge = { ackScope.launch { diagnostics.acknowledgeDisclosure() } },
+        onOpenSettings = {
+            if (nav.currentDestination?.route != Route.Settings::class.qualifiedName) {
+                nav.navigate(
+                    Route.Settings,
+                    navOptions {
+                        launchSingleTop = true
+                        popUpTo(nav.graph.findStartDestination().id) { inclusive = false }
+                    },
+                )
+            }
+        },
+    )
 }
 
 private data class Tab(
