@@ -17,6 +17,8 @@ import app.kofipod.opml.AndroidOpmlFilePort
 import app.kofipod.opml.OpmlFilePort
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.playback.PlaybackCache
+import app.kofipod.pro.AndroidEntitlementCache
+import app.kofipod.pro.EntitlementCache
 import app.kofipod.share.Sharer
 import app.kofipod.ui.palette.AndroidPalettePort
 import app.kofipod.ui.palette.PalettePort
@@ -45,6 +47,7 @@ val androidPlatformModule =
         single { ThemeSystem(androidContext()) }
         single<PalettePort> { AndroidPalettePort(androidContext()) }
         single<KeyVault> { AndroidKeyVault(androidContext()) }
+        single<EntitlementCache> { AndroidEntitlementCache(androidContext()) }
         // The Android OPML port is a singleton that the picker-host composable subscribes
         // to. Both the interface and the concrete type resolve to the same instance so the
         // composable (which casts to the concrete) sees what the VM (which uses the
