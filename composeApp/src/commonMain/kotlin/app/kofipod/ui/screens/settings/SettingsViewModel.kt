@@ -6,6 +6,10 @@ import androidx.lifecycle.viewModelScope
 import app.kofipod.ai.AiConfigRepository
 import app.kofipod.ai.GeminiModel
 import app.kofipod.background.Scheduler
+import app.kofipod.backup.BackupAction
+import app.kofipod.backup.BackupController
+import app.kofipod.backup.BackupFolderStore
+import app.kofipod.backup.RestoreValidation
 import app.kofipod.data.net.NetworkErrorHandler
 import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.data.repo.UpdateRepository
@@ -55,6 +59,11 @@ data class SettingsUiState(
     val aiConnected: Boolean = false,
     val aiModel: GeminiModel = GeminiModel.Flash,
     val opmlAction: OpmlAction = OpmlAction.Idle,
+    val backupAction: BackupAction = BackupAction.Idle,
+    val backupFolderUri: String? = null,
+    val backupFolderName: String? = null,
+    val lastBackupAtMs: Long? = null,
+    val pendingRestoreConfirm: RestoreValidation.Valid? = null,
 )
 
 class SettingsViewModel(
@@ -69,6 +78,8 @@ class SettingsViewModel(
     private val aiConfig: AiConfigRepository,
     private val errors: NetworkErrorHandler,
     private val opml: OpmlController,
+    private val backup: BackupController,
+    private val folderStore: BackupFolderStore,
 ) : ViewModel() {
     // Refreshes the displayed cache usage once per second while Settings is visible.
     private val cacheUsedFlow =
@@ -115,13 +126,32 @@ class SettingsViewModel(
             ) { updateState, action, aiConnected, aiModel, opmlAction ->
                 AiAndUpdateState(updateState, action, aiConnected, aiModel, opmlAction)
             },
-        ) { base, combined ->
+            combine(
+                backup.action,
+                folderStore.treeUriFlow(),
+                folderStore.lastBackupAtFlow(),
+                backup.pendingRestoreConfirm,
+            ) { backupAction, treeUri, lastBackupAtMs, pendingRestoreConfirm ->
+                BackupSlice(
+                    action = backupAction,
+                    treeUri = treeUri,
+                    folderName = treeUri?.let { folderStore.displayNameForTreeUri(it) },
+                    lastBackupAtMs = lastBackupAtMs,
+                    pendingRestoreConfirm = pendingRestoreConfirm,
+                )
+            },
+        ) { base, combined, backupSlice ->
             base.copy(
                 update = combined.updateState,
                 updateAction = combined.action,
                 aiConnected = combined.aiConnected,
                 aiModel = combined.aiModel,
                 opmlAction = combined.opmlAction,
+                backupAction = backupSlice.action,
+                backupFolderUri = backupSlice.treeUri,
+                backupFolderName = backupSlice.folderName,
+                lastBackupAtMs = backupSlice.lastBackupAtMs,
+                pendingRestoreConfirm = backupSlice.pendingRestoreConfirm,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -191,6 +221,18 @@ class SettingsViewModel(
     fun importOpml() = opml.importOpml()
 
     fun exportOpml() = opml.exportOpml()
+
+    fun chooseBackupFolder() = backup.chooseFolder()
+
+    fun backupNow() = backup.runBackup()
+
+    fun restoreFromBackup() = backup.runRestore()
+
+    fun confirmRestore() = backup.confirmRestore()
+
+    fun cancelRestoreConfirm() = backup.cancelRestoreConfirm()
+
+    fun dismissBackupError() = backup.dismissError()
 }
 
 private data class AiAndUpdateState(
@@ -199,4 +241,12 @@ private data class AiAndUpdateState(
     val aiConnected: Boolean,
     val aiModel: GeminiModel,
     val opmlAction: OpmlAction,
+)
+
+private data class BackupSlice(
+    val action: BackupAction,
+    val treeUri: String?,
+    val folderName: String?,
+    val lastBackupAtMs: Long?,
+    val pendingRestoreConfirm: RestoreValidation.Valid?,
 )

@@ -10,6 +10,7 @@ androidxWork = "2.10.0"
 androidxCredentials = "1.3.0"
 androidxPalette = "1.0.0"
 androidxSecurityCrypto = "1.1.0-alpha06"
+androidxDocumentFile = "1.0.1"
 googleIdentity = "1.1.1"
 coil = "3.0.4"
 ktor = "3.0.3"
@@ -41,6 +42,7 @@ androidx-credentials = { module = "androidx.credentials:credentials", version.re
 androidx-credentials-play-services-auth = { module = "androidx.credentials:credentials-play-services-auth", version.ref = "androidxCredentials" }
 androidx-palette = { module = "androidx.palette:palette-ktx", version.ref = "androidxPalette" }
 androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "androidxSecurityCrypto" }
+androidx-documentfile = { module = "androidx.documentfile:documentfile", version.ref = "androidxDocumentFile" }
 google-identity = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleIdentity" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-ktor = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }

@@ -1,3 +1,4 @@
+import com.codingfeline.buildkonfig.compiler.FieldSpec.Type.INT
 import com.codingfeline.buildkonfig.compiler.FieldSpec.Type.STRING
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -93,6 +94,7 @@ kotlin {
                 implementation(libs.androidx.work.runtime)
                 implementation(libs.androidx.palette)
                 implementation(libs.androidx.security.crypto)
+                implementation(libs.androidx.documentfile)
                 implementation(libs.koin.android)
             }
         }
@@ -216,6 +218,7 @@ buildkonfig {
         buildConfigField(STRING, "PODCAST_INDEX_SECRET", readSecret("PODCAST_INDEX_SECRET"))
         buildConfigField(STRING, "USER_AGENT", "Kofipod/$appVersionName (github.com/ebernie/kofipod)")
         buildConfigField(STRING, "VERSION_NAME", appVersionName)
+        buildConfigField(INT, "VERSION_CODE", appVersionCode.toString())
     }
 }
 
