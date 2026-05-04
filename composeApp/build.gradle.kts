@@ -96,6 +96,17 @@ kotlin {
                 implementation(libs.koin.android)
             }
         }
+        val androidPlay by creating {
+            dependsOn(androidMain)
+            dependencies {
+                implementation(libs.google.play.billing)
+            }
+        }
+        val androidFoss by creating {
+            dependsOn(androidMain)
+            // No flavor-specific dependencies. The FOSS flavor stays
+            // proprietary-code-free so F-Droid will accept it.
+        }
         val iosMain by creating {
             dependsOn(commonMain)
             dependencies {
