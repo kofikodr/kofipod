@@ -211,11 +211,48 @@ class DiscussRepository(
         if (trimmed.isEmpty()) return
         val job =
             appScope.launch {
-                runSend(episodeId, trimmed)
+                runSend(episodeId, trimmed, insertUser = true)
             }
         // Same ordering as AiSummaryRepository: register the completion
         // handler BEFORE adding to activeJobs so a fast-completing job can't
         // race the put-to-map.
+        job.invokeOnCompletion { activeJobs.update { it - episodeId } }
+        activeJobs.update { it + (episodeId to job) }
+    }
+
+    /**
+     * Re-runs the chat call against the most recent user message of [episodeId]'s
+     * session, without inserting a duplicate user row. Wired to the Retry button
+     * on the error bubble so the user can recover from a transient 5xx / blank
+     * response / parse failure without re-typing.
+     *
+     * Idempotent under in-flight: a tap while a send is already running falls
+     * through to `runSend`'s `inFlight` guard and exits without touching state.
+     * Idempotent under "no message yet": returns silently when no session or no
+     * user row exists, so a stray tap from a nominally-impossible UI path is a
+     * no-op rather than a crash.
+     */
+    fun retry(episodeId: String) {
+        // Early-return when a send is already in flight: registering the new
+        // Job in `activeJobs` and letting it bounce off `runSend`'s inFlight
+        // guard would overwrite the entry for the real in-flight job, leaving
+        // a subsequent `cancel(episodeId)` / `clearForEpisode(episodeId)` with
+        // a no-op job to cancel and the actual chat call running unsupervised.
+        // The race window between this check and a concurrent send is narrow
+        // and benign — `runSend.sendLock` remains the source of truth.
+        if (episodeId in inFlight.value) return
+        val job =
+            appScope.launch {
+                val session =
+                    withContext(ioContext) {
+                        db.discussSessionQueries.selectByEpisode(episodeId).executeAsOneOrNull()
+                    } ?: return@launch
+                val lastUser =
+                    withContext(ioContext) {
+                        db.discussMessageQueries.lastUserBySession(session.id).executeAsOneOrNull()
+                    } ?: return@launch
+                runSend(episodeId, lastUser.content, insertUser = false)
+            }
         job.invokeOnCompletion { activeJobs.update { it - episodeId } }
         activeJobs.update { it + (episodeId to job) }
     }
@@ -307,6 +344,7 @@ class DiscussRepository(
     private suspend fun runSend(
         episodeId: String,
         question: String,
+        insertUser: Boolean,
     ) {
         val sessionId =
             sendLock.withLock {
@@ -326,8 +364,21 @@ class DiscussRepository(
             // scrolls before the network round-trip begins. We pass `question`
             // directly to chat.chat() rather than reading it back from the DB
             // to avoid a Flow-debounce race where the just-inserted row hasn't
-            // propagated yet.
-            insertMessage(sessionId, DiscussRole.User, question, citations = emptyList())
+            // propagated yet. Skipped on retry — the user row is already in
+            // the DB from the failed prior send.
+            //
+            // Invariant for `insertUser = false` callers: the LAST row in the
+            // session must be the user message about to be re-sent. The
+            // `priorTurns(excludingLatest = true)` step below assumes this so
+            // it can drop that trailing user row from the history payload (it
+            // is sent separately as `question`). Currently this holds because
+            // `runSend` only persists the model row on success; if a future
+            // change persists a partial model row before failing, retry's
+            // history will silently include the partial reply AND skip the
+            // user turn — adjust both call sites together.
+            if (insertUser) {
+                insertMessage(sessionId, DiscussRole.User, question, citations = emptyList())
+            }
 
             val key = aiConfig.currentKey()
             if (key.isNullOrBlank()) {
@@ -346,9 +397,12 @@ class DiscussRepository(
             val download = downloads.forEpisodeFlow(episodeId).first()
 
             val context =
-                source.loadContext(episode, download).getOrElse { throwable ->
-                    surface(episodeId, throwable.toAiError())
-                    return
+                when (val load = source.loadContext(episode, download)) {
+                    is DiscussLoad.Success -> load.context
+                    is DiscussLoad.Failure -> {
+                        surface(episodeId, load.error.toAiError())
+                        return
+                    }
                 }
             val chatContext: ChatContext =
                 when (context) {

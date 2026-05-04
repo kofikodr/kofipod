@@ -9,6 +9,7 @@ import app.kofipod.ai.AudioUploadCoordinator
 import app.kofipod.ai.AudioUploader
 import app.kofipod.ai.ChatSummariser
 import app.kofipod.ai.DiscussContext
+import app.kofipod.ai.DiscussLoad
 import app.kofipod.ai.DiscussRepository
 import app.kofipod.ai.DiscussSource
 import app.kofipod.ai.GeminiClient
@@ -173,7 +174,7 @@ val commonDataModule =
             val audio = AudioDiscussSource()
             DiscussSource { episode, download ->
                 val fromTranscript = transcript.loadContext(episode, download)
-                if (fromTranscript.getOrNull() is DiscussContext.NotAvailable) {
+                if (fromTranscript is DiscussLoad.Success && fromTranscript.context is DiscussContext.NotAvailable) {
                     audio.loadContext(episode, download)
                 } else {
                     fromTranscript

@@ -110,6 +110,15 @@ class AskGeminiViewModel(
         }
 
     /**
+     * Re-runs the chat call against the most recent user message, without
+     * inserting a duplicate user row. Wired to the Retry button on the error
+     * bubble. Safe to call when no message has been sent — repo no-ops.
+     */
+    fun retry() {
+        repo.retry(episodeId)
+    }
+
+    /**
      * Tap-handler for a citation timestamp. If the player is already on this
      * episode, seek; otherwise resolve the source URL and start playback at
      * the citation point. Returns `true` when a fresh play was kicked so the
