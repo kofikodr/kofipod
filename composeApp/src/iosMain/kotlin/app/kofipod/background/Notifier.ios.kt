@@ -6,6 +6,4 @@ actual class Notifier {
         totalEpisodes: Int,
         totalShows: Int,
     ) { /* TODO UNUserNotificationCenter */ }
-
-    actual fun postUpdateAvailable(version: String) { /* iOS doesn't sideload — no-op */ }
 }
