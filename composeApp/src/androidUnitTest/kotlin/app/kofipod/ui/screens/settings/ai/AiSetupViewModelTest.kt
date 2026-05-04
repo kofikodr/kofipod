@@ -567,7 +567,7 @@ class AiSetupViewModelTest {
         override suspend fun loadContext(
             episode: Episode,
             download: app.kofipod.db.Download?,
-        ): Result<app.kofipod.ai.DiscussContext> = Result.success(app.kofipod.ai.DiscussContext.NotAvailable)
+        ): app.kofipod.ai.DiscussLoad = app.kofipod.ai.DiscussLoad.Success(app.kofipod.ai.DiscussContext.NotAvailable)
     }
 
     private object NoopSummarySource : app.kofipod.ai.SummarySource {

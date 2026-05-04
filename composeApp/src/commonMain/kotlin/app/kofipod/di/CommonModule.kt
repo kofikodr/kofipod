@@ -9,6 +9,7 @@ import app.kofipod.ai.AudioUploadCoordinator
 import app.kofipod.ai.AudioUploader
 import app.kofipod.ai.ChatSummariser
 import app.kofipod.ai.DiscussContext
+import app.kofipod.ai.DiscussLoad
 import app.kofipod.ai.DiscussRepository
 import app.kofipod.ai.DiscussSource
 import app.kofipod.ai.GeminiClient
@@ -24,7 +25,6 @@ import app.kofipod.backup.DB_SCHEMA_VERSION
 import app.kofipod.backup.DbFileBytes
 import app.kofipod.backup.StageDbFile
 import app.kofipod.config.AppInfo
-import app.kofipod.data.api.GithubReleasesApi
 import app.kofipod.data.api.PodcastIndexApi
 import app.kofipod.data.db.DatabaseFactory
 import app.kofipod.data.net.NetworkErrorHandler
@@ -47,7 +47,6 @@ import app.kofipod.data.repo.SearchRepository
 import app.kofipod.data.repo.SearchSource
 import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.data.repo.StatsRepository
-import app.kofipod.data.repo.UpdateRepository
 import app.kofipod.domain.toSummary
 import app.kofipod.opml.OpmlController
 import app.kofipod.opml.OpmlRepository
@@ -64,7 +63,6 @@ import app.kofipod.ui.screens.player.PlayerViewModel
 import app.kofipod.ui.screens.scheduler.SchedulerInfoViewModel
 import app.kofipod.ui.screens.search.SearchViewModel
 import app.kofipod.ui.screens.settings.SettingsViewModel
-import app.kofipod.ui.screens.settings.UpdateActionPort
 import app.kofipod.ui.screens.settings.ai.AiSetupViewModel
 import app.kofipod.ui.screens.stats.StatsViewModel
 import kotlinx.coroutines.CoroutineScope
@@ -101,8 +99,6 @@ val commonDataModule =
         single<EpisodeSource> { get<EpisodesRepository>() }
         single { SettingsRepository(get()) }
         single { StatsRepository(get(), get()) }
-        single { UpdateRepository(settings = get(), localApk = get()) }
-        single { GithubReleasesApi(get()) }
         // Use the dedicated AI HttpClient — never the shared one. See AiHttpClient.kt
         // for the rationale (Gemini key travels in `?key=`; logging would leak it).
         single { GeminiClient(client = app.kofipod.ai.buildAiHttpClient()) }
@@ -184,7 +180,7 @@ val commonDataModule =
             val audio = AudioDiscussSource()
             DiscussSource { episode, download ->
                 val fromTranscript = transcript.loadContext(episode, download)
-                if (fromTranscript.getOrNull() is DiscussContext.NotAvailable) {
+                if (fromTranscript is DiscussLoad.Success && fromTranscript.context is DiscussContext.NotAvailable) {
                     audio.loadContext(episode, download)
                 } else {
                     fromTranscript
@@ -277,11 +273,7 @@ val commonDataModule =
                 scheduler = get(),
                 themeSystem = get(),
                 playbackCache = get(),
-                updateChecker = get(),
-                updateRepo = get(),
-                updateActions = get<UpdateActionPort>(),
                 aiConfig = get(),
-                errors = get(),
                 opml = get(),
                 backup = get(),
                 folderStore = get<BackupFolderStore>(),
