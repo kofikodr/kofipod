@@ -41,3 +41,7 @@ style:
         reason: 'Android-only framework class. Scope to androidMain.'
       - value: 'com.google.android.**'
         reason: 'Android-only. Scope to androidMain.'
+      - value: 'io.sentry.**'
+        reason: 'Crash reporting plumbing must stay platform-scoped. Scope to androidMain (KMP-side wraps via expect/actual).'
+      - value: 'com.aptabase.**'
+        reason: 'Android-only telemetry SDK. Scope to androidMain.'

@@ -71,6 +71,7 @@ kotlin {
                 implementation(libs.koin.compose)
                 implementation(libs.koin.compose.viewmodel)
                 implementation(libs.podcastindex.sdk)
+                implementation(libs.sentry.kmp)
             }
         }
         val commonTest by getting {
@@ -94,6 +95,7 @@ kotlin {
                 implementation(libs.androidx.palette)
                 implementation(libs.androidx.security.crypto)
                 implementation(libs.koin.android)
+                implementation(libs.aptabase)
             }
         }
         val iosMain by creating {
@@ -216,6 +218,8 @@ buildkonfig {
         buildConfigField(STRING, "PODCAST_INDEX_SECRET", readSecret("PODCAST_INDEX_SECRET"))
         buildConfigField(STRING, "USER_AGENT", "Kofipod/$appVersionName (github.com/ebernie/kofipod)")
         buildConfigField(STRING, "VERSION_NAME", appVersionName)
+        buildConfigField(STRING, "SENTRY_DSN", readSecret("SENTRY_DSN"))
+        buildConfigField(STRING, "APTABASE_APP_KEY", readSecret("APTABASE_APP_KEY"))
     }
 }
 
