@@ -264,6 +264,8 @@ val commonDataModule =
                 playbackCache = get(),
                 aiConfig = get(),
                 opml = get(),
+                pro = get(),
+                paywallRouter = get(),
             )
         }
         viewModel { AiSetupViewModel(config = get(), client = get(), summaries = get(), discuss = get()) }

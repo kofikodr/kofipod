@@ -10,9 +10,13 @@ import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.opml.OpmlAction
 import app.kofipod.opml.OpmlController
 import app.kofipod.playback.PlaybackCache
+import app.kofipod.pro.PaywallRouter
+import app.kofipod.pro.ProEntitlement
+import app.kofipod.pro.ProEntitlementRepository
 import app.kofipod.ui.theme.KofipodThemeMode
 import app.kofipod.ui.theme.ThemeSystem
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -32,6 +36,8 @@ data class SettingsUiState(
     val aiConnected: Boolean = false,
     val aiModel: GeminiModel = GeminiModel.Flash,
     val opmlAction: OpmlAction = OpmlAction.Idle,
+    val proEntitlement: ProEntitlement = ProEntitlement.Unknown,
+    val restoreInFlight: Boolean = false,
 )
 
 class SettingsViewModel(
@@ -41,6 +47,8 @@ class SettingsViewModel(
     private val playbackCache: PlaybackCache,
     private val aiConfig: AiConfigRepository,
     private val opml: OpmlController,
+    private val pro: ProEntitlementRepository,
+    private val paywallRouter: PaywallRouter,
 ) : ViewModel() {
     // Refreshes the displayed cache usage once per second while Settings is visible.
     private val cacheUsedFlow =
@@ -50,6 +58,8 @@ class SettingsViewModel(
                 delay(1_000)
             }
         }
+
+    private val restoreInFlight = MutableStateFlow(false)
 
     val state: StateFlow<SettingsUiState> =
         combine(
@@ -81,11 +91,19 @@ class SettingsViewModel(
             ) { aiConnected, aiModel, opmlAction ->
                 AiAndOpmlState(aiConnected, aiModel, opmlAction)
             },
-        ) { base, combined ->
+            combine(
+                pro.state,
+                restoreInFlight,
+            ) { proEntitlement, restoring ->
+                ProSettingsBlock(proEntitlement, restoring)
+            },
+        ) { base, ai, proBlock ->
             base.copy(
-                aiConnected = combined.aiConnected,
-                aiModel = combined.aiModel,
-                opmlAction = combined.opmlAction,
+                aiConnected = ai.aiConnected,
+                aiModel = ai.aiModel,
+                opmlAction = ai.opmlAction,
+                proEntitlement = proBlock.entitlement,
+                restoreInFlight = proBlock.restoreInFlight,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -114,10 +132,25 @@ class SettingsViewModel(
     fun importOpml() = opml.importOpml()
 
     fun exportOpml() = opml.exportOpml()
+
+    fun openPaywall() = paywallRouter.requestPaywall("paywall_settings")
+
+    fun restorePurchase() {
+        viewModelScope.launch {
+            restoreInFlight.value = true
+            pro.restorePurchases()
+            restoreInFlight.value = false
+        }
+    }
 }
 
 private data class AiAndOpmlState(
     val aiConnected: Boolean,
     val aiModel: GeminiModel,
     val opmlAction: OpmlAction,
+)
+
+private data class ProSettingsBlock(
+    val entitlement: ProEntitlement,
+    val restoreInFlight: Boolean,
 )

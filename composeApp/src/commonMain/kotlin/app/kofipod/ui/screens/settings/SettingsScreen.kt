@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -21,9 +22,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -46,6 +50,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kofipod.config.AppInfo
 import app.kofipod.opml.OpmlAction
+import app.kofipod.pro.ProEntitlement
+import app.kofipod.pro.ProSource
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.primitives.SectionLabel
@@ -84,6 +90,14 @@ fun SettingsScreen(
             fontWeight = FontWeight.ExtraBold,
             fontSize = 32.sp,
         )
+        SectionLabel("Kofipod Pro", topSpacing = 22.dp)
+        ProStatusCard(
+            entitlement = state.proEntitlement,
+            restoreInFlight = state.restoreInFlight,
+            onUpgrade = viewModel::openPaywall,
+            onRestore = viewModel::restorePurchase,
+        )
+
         SectionLabel("Library", topSpacing = 22.dp)
         val opmlAction = state.opmlAction
         val opmlIdle = opmlAction is OpmlAction.Idle || opmlAction is OpmlAction.Error
@@ -570,4 +584,50 @@ private fun formatSize(bytes: Long): String {
     if (bytes <= 0L) return "0 MB"
     val gb = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
     return if (gb >= 1.0) formatGb(bytes) else "${(bytes / (1024L * 1024L)).toInt()} MB"
+}
+
+// --------------------------------------------------------------------------
+// Kofipod Pro status card
+// --------------------------------------------------------------------------
+
+@Composable
+private fun ProStatusCard(
+    entitlement: ProEntitlement,
+    restoreInFlight: Boolean,
+    onUpgrade: () -> Unit,
+    onRestore: () -> Unit,
+) {
+    val tierLabel =
+        when (entitlement) {
+            ProEntitlement.Unknown -> "Checking…"
+            ProEntitlement.Free -> "Free"
+            is ProEntitlement.Pro ->
+                when (entitlement.source) {
+                    ProSource.Individual -> "Pro"
+                    ProSource.Family -> "Pro · Family"
+                    ProSource.FossBuild -> "Pro · Self-build"
+                }
+        }
+
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Status: $tierLabel", style = MaterialTheme.typography.bodyLarge)
+            if (entitlement is ProEntitlement.Free) {
+                Button(onClick = onUpgrade) { Text("Upgrade") }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = onRestore, enabled = !restoreInFlight) {
+            Text(if (restoreInFlight) "Restoring…" else "Restore Purchase")
+        }
+    }
 }
