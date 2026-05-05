@@ -52,6 +52,7 @@ class SearchViewModel(
     private val recommendations: RecommendationsSource,
     private val appScope: CoroutineScope,
     private val errors: NetworkErrorHandler,
+    private val telemetry: app.kofipod.diagnostics.Telemetry,
 ) : ViewModel() {
     private val _state = MutableStateFlow(SearchUiState(popularCategories = categories.popular()))
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
@@ -165,6 +166,13 @@ class SearchViewModel(
                             loadingMore = false,
                             hasMore = results.size >= limit,
                         )
+                    if (!loadMore) {
+                        telemetry.track(
+                            app.kofipod.diagnostics.TelemetryEvent.SearchPerformed(
+                                app.kofipod.diagnostics.SearchSource.TYPED,
+                            ),
+                        )
+                    }
                 }.onFailure { e ->
                     // Search has no cached results to fall back on, so always surface the
                     // friendly message inline. Snackbar is reserved for screens with a cache.

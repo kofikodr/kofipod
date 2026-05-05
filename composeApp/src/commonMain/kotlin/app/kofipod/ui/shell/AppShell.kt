@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,6 +38,9 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navOptions
+import app.kofipod.backup.BackupController
+import app.kofipod.backup.BackupPickerHost
+import app.kofipod.diagnostics.DiagnosticsConfigRepository
 import app.kofipod.opml.OpmlPickerHost
 import app.kofipod.pro.PaywallRouter
 import app.kofipod.pro.PaywallState
@@ -50,6 +54,7 @@ import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.screens.paywall.PaywallSheet
 import app.kofipod.ui.theme.LocalKofipodColors
+import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
 @Composable
@@ -60,7 +65,14 @@ fun AppShell() {
     val bus: UiEventBus = koinInject()
     val paywallRouter: PaywallRouter = koinInject()
     val paywall by paywallRouter.state.collectAsState()
+    val backupController: BackupController = koinInject()
     val snackbarHostState = remember { SnackbarHostState() }
+    // First-composition pass: if the previous process exited via a restore confirm,
+    // PendingRestore.consumeIfPresent already replaced the DB; surface a snackbar so
+    // the user knows their library was restored. Idempotent — flag clears on read.
+    LaunchedEffect(backupController) {
+        backupController.notifyRestoreCompletedIfPending()
+    }
     LaunchedEffect(bus) {
         bus.events.collect { event ->
             when (event) {
@@ -83,6 +95,22 @@ fun AppShell() {
                     },
                 )
             }
+        }
+    }
+    LaunchedEffect(nav) {
+        DeepLinks.openEpisode.collect { episodeId ->
+            nav.navigate(
+                Route.EpisodeDetail(episodeId),
+                navOptions { launchSingleTop = true },
+            )
+        }
+    }
+    LaunchedEffect(nav) {
+        DeepLinks.openLibrary.collect {
+            nav.navigate(
+                Route.Library,
+                navOptions { launchSingleTop = true },
+            )
         }
     }
     val onPlayerScreen = currentRoute == Route.Player::class.qualifiedName
@@ -119,8 +147,9 @@ fun AppShell() {
         }
     }
     // Hoisted at the shell level so SAF launchers stay rooted regardless of which
-    // screen triggered the import/export. No-op on iOS.
+    // screen triggered the import/export or backup pick. No-ops on iOS.
     OpmlPickerHost()
+    BackupPickerHost()
     // Paywall lives at the shell level — a NavHost destination would render full-screen
     // and leave a blank background behind the ModalBottomSheet. Hoisting here overlays
     // the sheet on top of whichever screen triggered it.
@@ -131,6 +160,29 @@ fun AppShell() {
             onDismiss = { paywallRouter.dismiss() },
         )
     }
+
+    // First-launch disclosure: gates all diagnostic sends until the user
+    // taps "Got it" or "Open Settings". `initial = true` avoids a flash of
+    // the sheet on every launch — the first real emission either confirms
+    // true (sheet stays hidden) or flips to false (sheet appears).
+    val diagnostics: DiagnosticsConfigRepository = koinInject()
+    val acknowledged by diagnostics.disclosureAcknowledged.collectAsState(initial = true)
+    val ackScope = rememberCoroutineScope()
+    DiagnosticsDisclosureSheet(
+        visible = !acknowledged,
+        onAcknowledge = { ackScope.launch { diagnostics.acknowledgeDisclosure() } },
+        onOpenSettings = {
+            if (nav.currentDestination?.route != Route.Settings::class.qualifiedName) {
+                nav.navigate(
+                    Route.Settings,
+                    navOptions {
+                        launchSingleTop = true
+                        popUpTo(nav.graph.findStartDestination().id) { inclusive = false }
+                    },
+                )
+            }
+        },
+    )
 }
 
 private data class Tab(

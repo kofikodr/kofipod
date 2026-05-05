@@ -23,13 +23,13 @@ class AudioDiscussSource : DiscussSource {
     override suspend fun loadContext(
         episode: Episode,
         download: Download?,
-    ): Result<DiscussContext> {
+    ): DiscussLoad {
         val ready =
             download != null &&
                 download.state == DOWNLOAD_STATE_COMPLETED &&
                 !download.localPath.isNullOrBlank()
-        if (!ready) return Result.success(DiscussContext.NotAvailable)
-        return Result.success(
+        if (!ready) return DiscussLoad.Success(DiscussContext.NotAvailable)
+        return DiscussLoad.Success(
             DiscussContext.AudioReady(
                 localPath = download!!.localPath!!,
                 mimeType = episode.enclosureMimeType.ifBlank { DEFAULT_AUDIO_MIME },

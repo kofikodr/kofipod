@@ -23,7 +23,7 @@ class AudioDiscussSourceTest {
             val download =
                 downloadOf("ep1", state = "Completed", localPath = "/tmp/ep1.mp3", bytes = 12_345L)
 
-            val ctx = source.loadContext(episodeOf("ep1", mime = "audio/x-m4a"), download).getOrThrow()
+            val ctx = source.loadContext(episodeOf("ep1", mime = "audio/x-m4a"), download).context()
 
             val ready = assertIs<DiscussContext.AudioReady>(ctx)
             assertEquals("/tmp/ep1.mp3", ready.localPath)
@@ -36,7 +36,7 @@ class AudioDiscussSourceTest {
     fun loadContext_returnsNotAvailable_whenDownloadIsNull() =
         runTest {
             val source = AudioDiscussSource()
-            val ctx = source.loadContext(episodeOf("ep1"), download = null).getOrThrow()
+            val ctx = source.loadContext(episodeOf("ep1"), download = null).context()
             assertEquals(DiscussContext.NotAvailable, ctx)
         }
 
@@ -50,7 +50,7 @@ class AudioDiscussSourceTest {
             val download =
                 downloadOf("ep1", state = "Downloading", localPath = "/tmp/ep1.partial", bytes = 5_000L)
 
-            val ctx = source.loadContext(episodeOf("ep1"), download).getOrThrow()
+            val ctx = source.loadContext(episodeOf("ep1"), download).context()
 
             assertEquals(DiscussContext.NotAvailable, ctx)
         }
@@ -65,7 +65,7 @@ class AudioDiscussSourceTest {
             val source = AudioDiscussSource()
             val download = downloadOf("ep1", state = "Completed", localPath = "", bytes = 12_345L)
 
-            val ctx = source.loadContext(episodeOf("ep1"), download).getOrThrow()
+            val ctx = source.loadContext(episodeOf("ep1"), download).context()
 
             assertEquals(DiscussContext.NotAvailable, ctx)
         }
@@ -78,11 +78,13 @@ class AudioDiscussSourceTest {
             val source = AudioDiscussSource()
             val download = downloadOf("ep1", state = "Completed", localPath = "/tmp/x.mp3", bytes = 100L)
 
-            val ctx = source.loadContext(episodeOf("ep1", mime = ""), download).getOrThrow()
+            val ctx = source.loadContext(episodeOf("ep1", mime = ""), download).context()
 
             val ready = assertIs<DiscussContext.AudioReady>(ctx)
             assertEquals("audio/mpeg", ready.mimeType)
         }
+
+    private fun DiscussLoad.context(): DiscussContext = (this as DiscussLoad.Success).context
 
     private fun episodeOf(
         id: String,

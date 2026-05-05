@@ -1,0 +1,10 @@
+{
+    "schemaVersion": 1,
+    "appVersionCode": 7,
+    "appVersionName": "0.7.0",
+    "dbSchemaVersion": 15,
+    "exportedAtMs": 1746400000000,
+    "exportedAtIso": "2026-05-05T12:00:00Z",
+    "dbSizeBytes": 524288,
+    "dbSha256": "abc123def456abc123def456abc123def456abc123def456abc123def456abcd"
+}

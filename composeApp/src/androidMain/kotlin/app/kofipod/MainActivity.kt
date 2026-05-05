@@ -13,6 +13,8 @@ import app.kofipod.ui.theme.ThemeSystem
 import org.koin.android.ext.android.inject
 
 const val EXTRA_OPEN_PLAYER = "app.kofipod.extra.OPEN_PLAYER"
+const val EXTRA_OPEN_EPISODE_ID = "app.kofipod.extra.OPEN_EPISODE_ID"
+const val EXTRA_OPEN_LIBRARY = "app.kofipod.extra.OPEN_LIBRARY"
 
 private const val TABLET_SW_DP = 600
 
@@ -56,8 +58,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleDeepLink(intent: Intent?) {
-        if (intent?.getBooleanExtra(EXTRA_OPEN_PLAYER, false) == true) {
+        if (intent == null) return
+        if (intent.getBooleanExtra(EXTRA_OPEN_PLAYER, false)) {
             DeepLinks.requestOpenPlayer()
+        }
+        if (intent.getBooleanExtra(EXTRA_OPEN_LIBRARY, false)) {
+            DeepLinks.requestOpenLibrary()
+        }
+        intent.getStringExtra(EXTRA_OPEN_EPISODE_ID)?.takeIf { it.isNotBlank() }?.let {
+            DeepLinks.requestOpenEpisode(it)
         }
     }
 }

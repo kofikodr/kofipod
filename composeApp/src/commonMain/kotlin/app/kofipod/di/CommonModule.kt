@@ -9,6 +9,7 @@ import app.kofipod.ai.AudioUploadCoordinator
 import app.kofipod.ai.AudioUploader
 import app.kofipod.ai.ChatSummariser
 import app.kofipod.ai.DiscussContext
+import app.kofipod.ai.DiscussLoad
 import app.kofipod.ai.DiscussRepository
 import app.kofipod.ai.DiscussSource
 import app.kofipod.ai.GeminiClient
@@ -17,9 +18,15 @@ import app.kofipod.ai.SummarySource
 import app.kofipod.ai.TextSummariser
 import app.kofipod.ai.TranscriptDiscussSource
 import app.kofipod.ai.TranscriptFetcher
+import app.kofipod.backup.BackupController
+import app.kofipod.backup.BackupFolderStore
+import app.kofipod.backup.BackupRepository
+import app.kofipod.backup.DB_SCHEMA_VERSION
+import app.kofipod.backup.DbFileBytes
+import app.kofipod.backup.StageDbFile
+import app.kofipod.config.AppInfo
 import app.kofipod.data.api.PodcastIndexApi
 import app.kofipod.data.db.DatabaseFactory
-import app.kofipod.data.db.buildDatabase
 import app.kofipod.data.net.NetworkErrorHandler
 import app.kofipod.data.net.buildHttpClient
 import app.kofipod.data.recommend.PodcastIndexRecommendationApi
@@ -75,7 +82,12 @@ val commonDataModule =
         single { UiEventBus() }
         single { NetworkErrorHandler(get()) }
         single { PodcastIndexApi.create() }
-        single { buildDatabase(get<DatabaseFactory>()) }
+        // Driver is exposed separately from KofipodDatabase so the SAF backup path
+        // can issue a `PRAGMA wal_checkpoint(TRUNCATE)` before reading the on-disk
+        // file — otherwise recent committed writes still in the `-wal` sidecar
+        // would be missing from the snapshot.
+        single<app.cash.sqldelight.db.SqlDriver> { get<DatabaseFactory>().createDriver() }
+        single { app.kofipod.db.KofipodDatabase(get<app.cash.sqldelight.db.SqlDriver>()) }
         single { LibraryRepository(get()) }
         single { RecentlyViewedRepository(get()) }
         single { SearchRepository(get()) }
@@ -173,7 +185,7 @@ val commonDataModule =
             val audio = AudioDiscussSource()
             DiscussSource { episode, download ->
                 val fromTranscript = transcript.loadContext(episode, download)
-                if (fromTranscript.getOrNull() is DiscussContext.NotAvailable) {
+                if (fromTranscript is DiscussLoad.Success && fromTranscript.context is DiscussContext.NotAvailable) {
                     audio.loadContext(episode, download)
                 } else {
                     fromTranscript
@@ -215,6 +227,24 @@ val commonDataModule =
                 appScope = get(org.koin.core.qualifier.named("appScope")),
             )
         }
+        single {
+            BackupRepository(
+                dbFileBytes = get<DbFileBytes>(),
+                stageDb = get<StageDbFile>(),
+                appVersionCode = AppInfo.versionCode,
+                appVersionName = AppInfo.versionName,
+                dbSchemaVersion = DB_SCHEMA_VERSION,
+            )
+        }
+        single {
+            BackupController(
+                repo = get(),
+                port = get(),
+                store = get<BackupFolderStore>(),
+                bus = get(),
+                appScope = get(org.koin.core.qualifier.named("appScope")),
+            )
+        }
         single { PaletteCache(port = get()) }
         single { app.kofipod.data.repo.PlaybackRepository(get()) }
         single<CoroutineScope>(qualifier = org.koin.core.qualifier.named("appScope")) {
@@ -229,12 +259,21 @@ val commonDataModule =
         }
         single { PaywallRouter() }
         single {
+            app.kofipod.diagnostics.DiagnosticsBootstrapper(
+                config = get(),
+                crashes = get(),
+                telemetry = get(),
+                appScope = get(org.koin.core.qualifier.named("appScope")),
+            )
+        }
+        single {
             DownloadRepository(
                 db = get(),
                 engine = get(),
                 settings = get(),
                 network = get(),
                 scope = get(org.koin.core.qualifier.named("appScope")),
+                telemetry = get(),
             )
         }
 
@@ -245,6 +284,7 @@ val commonDataModule =
                 recommendations = get<RecommendationsSource>(),
                 appScope = get(org.koin.core.qualifier.named("appScope")),
                 errors = get(),
+                telemetry = get(),
             )
         }
         viewModel { LibraryViewModel(get(), get(), get(), get()) }
@@ -266,6 +306,14 @@ val commonDataModule =
                 opml = get(),
                 pro = get(),
                 paywallRouter = get(),
+                backup = get(),
+                folderStore = get<BackupFolderStore>(),
+                diagnostics = get(),
+                telemetry = get(),
+                library = get(),
+                episodes = get<EpisodesRepository>(),
+                notifier = get(),
+                uiEvents = get(),
             )
         }
         viewModel { AiSetupViewModel(config = get(), client = get(), summaries = get(), discuss = get()) }

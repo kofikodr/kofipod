@@ -10,6 +10,7 @@ androidxWork = "2.10.0"
 androidxCredentials = "1.3.0"
 androidxPalette = "1.0.0"
 androidxSecurityCrypto = "1.1.0-alpha06"
+androidxDocumentFile = "1.0.1"
 googleIdentity = "1.1.1"
 googlePlayBilling = "8.0.0"
 coil = "3.0.4"
@@ -26,6 +27,9 @@ junit = "4.13.2"
 podcastindex = "0.4.0"
 ktlintGradle = "12.1.2"
 detekt = "1.23.8"
+sentryKmp = "0.15.0"
+sentryAndroidGradle = "6.6.0"
+aptabase = "0.0.8"
 
 [libraries]
 compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
@@ -42,6 +46,7 @@ androidx-credentials = { module = "androidx.credentials:credentials", version.re
 androidx-credentials-play-services-auth = { module = "androidx.credentials:credentials-play-services-auth", version.ref = "androidxCredentials" }
 androidx-palette = { module = "androidx.palette:palette-ktx", version.ref = "androidxPalette" }
 androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "androidxSecurityCrypto" }
+androidx-documentfile = { module = "androidx.documentfile:documentfile", version.ref = "androidxDocumentFile" }
 google-identity = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleIdentity" }
 google-play-billing = { module = "com.android.billingclient:billing-ktx", version.ref = "googlePlayBilling" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
@@ -64,6 +69,8 @@ koin-android = { module = "io.insert-koin:koin-android", version.ref = "koin" }
 koin-compose = { module = "io.insert-koin:koin-compose", version.ref = "koinCompose" }
 koin-compose-viewmodel = { module = "io.insert-koin:koin-compose-viewmodel", version.ref = "koinCompose" }
 podcastindex-sdk = { module = "io.github.mr3y-the-programmer:podcastindex-sdk-ktor3", version.ref = "podcastindex" }
+sentry-kmp = { module = "io.sentry:sentry-kotlin-multiplatform", version.ref = "sentryKmp" }
+aptabase = { module = "com.github.aptabase:aptabase-kotlin", version.ref = "aptabase" }
 junit = { module = "junit:junit", version.ref = "junit" }
 
 [plugins]
@@ -77,3 +84,4 @@ buildkonfig = { id = "com.codingfeline.buildkonfig", version.ref = "buildkonfig"
 paparazzi = { id = "app.cash.paparazzi", version.ref = "paparazzi" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintGradle" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
+sentry-android = { id = "io.sentry.android.gradle", version.ref = "sentryAndroidGradle" }

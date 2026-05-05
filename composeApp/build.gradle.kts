@@ -1,3 +1,4 @@
+import com.codingfeline.buildkonfig.compiler.FieldSpec.Type.INT
 import com.codingfeline.buildkonfig.compiler.FieldSpec.Type.STRING
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -14,6 +15,7 @@ plugins {
     alias(libs.plugins.paparazzi)
     alias(libs.plugins.ktlint)
     alias(libs.plugins.detekt)
+    alias(libs.plugins.sentry.android)
 }
 
 ktlint {
@@ -93,7 +95,10 @@ kotlin {
                 implementation(libs.androidx.work.runtime)
                 implementation(libs.androidx.palette)
                 implementation(libs.androidx.security.crypto)
+                implementation(libs.androidx.documentfile)
                 implementation(libs.koin.android)
+                implementation(libs.aptabase)
+                implementation(libs.sentry.kmp)
             }
         }
         val androidPlay by creating {
@@ -247,7 +252,44 @@ buildkonfig {
         buildConfigField(STRING, "PODCAST_INDEX_SECRET", readSecret("PODCAST_INDEX_SECRET"))
         buildConfigField(STRING, "USER_AGENT", "Kofipod/$appVersionName (github.com/ebernie/kofipod)")
         buildConfigField(STRING, "VERSION_NAME", appVersionName)
+        buildConfigField(INT, "VERSION_CODE", appVersionCode.toString())
+        buildConfigField(STRING, "SENTRY_DSN", readSecret("SENTRY_DSN"))
+        buildConfigField(STRING, "APTABASE_APP_KEY", readSecret("APTABASE_APP_KEY"))
     }
+}
+
+// Sentry Gradle plugin uploads R8 mapping files to GlitchTip on release
+// builds, enabling deobfuscated stack traces. Disabled when DSN or auth
+// token are unset (forks without secrets, F-Droid, debug-only iteration).
+sentry {
+    val dsn = readSecret("SENTRY_DSN")
+    val token = readSecret("SENTRY_AUTH_TOKEN")
+    val canUpload = dsn.isNotBlank() && token.isNotBlank()
+
+    autoUploadProguardMapping.set(canUpload)
+    includeProguardMapping.set(canUpload)
+    autoUploadNativeSymbols.set(false)
+    uploadNativeSymbols.set(false)
+    telemetry.set(false) // self-hosted GlitchTip — don't phone home to Sentry SaaS
+    autoInstallation { enabled.set(false) } // SDK deps managed manually via libs.versions.toml
+    tracingInstrumentation { enabled.set(false) }
+
+    if (canUpload) {
+        url.set(deriveUploadUrl(dsn))
+        authToken.set(token)
+        // Defaults match the maintainer's GlitchTip instance. Forks can
+        // override via local.properties or env (SENTRY_ORG, SENTRY_PROJECT).
+        // Note: GlitchTip locks the org slug to the first user's account
+        // name, so renaming the org in the UI does not change the slug.
+        org.set(readSecret("SENTRY_ORG").ifBlank { "kofikodr" })
+        projectName.set(readSecret("SENTRY_PROJECT").ifBlank { "kofipod-android" })
+    }
+}
+
+fun deriveUploadUrl(dsn: String): String {
+    val withoutScheme = dsn.substringAfter("://")
+    val host = withoutScheme.substringAfter("@").substringBefore("/")
+    return "https://$host"
 }
 
 tasks.register("bumpVersion") {

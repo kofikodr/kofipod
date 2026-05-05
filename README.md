@@ -52,6 +52,19 @@ After an Android Auto update the developer toggle occasionally resets — re-ena
 
 User data (library + playback state) backs up transparently via Android Auto Backup to the user's Google account — no in-app sign-in, no OAuth client. See `composeApp/src/androidMain/res/xml/backup_rules.xml`.
 
+### Diagnostics (optional)
+
+Kofipod has opt-in crash reporting (GlitchTip, Sentry-protocol-compatible, MIT-licensed) and opt-in usage telemetry (Aptabase). Both are off until the user acknowledges a first-launch disclosure, both can be toggled independently in Settings, and both are no-ops when the build secrets are blank — forks and F-Droid builds work fine without configuring anything. Detail: `docs/superpowers/specs/2026-05-05-diagnostics-design.md`.
+
+To enable for your own build, add to `local.properties`:
+
+```
+SENTRY_DSN=https://<public_key>@<glitchtip-host>/<project_id>
+APTABASE_APP_KEY=A-EU-XXXXXXXXXX   # or A-US-...
+```
+
+The maintainer's GlitchTip instance is self-hosted on Railway via the official one-click template; an Aptabase free tier account covers the usage side. Maintainer-facing hosting runbook: `docs/diagnostics-hosting.md`. User-facing privacy disclosure: `docs/privacy.md`.
+
 ## Release
 
 Versioning is driven by `version.properties` at the repo root (`VERSION_NAME` + `VERSION_CODE`). The release artifact is signed with a keystore that lives outside version control.
@@ -83,7 +96,7 @@ The script:
 5. Copies them into `dist/` as `kofipod-<VERSION_NAME>-<VERSION_CODE>-release.{apk,aab}` and prints SHA-256s.
 6. Commits `version.properties` and tags `v<VERSION_NAME>` locally. Push with `git push && git push --tags`.
 
-R8/minification is intentionally off for the release build until per-library keep rules are written.
+R8/minification is intentionally off for the release build until per-library keep rules are written. The Sentry Gradle plugin is wired in and embeds a release UUID into each APK, but the actual mapping-upload step is a no-op while minify is off — stack traces are already readable. When R8 is turned on, set `SENTRY_AUTH_TOKEN` in `local.properties` (scopes `project:releases` + `project:write` in GlitchTip → Settings → Auth Tokens) and the release script will upload mapping files automatically. Org and project slugs default to the maintainer's GlitchTip instance; forks override via `SENTRY_ORG` / `SENTRY_PROJECT` in `local.properties` or env.
 
 ## License
 

@@ -10,6 +10,8 @@ import app.kofipod.data.repo.LibraryRepository
 import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.data.repo.autoDownloadEnabledBool
 import app.kofipod.data.repo.notifyNewEpisodesEnabledBool
+import app.kofipod.db.Episode
+import app.kofipod.db.Podcast
 import app.kofipod.downloads.DownloadJob
 import app.kofipod.downloads.downloadFileName
 import kotlinx.coroutines.flow.first
@@ -31,8 +33,7 @@ class EpisodeCheckWorker(
             val cap = settings.storageCapBytes().first()
             var totalNew = 0
             var showsWithNew = 0
-            var notifyNew = 0
-            var notifyShows = 0
+            val notifyEntries = mutableListOf<Pair<Podcast, Episode>>()
             val now = System.currentTimeMillis()
 
             for (podcast in library.podcastsFlow().first()) {
@@ -42,8 +43,9 @@ class EpisodeCheckWorker(
                     totalNew += result.inserted
                     showsWithNew++
                     if (podcast.notifyNewEpisodesEnabledBool()) {
-                        notifyNew += result.inserted
-                        notifyShows++
+                        result.insertedEpisodes.forEach { ep ->
+                            notifyEntries += podcast to ep
+                        }
                     }
                     if (podcast.autoDownloadEnabledBool()) {
                         result.insertedEpisodes.forEach { ep ->
@@ -63,7 +65,29 @@ class EpisodeCheckWorker(
                 settings,
                 SchedulerRun(at = now, inserted = totalNew, shows = showsWithNew),
             )
-            if (notifyNew > 0) notifier.postNewEpisodes(notifyNew, notifyShows)
+            postNotification(notifyEntries)
             Result.success()
         }.getOrElse { Result.retry() }
+
+    private suspend fun postNotification(entries: List<Pair<Podcast, Episode>>) {
+        when (entries.size) {
+            0 -> Unit
+            1 -> {
+                val (podcast, ep) = entries.single()
+                // Per-episode artwork (Podcasting 2.0) wins; falls back to the show's art.
+                val art = ep.imageUrl.takeIf { it.isNotBlank() } ?: podcast.artworkUrl
+                notifier.postSingleNewEpisode(
+                    podcastTitle = podcast.title,
+                    episodeTitle = ep.title,
+                    episodeId = ep.id,
+                    artworkUrl = art.takeIf { it.isNotBlank() },
+                )
+            }
+            else ->
+                notifier.postManyNewEpisodes(
+                    totalEpisodes = entries.size,
+                    totalShows = entries.distinctBy { it.first.id }.size,
+                )
+        }
+    }
 }
