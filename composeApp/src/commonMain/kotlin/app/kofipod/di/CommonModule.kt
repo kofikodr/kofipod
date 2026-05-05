@@ -258,6 +258,8 @@ val commonDataModule =
             )
         }
         single { PaywallRouter() }
+        single { app.kofipod.bookmarks.BookmarkRepository(db = get()) }
+        single { app.kofipod.bookmarks.BookmarkComposer() }
         single {
             app.kofipod.diagnostics.DiagnosticsBootstrapper(
                 config = get(),
