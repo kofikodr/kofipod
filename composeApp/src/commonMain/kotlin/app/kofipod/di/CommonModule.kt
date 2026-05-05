@@ -288,6 +288,10 @@ val commonDataModule =
                 backup = get(),
                 folderStore = get<BackupFolderStore>(),
                 diagnostics = get(),
+                library = get(),
+                episodes = get<EpisodesRepository>(),
+                notifier = get(),
+                uiEvents = get(),
             )
         }
         viewModel { AiSetupViewModel(config = get(), client = get(), summaries = get(), discuss = get()) }

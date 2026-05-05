@@ -92,6 +92,22 @@ fun AppShell() {
             }
         }
     }
+    LaunchedEffect(nav) {
+        DeepLinks.openEpisode.collect { episodeId ->
+            nav.navigate(
+                Route.EpisodeDetail(episodeId),
+                navOptions { launchSingleTop = true },
+            )
+        }
+    }
+    LaunchedEffect(nav) {
+        DeepLinks.openLibrary.collect {
+            nav.navigate(
+                Route.Library,
+                navOptions { launchSingleTop = true },
+            )
+        }
+    }
     val onPlayerScreen = currentRoute == Route.Player::class.qualifiedName
     val c = LocalKofipodColors.current
     Scaffold(
