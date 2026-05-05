@@ -137,13 +137,23 @@ class BookmarkRepositoryTest {
             seedEpisode(db)
             val repo = BookmarkRepository(db)
 
-            // Insert two bookmarks in non-ascending timestamp order.
+            // Initial snapshot: insert two bookmarks in non-ascending timestamp order.
             repo.add("ep-1", "pod-1", timestampMs = 120_000L, note = null, nowMs = 100L)
             repo.add("ep-1", "pod-1", timestampMs = 30_000L, note = "early", nowMs = 200L)
 
-            val rows = repo.observeForEpisode("ep-1").first { it.size == 2 }
-            assertEquals(listOf(30_000L, 120_000L), rows.map { it.timestampMs })
-            assertEquals("early", rows[0].note)
-            assertNull(rows[1].note)
+            val flow = repo.observeForEpisode("ep-1")
+            val initialRows = flow.first { it.size == 2 }
+            assertEquals(listOf(30_000L, 120_000L), initialRows.map { it.timestampMs })
+            assertEquals("early", initialRows[0].note)
+            assertNull(initialRows[1].note)
+
+            // Live update: a new insert should produce a fresh emission with the
+            // additional row, still ordered by timestampMs ASC. Pins the asFlow() +
+            // mapToList(...) reactivity contract — a refactor to a one-shot read
+            // (e.g. flowOf(executeAsList())) would fail this assertion.
+            repo.add("ep-1", "pod-1", timestampMs = 60_000L, note = "later", nowMs = 300L)
+
+            val updatedRows = flow.first { it.size == 3 }
+            assertEquals(listOf(30_000L, 60_000L, 120_000L), updatedRows.map { it.timestampMs })
         }
 }
