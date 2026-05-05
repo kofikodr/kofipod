@@ -289,7 +289,15 @@ val commonDataModule =
                 telemetry = get(),
             )
         }
-        viewModel { LibraryViewModel(get(), get(), get(), get()) }
+        viewModel { LibraryViewModel(get(), get(), get(), get(), get(), get()) }
+        viewModel {
+            app.kofipod.ui.screens.bookmarks.BookmarksViewModel(
+                bookmarks = get(),
+                player = get(),
+                episodes = get<EpisodeSource>(),
+                downloads = get(),
+            )
+        }
         viewModel { StarterPackViewModel(get(), get()) }
         viewModel {
             PaywallViewModel(

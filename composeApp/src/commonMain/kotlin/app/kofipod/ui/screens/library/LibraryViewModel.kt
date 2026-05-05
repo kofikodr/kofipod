@@ -10,6 +10,9 @@ import app.kofipod.db.Podcast
 import app.kofipod.db.PodcastList
 import app.kofipod.opml.OpmlAction
 import app.kofipod.opml.OpmlController
+import app.kofipod.pro.PaywallRouter
+import app.kofipod.pro.ProEntitlement
+import app.kofipod.pro.ProEntitlementRepository
 import app.kofipod.util.slugifyName
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +34,8 @@ class LibraryViewModel(
     episodes: EpisodeSource,
     stats: StatsRepository,
     private val opml: OpmlController,
+    private val pro: ProEntitlementRepository,
+    private val paywallRouter: PaywallRouter,
 ) : ViewModel() {
     val opmlAction: StateFlow<OpmlAction> = opml.action
 
@@ -72,4 +77,20 @@ class LibraryViewModel(
     fun deleteList(listId: String) = repo.deleteList(listId)
 
     fun importOpml() = opml.importOpml()
+
+    /**
+     * Returns true when the caller should navigate to the Bookmarks screen.
+     * Returns false (and opens the paywall) when the user is Free or Unknown.
+     * Mirrors `PlayerViewModel.onBookmarkTapped` gate semantics.
+     */
+    fun onBookmarksTapped(): Boolean =
+        when (pro.state.value) {
+            is ProEntitlement.Pro -> true
+            ProEntitlement.Free,
+            ProEntitlement.Unknown,
+            -> {
+                paywallRouter.requestPaywall("paywall_bookmark")
+                false
+            }
+        }
 }

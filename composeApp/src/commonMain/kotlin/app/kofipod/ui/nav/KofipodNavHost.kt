@@ -13,6 +13,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
 import app.kofipod.ui.screens.askgemini.AskGeminiScreen
+import app.kofipod.ui.screens.bookmarks.BookmarksScreen
 import app.kofipod.ui.screens.detail.EpisodeDetailScreen
 import app.kofipod.ui.screens.detail.PodcastDetailScreen
 import app.kofipod.ui.screens.downloads.DownloadsScreen
@@ -39,6 +40,18 @@ fun KofipodNavHost(navController: NavHostController) {
                 onOpenSearch = { navController.navigate(Route.Search) },
                 onOpenStarterPack = { navController.navigate(Route.StarterPack) },
                 onOpenStats = { navController.navigate(Route.Stats) },
+                onOpenBookmarks = { navController.navigate(Route.Bookmarks) },
+            )
+        }
+        composable<Route.Bookmarks> {
+            BookmarksScreen(
+                onBack = { navController.popBackStack() },
+                onOpenPlayer = {
+                    navController.navigate(
+                        Route.Player,
+                        NavOptions.Builder().setLaunchSingleTop(true).build(),
+                    )
+                },
             )
         }
         composable<Route.Stats> {

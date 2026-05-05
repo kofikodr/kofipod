@@ -73,6 +73,7 @@ fun LibraryScreen(
     onOpenSearch: () -> Unit,
     onOpenStarterPack: () -> Unit,
     onOpenStats: () -> Unit,
+    onOpenBookmarks: () -> Unit,
     viewModel: LibraryViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -118,6 +119,9 @@ fun LibraryScreen(
                 onNewList = { newListOpen = true },
                 onOpenStats = onOpenStats,
                 statsHasBadge = state.statsHasUnseenTierChange,
+                onOpenBookmarks = {
+                    if (viewModel.onBookmarksTapped()) onOpenBookmarks()
+                },
             )
         }
 
@@ -241,6 +245,7 @@ private fun LibraryHeader(
     onNewList: () -> Unit,
     onOpenStats: () -> Unit,
     statsHasBadge: Boolean,
+    onOpenBookmarks: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Row(
@@ -254,6 +259,21 @@ private fun LibraryHeader(
             fontSize = 32.sp,
             modifier = Modifier.weight(1f),
         )
+        Box(
+            Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(c.bgSubtle)
+                .clickable(onClick = onOpenBookmarks),
+            contentAlignment = Alignment.Center,
+        ) {
+            KPIcon(
+                name = KPIconName.Bookmark,
+                color = c.purple,
+                size = 20.dp,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
         Box(contentAlignment = Alignment.TopEnd) {
             Box(
                 Modifier
