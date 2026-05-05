@@ -277,6 +277,10 @@ val commonDataModule =
                 opml = get(),
                 backup = get(),
                 folderStore = get<BackupFolderStore>(),
+                library = get(),
+                episodes = get<EpisodesRepository>(),
+                notifier = get(),
+                uiEvents = get(),
             )
         }
         viewModel { AiSetupViewModel(config = get(), client = get(), summaries = get(), discuss = get()) }

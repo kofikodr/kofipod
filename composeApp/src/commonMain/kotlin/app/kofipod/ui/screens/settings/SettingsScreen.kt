@@ -199,6 +199,23 @@ fun SettingsScreen(
                     .padding(vertical = 4.dp),
         )
 
+        if (AppInfo.isDebugBuild) {
+            SectionLabel("Debug", topSpacing = 22.dp)
+            SettingRow(
+                icon = KPIconName.Bell,
+                title = "Send single-episode notification",
+                subtitle = "Picks a random episode from a random subscribed podcast",
+                onClick = { viewModel.sendTestSingleNotification() },
+            )
+            Spacer(Modifier.height(10.dp))
+            SettingRow(
+                icon = KPIconName.Bell,
+                title = "Send many-episodes notification",
+                subtitle = "Generic count summary; tap opens Library",
+                onClick = { viewModel.sendTestManyNotification() },
+            )
+        }
+
         Spacer(Modifier.height(16.dp))
         Text(
             "Kofipod · v${AppInfo.versionName}",

@@ -9,4 +9,7 @@ package app.kofipod.config
 expect object AppInfo {
     val versionName: String
     val versionCode: Int
+
+    /** True for Android `debug` build type; always false on iOS / release. */
+    val isDebugBuild: Boolean
 }

@@ -5,17 +5,23 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.kofipod.ai.AiConfigRepository
 import app.kofipod.ai.GeminiModel
+import app.kofipod.background.Notifier
 import app.kofipod.background.Scheduler
 import app.kofipod.backup.BackupAction
 import app.kofipod.backup.BackupController
 import app.kofipod.backup.BackupFolderStore
 import app.kofipod.backup.RestoreValidation
+import app.kofipod.data.repo.EpisodesRepository
+import app.kofipod.data.repo.LibraryRepository
 import app.kofipod.data.repo.SettingsRepository
 import app.kofipod.opml.OpmlAction
 import app.kofipod.opml.OpmlController
 import app.kofipod.playback.PlaybackCache
+import app.kofipod.ui.UiEvent
+import app.kofipod.ui.UiEventBus
 import app.kofipod.ui.theme.KofipodThemeMode
 import app.kofipod.ui.theme.ThemeSystem
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +58,10 @@ class SettingsViewModel(
     private val opml: OpmlController,
     private val backup: BackupController,
     private val folderStore: BackupFolderStore,
+    private val library: LibraryRepository,
+    private val episodes: EpisodesRepository,
+    private val notifier: Notifier,
+    private val uiEvents: UiEventBus,
 ) : ViewModel() {
     // Refreshes the displayed cache usage once per second while Settings is visible.
     private val cacheUsedFlow =
@@ -156,7 +166,59 @@ class SettingsViewModel(
     fun cancelRestoreConfirm() = backup.cancelRestoreConfirm()
 
     fun dismissBackupError() = backup.dismissError()
+
+    /**
+     * Debug entry point: post the rich single-episode notification using a randomly
+     * picked episode from a randomly picked subscribed podcast. Surfaces a snackbar
+     * if there's nothing to test with (no podcasts, or none with episodes yet).
+     */
+    fun sendTestSingleNotification() =
+        viewModelScope.launch(Dispatchers.Default) {
+            val podcasts = library.podcastsNow()
+            if (podcasts.isEmpty()) {
+                uiEvents.emit(UiEvent.Snackbar("Subscribe to a podcast to test notifications"))
+                return@launch
+            }
+            // Try up to N random podcasts so a single episode-less subscription doesn't
+            // poison the run. After that, fall back to the first non-empty one.
+            val shuffled = podcasts.shuffled()
+            val match =
+                shuffled.firstNotNullOfOrNull { p ->
+                    val eps = episodes.episodesNow(p.id)
+                    if (eps.isEmpty()) null else p to eps.random()
+                }
+            if (match == null) {
+                uiEvents.emit(UiEvent.Snackbar("No episodes available to test with"))
+                return@launch
+            }
+            val (podcast, ep) = match
+            val art = ep.imageUrl.takeIf { it.isNotBlank() } ?: podcast.artworkUrl
+            notifier.postSingleNewEpisode(
+                podcastTitle = podcast.title,
+                episodeTitle = ep.title,
+                episodeId = ep.id,
+                artworkUrl = art.takeIf { it.isNotBlank() },
+            )
+        }
+
+    /**
+     * Debug entry point: post the generic many-episodes notification. Counts are
+     * derived from real subscribed podcasts so the copy ("N new episodes from M
+     * shows") looks plausible; the underlying tap intent is fixed (open Library).
+     */
+    fun sendTestManyNotification() =
+        viewModelScope.launch(Dispatchers.Default) {
+            val podcasts = library.podcastsNow()
+            if (podcasts.isEmpty()) {
+                uiEvents.emit(UiEvent.Snackbar("Subscribe to a podcast to test notifications"))
+                return@launch
+            }
+            val shows = podcasts.size.coerceAtMost(MAX_TEST_SHOWS)
+            notifier.postManyNewEpisodes(totalEpisodes = shows + 1, totalShows = shows)
+        }
 }
+
+private const val MAX_TEST_SHOWS = 3
 
 private data class AiAndOpmlState(
     val aiConnected: Boolean,

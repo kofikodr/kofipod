@@ -2,7 +2,14 @@
 package app.kofipod.background
 
 expect class Notifier {
-    fun postNewEpisodes(
+    suspend fun postSingleNewEpisode(
+        podcastTitle: String,
+        episodeTitle: String,
+        episodeId: String,
+        artworkUrl: String?,
+    )
+
+    fun postManyNewEpisodes(
         totalEpisodes: Int,
         totalShows: Int,
     )
