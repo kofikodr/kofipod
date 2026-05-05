@@ -1,0 +1,119 @@
+-- Slice 2 (Pro Library Search): a single FTS5 virtual table that aggregates
+-- searchable text from THREE content tables — Bookmark.note,
+-- EpisodeAiSummary.summary, and TranscriptCache.text — under a typed `kind`
+-- discriminator so one query can return mixed result rows.
+--
+-- We intentionally do NOT use FTS5's `content=` option (external content
+-- table) because we need to mirror three tables, not one. Keeping the index
+-- self-contained and synced by triggers is the simpler shape.
+--
+-- `episodeId` is materialised so we can JOIN to Episode + Podcast at query
+-- time without going back through the source row's primary key.
+-- `timestampMs` is meaningful for bookmark hits (seek target); zero for
+-- summary / transcript hits (the row's per-episode kind already implies the
+-- jump-to-detail intent).
+--
+-- Snippet indexing arrives in Slice 3 — a new trigger set will add
+-- `kind='snippet'` rows. No placeholder triggers here; we don't wire dead
+-- code.
+
+CREATE VIRTUAL TABLE LibrarySearchIndex USING fts5(
+    kind UNINDEXED,
+    itemId UNINDEXED,
+    episodeId UNINDEXED,
+    timestampMs UNINDEXED,
+    text,
+    tokenize = 'porter unicode61 remove_diacritics 2'
+);
+
+-- ── Bookmark sync ──────────────────────────────────────────────────────────
+CREATE TRIGGER bookmark_fts_ai AFTER INSERT ON Bookmark
+BEGIN
+    INSERT INTO LibrarySearchIndex (kind, itemId, episodeId, timestampMs, text)
+    VALUES ('bookmark', new.id, new.episodeId, new.timestampMs, COALESCE(new.note, ''));
+END;
+
+CREATE TRIGGER bookmark_fts_au AFTER UPDATE ON Bookmark
+BEGIN
+    DELETE FROM LibrarySearchIndex WHERE kind = 'bookmark' AND itemId = old.id;
+    INSERT INTO LibrarySearchIndex (kind, itemId, episodeId, timestampMs, text)
+    VALUES ('bookmark', new.id, new.episodeId, new.timestampMs, COALESCE(new.note, ''));
+END;
+
+CREATE TRIGGER bookmark_fts_ad AFTER DELETE ON Bookmark
+BEGIN
+    DELETE FROM LibrarySearchIndex WHERE kind = 'bookmark' AND itemId = old.id;
+END;
+
+-- ── EpisodeAiSummary sync ──────────────────────────────────────────────────
+CREATE TRIGGER summary_fts_ai AFTER INSERT ON EpisodeAiSummary
+BEGIN
+    INSERT INTO LibrarySearchIndex (kind, itemId, episodeId, timestampMs, text)
+    VALUES ('summary', new.episodeId, new.episodeId, 0, new.summary);
+END;
+
+CREATE TRIGGER summary_fts_au AFTER UPDATE ON EpisodeAiSummary
+BEGIN
+    DELETE FROM LibrarySearchIndex WHERE kind = 'summary' AND itemId = old.episodeId;
+    INSERT INTO LibrarySearchIndex (kind, itemId, episodeId, timestampMs, text)
+    VALUES ('summary', new.episodeId, new.episodeId, 0, new.summary);
+END;
+
+CREATE TRIGGER summary_fts_ad AFTER DELETE ON EpisodeAiSummary
+BEGIN
+    DELETE FROM LibrarySearchIndex WHERE kind = 'summary' AND itemId = old.episodeId;
+END;
+
+-- ── TranscriptCache sync ───────────────────────────────────────────────────
+CREATE TRIGGER transcript_fts_ai AFTER INSERT ON TranscriptCache
+BEGIN
+    INSERT INTO LibrarySearchIndex (kind, itemId, episodeId, timestampMs, text)
+    VALUES ('transcript', new.episodeId, new.episodeId, 0, new.text);
+END;
+
+CREATE TRIGGER transcript_fts_au AFTER UPDATE ON TranscriptCache
+BEGIN
+    DELETE FROM LibrarySearchIndex WHERE kind = 'transcript' AND itemId = old.episodeId;
+    INSERT INTO LibrarySearchIndex (kind, itemId, episodeId, timestampMs, text)
+    VALUES ('transcript', new.episodeId, new.episodeId, 0, new.text);
+END;
+
+CREATE TRIGGER transcript_fts_ad AFTER DELETE ON TranscriptCache
+BEGIN
+    DELETE FROM LibrarySearchIndex WHERE kind = 'transcript' AND itemId = old.episodeId;
+END;
+
+-- ── Queries ────────────────────────────────────────────────────────────────
+--
+-- NOTE (Task 3 fallback): The SQLDelight 2.0.2 default SQLite 3.18 dialect
+-- does not recognise `rank` as an implicit FTS5 auxiliary column, nor does
+-- it accept `snippet(...)` as a function expression, so both `search` and
+-- `searchByKind` named queries are NOT defined here. They are executed via
+-- `db.driver.executeQuery(...)` raw SQL in LibrarySearchRepository (Task 6).
+--
+-- The intended SQL for each is documented below for Task 6's implementer:
+--
+-- search (mixed-kind):
+--   SELECT fts.kind, fts.itemId, fts.episodeId, fts.timestampMs,
+--          snippet(LibrarySearchIndex, 4, '<<', '>>', '…', 12) AS excerpt,
+--          e.title AS episodeTitle, p.id AS podcastId,
+--          p.title AS podcastTitle, p.artworkUrl AS artworkUrl
+--   FROM LibrarySearchIndex fts
+--   INNER JOIN Episode e ON e.id = fts.episodeId
+--   INNER JOIN Podcast p ON p.id = e.podcastId
+--   WHERE LibrarySearchIndex MATCH ?
+--   ORDER BY rank
+--   LIMIT 100
+--
+-- searchByKind (kind-filtered, same shape + AND fts.kind = ? after MATCH):
+--   SELECT fts.kind, fts.itemId, fts.episodeId, fts.timestampMs,
+--          snippet(LibrarySearchIndex, 4, '<<', '>>', '…', 12) AS excerpt,
+--          e.title AS episodeTitle, p.id AS podcastId,
+--          p.title AS podcastTitle, p.artworkUrl AS artworkUrl
+--   FROM LibrarySearchIndex fts
+--   INNER JOIN Episode e ON e.id = fts.episodeId
+--   INNER JOIN Podcast p ON p.id = e.podcastId
+--   WHERE LibrarySearchIndex MATCH ?
+--     AND fts.kind = ?
+--   ORDER BY rank
+--   LIMIT 100
