@@ -7,7 +7,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -22,12 +21,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -597,37 +593,181 @@ private fun ProStatusCard(
     onUpgrade: () -> Unit,
     onRestore: () -> Unit,
 ) {
-    val tierLabel =
-        when (entitlement) {
-            ProEntitlement.Unknown -> "Checking…"
-            ProEntitlement.Free -> "Free"
-            is ProEntitlement.Pro ->
-                when (entitlement.source) {
-                    ProSource.Individual -> "Pro"
-                    ProSource.Family -> "Pro · Family"
-                    ProSource.FossBuild -> "Pro · Self-build"
-                }
-        }
+    when (entitlement) {
+        ProEntitlement.Unknown ->
+            // While entitlement is Unknown, refreshOnStart() is in-flight. Showing an
+            // active Restore link would race that pipeline (two concurrent connect()s
+            // and two cache writes interleaved). Disable the link until we know the tier.
+            ProActiveCard(
+                label = "Checking…",
+                subtitle = "Restoring purchase status",
+                restoreInFlight = true,
+                onRestore = {},
+            )
+        ProEntitlement.Free ->
+            ProUpgradeCard(
+                restoreInFlight = restoreInFlight,
+                onUpgrade = onUpgrade,
+                onRestore = onRestore,
+            )
+        is ProEntitlement.Pro ->
+            when (entitlement.source) {
+                ProSource.Individual ->
+                    ProActiveCard(
+                        label = "Kofipod Pro",
+                        subtitle = "Active · purchased on this device",
+                        restoreInFlight = restoreInFlight,
+                        onRestore = onRestore,
+                    )
+                ProSource.FossBuild ->
+                    ProActiveCard(
+                        label = "Kofipod Pro",
+                        subtitle = "Self-build · all features unlocked",
+                        restoreInFlight = restoreInFlight,
+                        onRestore = onRestore,
+                    )
+            }
+    }
+}
 
-    Column(
+@Composable
+private fun ProUpgradeCard(
+    restoreInFlight: Boolean,
+    onUpgrade: () -> Unit,
+    onRestore: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Box(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .clip(RoundedCornerShape(18.dp))
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(c.pink, Color(0xFFC71D7C)),
+                    ),
+                )
+                .padding(horizontal = 18.dp, vertical = 16.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Status: $tierLabel", style = MaterialTheme.typography.bodyLarge)
-            if (entitlement is ProEntitlement.Free) {
-                Button(onClick = onUpgrade) { Text("Upgrade") }
+        Column {
+            Text(
+                "KOFIPOD PRO",
+                color = Color.White.copy(alpha = 0.92f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.5.sp,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Snip, bookmark, and\nsend to your second brain.",
+                color = Color.White,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.ExtraBold,
+                lineHeight = 21.sp,
+            )
+            Spacer(Modifier.height(14.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier =
+                        Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(Color.White)
+                            .clickable(onClick = onUpgrade)
+                            .padding(horizontal = 16.dp, vertical = 9.dp),
+                ) {
+                    Text(
+                        "Upgrade · \$12.99",
+                        color = c.pink,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = if (restoreInFlight) "Restoring…" else "Restore",
+                    color = Color.White.copy(alpha = 0.92f),
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier =
+                        Modifier
+                            .clickable(enabled = !restoreInFlight, onClick = onRestore)
+                            .padding(vertical = 4.dp),
+                )
             }
         }
-        Spacer(Modifier.height(8.dp))
-        TextButton(onClick = onRestore, enabled = !restoreInFlight) {
-            Text(if (restoreInFlight) "Restoring…" else "Restore Purchase")
+    }
+}
+
+@Composable
+private fun ProActiveCard(
+    label: String,
+    subtitle: String,
+    restoreInFlight: Boolean,
+    onRestore: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(c.surface)
+                .border(1.5.dp, c.borderStrong, RoundedCornerShape(16.dp))
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        Brush.linearGradient(colors = listOf(c.purple, c.pink)),
+                    ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "PRO",
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.sp,
+            )
         }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    label,
+                    color = c.text,
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+                Spacer(Modifier.width(6.dp))
+                Box(
+                    modifier =
+                        Modifier
+                            .size(6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(c.success),
+                )
+            }
+            Spacer(Modifier.height(2.dp))
+            Text(
+                subtitle,
+                color = c.textMute,
+                fontSize = 11.5.sp,
+            )
+        }
+        Text(
+            text = if (restoreInFlight) "Restoring…" else "Restore",
+            color = c.purple,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.ExtraBold,
+            modifier =
+                Modifier
+                    .clickable(enabled = !restoreInFlight, onClick = onRestore)
+                    .padding(vertical = 4.dp, horizontal = 4.dp),
+        )
     }
 }

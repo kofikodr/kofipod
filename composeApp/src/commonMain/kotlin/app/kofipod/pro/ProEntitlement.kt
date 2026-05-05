@@ -11,7 +11,7 @@ package app.kofipod.pro
  *   The mis-classification window is < 1s on a warm device and self-corrects on first
  *   reconciliation.
  * - [Free] is a confirmed-not-Pro state after at least one successful billing query.
- * - [Pro] carries the [source] so analytics + UI can distinguish Individual vs Family vs
+ * - [Pro] carries the [source] so analytics + UI can distinguish a paid unlock from a
  *   self-built FOSS unlock without reading multiple flags.
  */
 sealed class ProEntitlement {
@@ -25,9 +25,6 @@ sealed class ProEntitlement {
 enum class ProSource {
     /** Purchased the [kofipod_pro] SKU on this account. */
     Individual,
-
-    /** Granted via Play Billing Family Sharing on the [kofipod_pro_family] SKU. */
-    Family,
 
     /** Built from source / installed from F-Droid / running the foss flavor. */
     FossBuild,

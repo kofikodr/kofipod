@@ -40,8 +40,6 @@ class PaywallViewModel(
 
     fun purchaseIndividual() = launchPurchase(ProProducts.INDIVIDUAL)
 
-    fun purchaseFamily() = launchPurchase(ProProducts.FAMILY)
-
     fun restore() {
         viewModelScope.launch {
             mode.value = PaywallMode.Restoring

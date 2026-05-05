@@ -45,5 +45,4 @@ interface BillingClientPort {
  */
 object ProProducts {
     const val INDIVIDUAL = "kofipod_pro"
-    const val FAMILY = "kofipod_pro_family"
 }

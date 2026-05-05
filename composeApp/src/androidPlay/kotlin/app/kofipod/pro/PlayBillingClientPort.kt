@@ -18,41 +18,13 @@ import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 
 /**
- * Google Play Billing v7+ wrapper for Kofipod Pro.
+ * Google Play Billing v8 wrapper for Kofipod Pro.
  *
- * ## Family Sharing (spike result, 2026-05-05)
- *
- * The plan's original premise was that Play Billing v7 surfaces family-shared in-app
- * products via `queryPurchasesAsync` to family members on cold start, identical to the
- * purchaser's path. **The official Play documentation does not confirm this for one-time
- * in-app products.**
- *
- * What the docs actually say:
- * - The Play Help article "What can be shared with Family Library"
- *   (support.google.com/googleplay/answer/7007852) states explicitly: *"You can't share
- *   in-app purchases and apps downloaded at no charge with your family members."* The
- *   only documented path is: a paid app shared via Family Library re-grants previously
- *   bought IAPs *to the same purchaser* on a family member's device — not a family-wide
- *   IAP grant.
- * - The Play Billing v7 reference (developer.android.com/google/play/billing) does not
- *   document a family-sharing flag, a family-shareable product type, or a separate API
- *   surface for family-shared one-time products.
- *
- * Implication for Kofipod: the `kofipod_pro_family` SKU as currently planned is **not a
- * Play-platform-supported family-sharing mechanism**. The classification logic below
- * (`productId == FAMILY` → [ProSource.Family]) is forward-looking — it lets us promote a
- * second SKU as a "Family" tier (priced higher, named differently in the paywall), but
- * the actual sharing semantics will need to be enforced via app-side bookkeeping, an
- * external entitlement server, or a different distribution model.
- *
- * **TODO(family-sharing):** before promising "Family Sharing" in user-facing copy, verify
- * actual cold-start behavior on a real Family Sharing setup with the published SKU. If
- * Play does not propagate the purchase to family members through `queryPurchasesAsync`,
- * either drop the Family tier entirely (Pro-as-one-tier) or scope it to "this Google
- * account, multiple devices" rather than "one purchase, multiple Google accounts."
- *
- * The classification preference (Family > Individual when both tokens are present) is
- * still correct as-is for the case where a single user upgrades from Individual → Family.
+ * Single one-time SKU: [ProProducts.INDIVIDUAL] = `kofipod_pro`. The Family tier was
+ * dropped before any release: Play's documented Family Library mechanism explicitly
+ * does not share one-time IAPs across accounts (see Play Help article 7007852), and
+ * Play Billing has no API for family-shared one-time products. If a "Family" tier is
+ * ever revived it will need to be enforced via app-side seat licensing, not Play.
  *
  * ## Connection lifecycle
  *
@@ -60,14 +32,13 @@ import kotlin.coroutines.resume
  * the connection (idempotent); the listener is wired so `onPurchasesUpdated` callbacks
  * complete the suspending [launchPurchase] coroutine.
  *
- * ## v7.1.1 API notes
+ * ## v8 API notes
  *
- * - `queryProductDetailsAsync` callback in v7.1.1 returns `List<ProductDetails>` directly
- *   (same shape as v6). The newer `QueryProductDetailsResult` wrapper (with
- *   `productDetailsList` + `unfetchedProductList`) only landed in v8+ — on a major-version
- *   bump, swap the callback signature and use the unfetched list for diagnostics.
- * - `enablePendingPurchases(PendingPurchasesParams)` is the v7+ form; the older
- *   `setEnablePendingPurchases()` no-arg builder method is removed.
+ * - `queryProductDetailsAsync` callback in v8 receives a [QueryProductDetailsResult]
+ *   wrapper exposing `productDetailsList` + `unfetchedProductList`. The unfetched list
+ *   is logged for diagnostics; we still surface "no product details" as a failure.
+ * - `enablePendingPurchases(PendingPurchasesParams)` (with
+ *   `enableOneTimeProducts()`) remains the required form.
  */
 class PlayBillingClientPort(
     private val app: Application,
@@ -199,18 +170,18 @@ class PlayBillingClientPort(
                 )
                 .build()
         return suspendCancellableCoroutine { cont ->
-            // v7.1.1: callback receives `List<ProductDetails>` directly. Later versions
-            // (v8+) return a `QueryProductDetailsResult` wrapper with `productDetailsList`
-            // and `unfetchedProductList`; on upgrade, switch to that shape and inspect
-            // unfetched products for diagnostics.
-            client.queryProductDetailsAsync(params) { result, productDetailsList ->
+            client.queryProductDetailsAsync(params) { result, productDetailsResult ->
                 if (result.responseCode != BillingClient.BillingResponseCode.OK) {
                     cont.resume(
                         Result.failure(BillingException(result.responseCode, result.debugMessage)),
                     )
                     return@queryProductDetailsAsync
                 }
-                val first = productDetailsList.firstOrNull()
+                val unfetched = productDetailsResult.unfetchedProductList
+                if (unfetched.isNotEmpty()) {
+                    println("$LOG_TAG: unfetched products: ${unfetched.map { it.productId }}")
+                }
+                val first = productDetailsResult.productDetailsList.firstOrNull()
                 if (first == null) {
                     cont.resume(Result.failure(IllegalStateException("no product details for $productId")))
                 } else {
@@ -221,25 +192,16 @@ class PlayBillingClientPort(
     }
 
     /**
-     * Maps a list of [Purchase] tokens to a [ProEntitlement]. Family is preferred over
-     * Individual when both tokens are present (the "upgraded from Individual to Family"
-     * case) — Family is always at least as permissive. Pending purchases are ignored;
-     * only [Purchase.PurchaseState.PURCHASED] counts.
+     * Maps a list of [Purchase] tokens to a [ProEntitlement]. Pending purchases are
+     * ignored; only [Purchase.PurchaseState.PURCHASED] counts.
      */
     private fun classifyPurchases(purchases: List<Purchase>): ProEntitlement {
-        if (purchases.any {
-                ProProducts.FAMILY in it.products && it.purchaseState == Purchase.PurchaseState.PURCHASED
+        val hasIndividual =
+            purchases.any {
+                ProProducts.INDIVIDUAL in it.products &&
+                    it.purchaseState == Purchase.PurchaseState.PURCHASED
             }
-        ) {
-            return ProEntitlement.Pro(ProSource.Family)
-        }
-        if (purchases.any {
-                ProProducts.INDIVIDUAL in it.products && it.purchaseState == Purchase.PurchaseState.PURCHASED
-            }
-        ) {
-            return ProEntitlement.Pro(ProSource.Individual)
-        }
-        return ProEntitlement.Free
+        return if (hasIndividual) ProEntitlement.Pro(ProSource.Individual) else ProEntitlement.Free
     }
 }
 

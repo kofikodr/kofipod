@@ -53,7 +53,7 @@ class ProEntitlementRepositoryTest {
             val cache = FakeEntitlementCache(initial = null)
             val port =
                 FakeBillingClientPort(
-                    query = Result.success(ProEntitlement.Pro(ProSource.Family)),
+                    query = Result.success(ProEntitlement.Pro(ProSource.Individual)),
                 )
             val repo = ProEntitlementRepository(cache = cache, port = port, appScope = scope)
 
@@ -61,8 +61,8 @@ class ProEntitlementRepositoryTest {
 
             assertEquals(1, port.connectCalls)
             assertEquals(1, port.queryCalls)
-            assertEquals(ProEntitlement.Pro(ProSource.Family), repo.state.value)
-            assertEquals(ProEntitlement.Pro(ProSource.Family), cache.read())
+            assertEquals(ProEntitlement.Pro(ProSource.Individual), repo.state.value)
+            assertEquals(ProEntitlement.Pro(ProSource.Individual), cache.read())
         }
 
     @Test

@@ -162,6 +162,7 @@ android {
             dimension = "distribution"
             // play flavor is the revenue product; no applicationIdSuffix so it
             // matches what's uploaded to Play Console.
+            manifestPlaceholders["appLabel"] = "Kofipod"
         }
         create("foss") {
             dimension = "distribution"
@@ -199,9 +200,11 @@ android {
     buildTypes {
         debug {
             // Distinct package so debug installs coexist with a production release on the same device.
+            // Note: we deliberately do NOT override the appLabel placeholder here. Setting it on the
+            // debug build-type silently overrides the per-flavor value, hiding the "(FOSS)" suffix
+            // from the launcher on foss debug. Use the package id suffix to tell debug from release.
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-            manifestPlaceholders["appLabel"] = "Kofipoddbg"
         }
         release {
             isMinifyEnabled = false
