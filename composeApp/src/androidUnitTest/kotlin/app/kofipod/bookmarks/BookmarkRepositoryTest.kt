@@ -2,6 +2,8 @@
 package app.kofipod.bookmarks
 
 import app.kofipod.testing.inMemoryDatabase
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -127,4 +129,21 @@ class BookmarkRepositoryTest {
         repo.deleteById(id)
         assertEquals(0, db.bookmarkQueries.selectByEpisode("ep-1").executeAsList().size)
     }
+
+    @Test
+    fun observeForEpisode_returnsRowsOrderedByTimestamp_andUpdatesOnInsert() =
+        runTest {
+            val db = inMemoryDatabase()
+            seedEpisode(db)
+            val repo = BookmarkRepository(db)
+
+            // Insert two bookmarks in non-ascending timestamp order.
+            repo.add("ep-1", "pod-1", timestampMs = 120_000L, note = null, nowMs = 100L)
+            repo.add("ep-1", "pod-1", timestampMs = 30_000L, note = "early", nowMs = 200L)
+
+            val rows = repo.observeForEpisode("ep-1").first { it.size == 2 }
+            assertEquals(listOf(30_000L, 120_000L), rows.map { it.timestampMs })
+            assertEquals("early", rows[0].note)
+            assertNull(rows[1].note)
+        }
 }
