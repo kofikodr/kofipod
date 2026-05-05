@@ -19,7 +19,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
-import org.koin.core.context.GlobalContext
 import org.koin.core.context.startKoin
 import org.koin.core.qualifier.named
 import org.koin.java.KoinJavaComponent.get
@@ -72,8 +71,9 @@ class KofipodApplication : Application() {
         // cache first, then refreshes from Play Billing — so paywall-gated UI
         // sees the right tier within a few hundred ms of process start. Failure
         // here is non-fatal (UI shows Unknown until the user retries via Settings).
+        val pro = get<ProEntitlementRepository>(ProEntitlementRepository::class.java)
         appScope.launch {
-            GlobalContext.get().get<ProEntitlementRepository>().refreshOnStart()
+            pro.refreshOnStart()
         }
     }
 }
