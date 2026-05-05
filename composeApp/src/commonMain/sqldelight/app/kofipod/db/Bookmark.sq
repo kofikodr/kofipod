@@ -16,9 +16,9 @@ CREATE TABLE Bookmark (
     FOREIGN KEY (podcastId) REFERENCES Podcast(id) ON DELETE CASCADE
 );
 
-CREATE INDEX Bookmark_byEpisode ON Bookmark(episodeId, timestampMs);
-CREATE INDEX Bookmark_byPodcast ON Bookmark(podcastId, createdAtMs);
-CREATE INDEX Bookmark_byCreated ON Bookmark(createdAtMs);
+CREATE INDEX bookmark_byEpisode ON Bookmark(episodeId, timestampMs);
+CREATE INDEX bookmark_byPodcast ON Bookmark(podcastId, createdAtMs);
+CREATE INDEX bookmark_byCreated ON Bookmark(createdAtMs);
 
 insert:
 INSERT INTO Bookmark (id, episodeId, podcastId, timestampMs, note, createdAtMs)
