@@ -4,6 +4,7 @@ package app.kofipod.bookmarks
 import app.kofipod.testing.inMemoryDatabase
 import org.junit.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class BookmarkRepositoryTest {
     private fun seedEpisode(
@@ -68,5 +69,62 @@ class BookmarkRepositoryTest {
         assertEquals(60_000L, row.timestampMs)
         assertEquals("good moment", row.note)
         assertEquals(1_700_000_000_000L, row.createdAtMs)
+    }
+
+    @Test
+    fun add_normalisesBlankNote_toNull() {
+        val db = inMemoryDatabase()
+        seedEpisode(db)
+        val repo = BookmarkRepository(db)
+
+        repo.add(
+            episodeId = "ep-1",
+            podcastId = "pod-1",
+            timestampMs = 1_000L,
+            note = "   ",
+            nowMs = 100L,
+        )
+
+        val row = db.bookmarkQueries.selectByEpisode("ep-1").executeAsOne()
+        assertNull(row.note)
+    }
+
+    @Test
+    fun updateNote_normalisesBlankNote_toNull() {
+        val db = inMemoryDatabase()
+        seedEpisode(db)
+        val repo = BookmarkRepository(db)
+        val id =
+            repo.add(
+                episodeId = "ep-1",
+                podcastId = "pod-1",
+                timestampMs = 1_000L,
+                note = "original",
+                nowMs = 100L,
+            )
+
+        repo.updateNote(id, "   ")
+
+        val row = db.bookmarkQueries.selectByEpisode("ep-1").executeAsOne()
+        assertNull(row.note)
+    }
+
+    @Test
+    fun deleteById_removesRow() {
+        val db = inMemoryDatabase()
+        seedEpisode(db)
+        val repo = BookmarkRepository(db)
+        val id =
+            repo.add(
+                episodeId = "ep-1",
+                podcastId = "pod-1",
+                timestampMs = 60_000L,
+                note = null,
+                nowMs = 100L,
+            )
+
+        assertEquals(1, db.bookmarkQueries.selectByEpisode("ep-1").executeAsList().size)
+        repo.deleteById(id)
+        assertEquals(0, db.bookmarkQueries.selectByEpisode("ep-1").executeAsList().size)
     }
 }
