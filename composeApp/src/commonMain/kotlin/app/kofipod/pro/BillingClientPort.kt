@@ -5,8 +5,8 @@ package app.kofipod.pro
  * Platform-agnostic billing surface used by [ProEntitlementRepository].
  *
  * Three implementations:
- * - `playAndroid/.../PlayBillingClientPort.kt` — real Google Play Billing v7+ wrapper.
- * - `fossAndroid/.../FossBillingClientPort.kt` — unconditional `Pro(FossBuild)`.
+ * - `androidPlay/.../PlayBillingClientPort.kt` — real Google Play Billing v7+ wrapper.
+ * - `androidFoss/.../FossBillingClientPort.kt` — unconditional `Pro(FossBuild)`.
  * - `iosMain/.../IosBillingClientPort.kt` — `Free` stub until iOS becomes a focus.
  *
  * The port models a long-lived service: [connect] starts the underlying client (idempotent),
