@@ -239,6 +239,19 @@ The willingness-to-pay wedge — Snipd users specifically cite this as why they 
 
 **Visual treatment is Claude Design's call.** This section lists the jobs each screen does, key elements, and notable states. No layout, palette, or motion prescription.
 
+### Design doc as source of truth — for new features only
+
+The bundled `docs/kofipod-pro-ui-design.html` is the visual reference for every Pro feature listed below (Paywall sheet, Snippet editor, Bookmarks list, Library search, PKM Connections, Export action sheet, Smart Playlist editor) **and for the Pro-related sections of the modified screens** (the Settings → Kofipod Pro section, the Library "Bookmarks" / search entry points, the Episode Detail "Saved" section, the Player Snip + Bookmark icon buttons).
+
+**Use it when:**
+- Implementing any new screen or composable that the design doc covers.
+- Touching a Pro-gated entry point on a modified screen — match the design.
+
+**Do NOT use it as a backlog of UI drift:**
+- Existing free-tier surfaces that the design doc happens to depict (e.g. Now-playing transport controls, the Library tile grid, Stats tiles, Episode Detail tab strip styling, Settings rows unrelated to Pro/Connections) may have drifted from current production. **That drift is intentional out-of-scope for the Pro project.** Do not "fix" non-Pro UI to match the design doc as a side effect of implementing a Pro slice. If the design doc and live app disagree on a non-Pro surface, the live app wins.
+
+When in doubt about whether a discrepancy is a "new Pro feature → match design" or "existing free UI drift → leave alone": Pro-gated entry points and net-new screens follow the design; everything else stays as-is. Open a follow-up if a non-Pro UI refresh is genuinely needed — don't fold it into a Pro slice.
+
 ### New screens
 
 1. **Paywall sheet (modal bottom)** — Job: convert the user at the moment they tap a Pro feature.
