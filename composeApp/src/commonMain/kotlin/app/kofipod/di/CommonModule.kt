@@ -358,6 +358,7 @@ val commonDataModule =
                 sharer = get(),
                 chapters = get(),
                 aiConfig = get(),
+                bookmarkRepo = get(),
             )
         }
         viewModel {

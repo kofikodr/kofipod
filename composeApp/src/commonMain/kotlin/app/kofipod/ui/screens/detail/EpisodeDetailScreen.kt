@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kofipod.ai.AiSummaryUiState
+import app.kofipod.bookmarks.Bookmark
 import app.kofipod.db.Episode
 import app.kofipod.db.EpisodeChapter
 import app.kofipod.db.Podcast
@@ -64,8 +65,10 @@ fun EpisodeDetailScreen(
     viewModel: EpisodeDetailViewModel = koinViewModel(parameters = { parametersOf(episodeId) }),
 ) {
     val state by viewModel.state.collectAsState()
+    val bookmarksList by viewModel.bookmarks.collectAsState()
     EpisodeDetailContent(
         state = state,
+        bookmarks = bookmarksList,
         onBack = onBack,
         onShare = viewModel::share,
         onPlay = {
@@ -79,6 +82,11 @@ fun EpisodeDetailScreen(
             viewModel.seekToChapter(startMs)
             if (!state.isCurrentEpisode) onOpenPlayer()
         },
+        onBookmarkTap = { ms ->
+            viewModel.seekToBookmark(ms)
+            if (!state.isCurrentEpisode) onOpenPlayer()
+        },
+        onBookmarkDelete = viewModel::deleteBookmark,
         onOpenAiSetup = onOpenAiSetup,
         onOpenAskGemini = onOpenAskGemini,
     )
@@ -104,6 +112,9 @@ internal fun EpisodeDetailContent(
     // EpisodeDetailContent directly don't need to plumb the new callback.
     // Production callers always pass a real navigator.
     onOpenAskGemini: (String) -> Unit = {},
+    bookmarks: List<Bookmark> = emptyList(),
+    onBookmarkTap: (Long) -> Unit = {},
+    onBookmarkDelete: (String) -> Unit = {},
 ) {
     val c = LocalKofipodColors.current
 
@@ -143,6 +154,9 @@ internal fun EpisodeDetailContent(
                     onChapterTap = onChapterTap,
                     onOpenAiSetup = onOpenAiSetup,
                     onOpenAskGemini = onOpenAskGemini,
+                    bookmarks = bookmarks,
+                    onBookmarkTap = onBookmarkTap,
+                    onBookmarkDelete = onBookmarkDelete,
                 )
             }
         }
@@ -196,6 +210,9 @@ private fun EpisodeBody(
     onChapterTap: (Long) -> Unit,
     onOpenAiSetup: () -> Unit,
     onOpenAskGemini: (String) -> Unit,
+    bookmarks: List<Bookmark>,
+    onBookmarkTap: (Long) -> Unit,
+    onBookmarkDelete: (String) -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Spacer(Modifier.height(8.dp))
@@ -298,6 +315,15 @@ private fun EpisodeBody(
                     onOpenAskGemini = { onOpenAskGemini(episode.id) },
                 )
         }
+    }
+
+    if (bookmarks.isNotEmpty()) {
+        Spacer(Modifier.height(28.dp))
+        SavedSection(
+            bookmarks = bookmarks,
+            onTap = onBookmarkTap,
+            onDelete = onBookmarkDelete,
+        )
     }
 }
 

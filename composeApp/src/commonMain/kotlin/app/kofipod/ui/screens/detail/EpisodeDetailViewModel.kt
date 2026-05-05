@@ -4,6 +4,8 @@ package app.kofipod.ui.screens.detail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.kofipod.ai.AiConfigRepository
+import app.kofipod.bookmarks.Bookmark
+import app.kofipod.bookmarks.BookmarkRepository
 import app.kofipod.data.repo.ChaptersRepository
 import app.kofipod.data.repo.DownloadRepository
 import app.kofipod.data.repo.EpisodeSource
@@ -59,6 +61,7 @@ class EpisodeDetailViewModel(
     private val sharer: Sharer,
     private val chapters: ChaptersRepository,
     aiConfig: AiConfigRepository,
+    private val bookmarkRepo: BookmarkRepository,
 ) : ViewModel() {
     private val error = MutableStateFlow<String?>(null)
 
@@ -118,6 +121,10 @@ class EpisodeDetailViewModel(
                 summaryEnabled = summaryEnabled,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EpisodeDetailUiState())
+
+    val bookmarks: StateFlow<List<Bookmark>> =
+        bookmarkRepo.observeForEpisode(episodeId)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun togglePlay() {
         val s = state.value
@@ -217,6 +224,13 @@ class EpisodeDetailViewModel(
             )
         }
     }
+
+    /**
+     * Seek-or-play behaviour matches [seekToChapter]; bookmarks and chapters share semantics.
+     */
+    fun seekToBookmark(timestampMs: Long) = seekToChapter(timestampMs)
+
+    fun deleteBookmark(id: String) = bookmarkRepo.deleteById(id)
 
     fun share() {
         val ep = state.value.episode ?: return
