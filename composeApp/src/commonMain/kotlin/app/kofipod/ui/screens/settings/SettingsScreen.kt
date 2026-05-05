@@ -45,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kofipod.config.AppInfo
+import app.kofipod.diagnostics.DiagnosticsCapabilities
 import app.kofipod.opml.OpmlAction
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
@@ -190,10 +191,12 @@ fun SettingsScreen(
         PrivacyDiagnosticsSection(
             crashesEnabled = state.crashesEnabled,
             usageEnabled = state.usageEnabled,
+            crashAvailable = DiagnosticsCapabilities.crashReportingAvailable,
+            usageAvailable = DiagnosticsCapabilities.usageTelemetryAvailable,
             onCrashesEnabledChange = viewModel::setCrashesEnabled,
             onUsageEnabledChange = viewModel::setUsageEnabled,
             onOpenPrivacyPolicy = {
-                uriHandler.openUri("https://github.com/ebernie/kofipod/blob/master/docs/privacy.md")
+                uriHandler.openUri("https://github.com/ebernie/kofipod/blob/master/PRIVACY.md")
             },
         )
 

@@ -26,47 +26,59 @@ import app.kofipod.ui.theme.LocalKofipodColors
 fun PrivacyDiagnosticsSection(
     crashesEnabled: Boolean,
     usageEnabled: Boolean,
+    crashAvailable: Boolean,
+    usageAvailable: Boolean,
     onCrashesEnabledChange: (Boolean) -> Unit,
     onUsageEnabledChange: (Boolean) -> Unit,
     onOpenPrivacyPolicy: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    if (!crashAvailable && !usageAvailable) return
     val c = LocalKofipodColors.current
     Column(modifier.fillMaxWidth()) {
         SectionLabel("Privacy & Diagnostics", topSpacing = 22.dp)
         Spacer(Modifier.height(8.dp))
 
-        DiagnosticsToggleRow(
-            tag = "diagnostics.crashes",
-            title = "Send crash reports",
-            subtitle = "Help fix bugs by sharing anonymous crash details when the app crashes. No personal information.",
-            checked = crashesEnabled,
-            onCheckedChange = onCrashesEnabledChange,
-            disclosureLines =
-                listOf(
-                    "Stack trace",
-                    "Exception class and message (URLs scrubbed)",
-                    "OS version, device model (e.g. \"Pixel 7\")",
-                    "App version, locale",
-                ),
-        )
+        if (crashAvailable) {
+            DiagnosticsToggleRow(
+                tag = "diagnostics.crashes",
+                title = "Send crash reports",
+                subtitle = "Help fix bugs by sharing anonymous crash details when the app crashes. No personal information.",
+                checked = crashesEnabled,
+                onCheckedChange = onCrashesEnabledChange,
+                disclosureLines =
+                    listOf(
+                        "Stack trace",
+                        "Exception class and message (URLs scrubbed)",
+                        "OS version, device model (e.g. \"Pixel 7\")",
+                        "App version, locale",
+                    ),
+            )
+        }
 
-        Spacer(Modifier.height(12.dp))
+        if (crashAvailable && usageAvailable) {
+            Spacer(Modifier.height(12.dp))
+        }
 
-        DiagnosticsToggleRow(
-            tag = "diagnostics.usage",
-            title = "Share anonymous usage data",
-            subtitle = "Help prioritize features by sharing counts of how often they're used. No identifiers, no IP address stored.",
-            checked = usageEnabled,
-            onCheckedChange = onUsageEnabledChange,
-            disclosureLines =
-                listOf(
-                    "Event name (e.g. \"search_performed\")",
-                    "Event properties (fixed enum values)",
-                    "App version, OS version, locale",
-                    "No client identifier ever sent",
-                ),
-        )
+        if (usageAvailable) {
+            DiagnosticsToggleRow(
+                tag = "diagnostics.usage",
+                title = "Share anonymous usage data",
+                subtitle =
+                    "Help prioritize features by sharing counts of how often " +
+                        "they're used. No identifiers, no IP address stored. " +
+                        "Hosted in the EU.",
+                checked = usageEnabled,
+                onCheckedChange = onUsageEnabledChange,
+                disclosureLines =
+                    listOf(
+                        "Event name (e.g. \"search_performed\")",
+                        "Event properties (fixed enum values)",
+                        "App version, OS version, locale",
+                        "No client identifier ever sent",
+                    ),
+            )
+        }
 
         Spacer(Modifier.height(12.dp))
 

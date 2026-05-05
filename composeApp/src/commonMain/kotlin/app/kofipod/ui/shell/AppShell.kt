@@ -40,6 +40,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navOptions
 import app.kofipod.backup.BackupController
 import app.kofipod.backup.BackupPickerHost
+import app.kofipod.diagnostics.DiagnosticsCapabilities
 import app.kofipod.diagnostics.DiagnosticsConfigRepository
 import app.kofipod.opml.OpmlPickerHost
 import app.kofipod.ui.UiEvent
@@ -147,14 +148,30 @@ fun AppShell() {
     BackupPickerHost()
 
     // First-launch disclosure: gates all diagnostic sends until the user
-    // taps "Got it" or "Open Settings". `initial = true` avoids a flash of
-    // the sheet on every launch — the first real emission either confirms
-    // true (sheet stays hidden) or flips to false (sheet appears).
+    // taps "Got it" or "Open Settings". `initial = true` is load-bearing —
+    // it avoids a one-frame flash of the sheet on every launch before the
+    // first flow emission arrives, AND it keeps the no-capability fork
+    // path quiet (the sheet's own guard short-circuits when neither
+    // channel is available, so we never want a transient `false` to slip
+    // through and render an empty sheet for a frame).
     val diagnostics: DiagnosticsConfigRepository = koinInject()
     val acknowledged by diagnostics.disclosureAcknowledged.collectAsState(initial = true)
     val ackScope = rememberCoroutineScope()
+    // Forks / F-Droid builds with no diagnostic SDK keys configured: the
+    // sheet would have nothing to disclose. Silently mark it acknowledged
+    // so any flow that awaits acknowledgement (none today, but cheap
+    // insurance) doesn't suspend forever. Keyed on `acknowledged` rather
+    // than Unit so the no-op call only happens on the (single) emission
+    // that flips it false; subsequent recompositions don't re-fire.
+    LaunchedEffect(acknowledged) {
+        if (!acknowledged && !DiagnosticsCapabilities.anyAvailable) {
+            diagnostics.acknowledgeDisclosure()
+        }
+    }
     DiagnosticsDisclosureSheet(
         visible = !acknowledged,
+        crashAvailable = DiagnosticsCapabilities.crashReportingAvailable,
+        usageAvailable = DiagnosticsCapabilities.usageTelemetryAvailable,
         onAcknowledge = { ackScope.launch { diagnostics.acknowledgeDisclosure() } },
         onOpenSettings = {
             if (nav.currentDestination?.route != Route.Settings::class.qualifiedName) {

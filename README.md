@@ -57,7 +57,7 @@ SENTRY_DSN=https://<public_key>@<glitchtip-host>/<project_id>
 APTABASE_APP_KEY=A-EU-XXXXXXXXXX   # or A-US-...
 ```
 
-The maintainer's GlitchTip instance is self-hosted on Railway via the official one-click template; an Aptabase free tier account covers the usage side. Maintainer-facing hosting runbook: `docs/diagnostics-hosting.md`. User-facing privacy disclosure: `docs/privacy.md`.
+The maintainer's GlitchTip instance is self-hosted on Railway via the official one-click template; an Aptabase free tier account (EU region) covers the usage side. Maintainer-facing hosting runbook: `docs/diagnostics-hosting.md`. User-facing privacy policy: [`PRIVACY.md`](PRIVACY.md).
 
 ## Release
 
