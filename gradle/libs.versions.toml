@@ -26,6 +26,9 @@ junit = "4.13.2"
 podcastindex = "0.4.0"
 ktlintGradle = "12.1.2"
 detekt = "1.23.8"
+sentryKmp = "0.15.0"
+sentryAndroidGradle = "6.6.0"
+aptabase = "0.0.8"
 
 [libraries]
 compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
@@ -64,6 +67,8 @@ koin-android = { module = "io.insert-koin:koin-android", version.ref = "koin" }
 koin-compose = { module = "io.insert-koin:koin-compose", version.ref = "koinCompose" }
 koin-compose-viewmodel = { module = "io.insert-koin:koin-compose-viewmodel", version.ref = "koinCompose" }
 podcastindex-sdk = { module = "io.github.mr3y-the-programmer:podcastindex-sdk-ktor3", version.ref = "podcastindex" }
+sentry-kmp = { module = "io.sentry:sentry-kotlin-multiplatform", version.ref = "sentryKmp" }
+aptabase = { module = "com.github.aptabase:aptabase-kotlin", version.ref = "aptabase" }
 junit = { module = "junit:junit", version.ref = "junit" }
 
 [plugins]
@@ -77,3 +82,4 @@ buildkonfig = { id = "com.codingfeline.buildkonfig", version.ref = "buildkonfig"
 paparazzi = { id = "app.cash.paparazzi", version.ref = "paparazzi" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintGradle" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
+sentry-android = { id = "io.sentry.android.gradle", version.ref = "sentryAndroidGradle" }

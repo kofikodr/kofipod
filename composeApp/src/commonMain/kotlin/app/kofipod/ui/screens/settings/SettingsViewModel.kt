@@ -14,6 +14,7 @@ import app.kofipod.backup.RestoreValidation
 import app.kofipod.data.repo.EpisodesRepository
 import app.kofipod.data.repo.LibraryRepository
 import app.kofipod.data.repo.SettingsRepository
+import app.kofipod.diagnostics.DiagnosticsConfigRepository
 import app.kofipod.opml.OpmlAction
 import app.kofipod.opml.OpmlController
 import app.kofipod.playback.PlaybackCache
@@ -47,6 +48,9 @@ data class SettingsUiState(
     val backupFolderName: String? = null,
     val lastBackupAtMs: Long? = null,
     val pendingRestoreConfirm: RestoreValidation.Valid? = null,
+    val crashesEnabled: Boolean = true,
+    val usageEnabled: Boolean = true,
+    val disclosureAcknowledged: Boolean = false,
 )
 
 class SettingsViewModel(
@@ -58,6 +62,8 @@ class SettingsViewModel(
     private val opml: OpmlController,
     private val backup: BackupController,
     private val folderStore: BackupFolderStore,
+    private val diagnostics: DiagnosticsConfigRepository,
+    private val telemetry: app.kofipod.diagnostics.Telemetry,
     private val library: LibraryRepository,
     private val episodes: EpisodesRepository,
     private val notifier: Notifier,
@@ -116,16 +122,26 @@ class SettingsViewModel(
                     pendingRestoreConfirm = pendingRestoreConfirm,
                 )
             },
-        ) { base, combined, backupSlice ->
+            combine(
+                diagnostics.crashesEnabled,
+                diagnostics.usageEnabled,
+                diagnostics.disclosureAcknowledged,
+            ) { crashes, usage, ack ->
+                DiagnosticsState(crashes, usage, ack)
+            },
+        ) { base, aiOpml, backupSlice, diag ->
             base.copy(
-                aiConnected = combined.aiConnected,
-                aiModel = combined.aiModel,
-                opmlAction = combined.opmlAction,
+                aiConnected = aiOpml.aiConnected,
+                aiModel = aiOpml.aiModel,
+                opmlAction = aiOpml.opmlAction,
                 backupAction = backupSlice.action,
                 backupFolderUri = backupSlice.treeUri,
                 backupFolderName = backupSlice.folderName,
                 lastBackupAtMs = backupSlice.lastBackupAtMs,
                 pendingRestoreConfirm = backupSlice.pendingRestoreConfirm,
+                crashesEnabled = diag.crashesEnabled,
+                usageEnabled = diag.usageEnabled,
+                disclosureAcknowledged = diag.disclosureAcknowledged,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -166,6 +182,33 @@ class SettingsViewModel(
     fun cancelRestoreConfirm() = backup.cancelRestoreConfirm()
 
     fun dismissBackupError() = backup.dismissError()
+
+    fun setCrashesEnabled(enabled: Boolean) = viewModelScope.launch { diagnostics.setCrashesEnabled(enabled) }
+
+    fun setUsageEnabled(enabled: Boolean) = viewModelScope.launch { diagnostics.setUsageEnabled(enabled) }
+
+    fun acknowledgeDisclosure() = viewModelScope.launch { diagnostics.acknowledgeDisclosure() }
+
+    /**
+     * Debug entry point: throws an unhandled exception synchronously on the
+     * main thread so the Sentry uncaught-exception handler captures it. Used
+     * to verify GlitchTip end-to-end ingestion. The process will die; Sentry
+     * persists the event to disk before exit and uploads it on next launch.
+     */
+    fun forceCrash(): Nothing = error("Kofipod force-crash test from Settings → Debug")
+
+    /**
+     * Debug entry point: forces a telemetry smoke-test event to Aptabase,
+     * bypassing the disclosure gate and the `enabled` flag. Surfaces the
+     * SDK's status (init result, exception class+message if any) via
+     * snackbar so we can tell apart "gating broken" from "SDK unreachable
+     * from this process" during on-device verification.
+     */
+    fun debugSendTestTelemetry() =
+        viewModelScope.launch {
+            val result = telemetry.debugSmokeTest("debug_smoke_test")
+            uiEvents.emit(UiEvent.Snackbar(result))
+        }
 
     /**
      * Debug entry point: post the rich single-episode notification using a randomly
@@ -232,4 +275,10 @@ private data class BackupSlice(
     val folderName: String?,
     val lastBackupAtMs: Long?,
     val pendingRestoreConfirm: RestoreValidation.Valid?,
+)
+
+private data class DiagnosticsState(
+    val crashesEnabled: Boolean,
+    val usageEnabled: Boolean,
+    val disclosureAcknowledged: Boolean,
 )

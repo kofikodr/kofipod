@@ -246,12 +246,21 @@ val commonDataModule =
             CoroutineScope(SupervisorJob() + Dispatchers.Default)
         }
         single {
+            app.kofipod.diagnostics.DiagnosticsBootstrapper(
+                config = get(),
+                crashes = get(),
+                telemetry = get(),
+                appScope = get(org.koin.core.qualifier.named("appScope")),
+            )
+        }
+        single {
             DownloadRepository(
                 db = get(),
                 engine = get(),
                 settings = get(),
                 network = get(),
                 scope = get(org.koin.core.qualifier.named("appScope")),
+                telemetry = get(),
             )
         }
 
@@ -262,6 +271,7 @@ val commonDataModule =
                 recommendations = get<RecommendationsSource>(),
                 appScope = get(org.koin.core.qualifier.named("appScope")),
                 errors = get(),
+                telemetry = get(),
             )
         }
         viewModel { LibraryViewModel(get(), get(), get(), get()) }
@@ -277,6 +287,8 @@ val commonDataModule =
                 opml = get(),
                 backup = get(),
                 folderStore = get<BackupFolderStore>(),
+                diagnostics = get(),
+                telemetry = get(),
                 library = get(),
                 episodes = get<EpisodesRepository>(),
                 notifier = get(),

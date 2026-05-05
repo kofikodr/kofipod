@@ -23,8 +23,10 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,6 +40,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navOptions
 import app.kofipod.backup.BackupController
 import app.kofipod.backup.BackupPickerHost
+import app.kofipod.diagnostics.DiagnosticsConfigRepository
 import app.kofipod.opml.OpmlPickerHost
 import app.kofipod.ui.UiEvent
 import app.kofipod.ui.UiEventBus
@@ -48,6 +51,7 @@ import app.kofipod.ui.player.MiniPlayer
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.theme.LocalKofipodColors
+import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
 @Composable
@@ -141,6 +145,29 @@ fun AppShell() {
     // screen triggered the import/export or backup pick. No-ops on iOS.
     OpmlPickerHost()
     BackupPickerHost()
+
+    // First-launch disclosure: gates all diagnostic sends until the user
+    // taps "Got it" or "Open Settings". `initial = true` avoids a flash of
+    // the sheet on every launch — the first real emission either confirms
+    // true (sheet stays hidden) or flips to false (sheet appears).
+    val diagnostics: DiagnosticsConfigRepository = koinInject()
+    val acknowledged by diagnostics.disclosureAcknowledged.collectAsState(initial = true)
+    val ackScope = rememberCoroutineScope()
+    DiagnosticsDisclosureSheet(
+        visible = !acknowledged,
+        onAcknowledge = { ackScope.launch { diagnostics.acknowledgeDisclosure() } },
+        onOpenSettings = {
+            if (nav.currentDestination?.route != Route.Settings::class.qualifiedName) {
+                nav.navigate(
+                    Route.Settings,
+                    navOptions {
+                        launchSingleTop = true
+                        popUpTo(nav.graph.findStartDestination().id) { inclusive = false }
+                    },
+                )
+            }
+        },
+    )
 }
 
 private data class Tab(

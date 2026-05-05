@@ -186,6 +186,17 @@ fun SettingsScreen(
             onChange = { viewModel.setStreamCacheCap(it) },
         )
 
+        val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+        PrivacyDiagnosticsSection(
+            crashesEnabled = state.crashesEnabled,
+            usageEnabled = state.usageEnabled,
+            onCrashesEnabledChange = viewModel::setCrashesEnabled,
+            onUsageEnabledChange = viewModel::setUsageEnabled,
+            onOpenPrivacyPolicy = {
+                uriHandler.openUri("https://github.com/ebernie/kofipod/blob/master/docs/privacy.md")
+            },
+        )
+
         // Debug-only entry point to scheduler info screen; kept intentionally minimal.
         Spacer(Modifier.height(24.dp))
         Text(
@@ -213,6 +224,20 @@ fun SettingsScreen(
                 title = "Send many-episodes notification",
                 subtitle = "Generic count summary; tap opens Library",
                 onClick = { viewModel.sendTestManyNotification() },
+            )
+            Spacer(Modifier.height(10.dp))
+            SettingRow(
+                icon = KPIconName.Trash,
+                title = "Force crash (test GlitchTip)",
+                subtitle = "Throws an unhandled exception; reopen to upload",
+                onClick = { viewModel.forceCrash() },
+            )
+            Spacer(Modifier.height(10.dp))
+            SettingRow(
+                icon = KPIconName.Send,
+                title = "Send test telemetry (Aptabase)",
+                subtitle = "Bypasses gating; snackbar shows SDK status",
+                onClick = { viewModel.debugSendTestTelemetry() },
             )
         }
 

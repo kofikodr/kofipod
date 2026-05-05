@@ -2,5 +2,19 @@
 PODCAST_INDEX_KEY=
 PODCAST_INDEX_SECRET=
 
+# GlitchTip DSN for crash reports (leave empty to disable). Format:
+# https://<public_key>@crash.example.com/<project_id>
+SENTRY_DSN=
+
+# GlitchTip auth token for R8 mapping upload on release builds (leave
+# empty to skip mapping upload — release stack traces will be obfuscated).
+# Create in GlitchTip: Settings → Auth Tokens, with scopes
+# project:releases + project:write.
+SENTRY_AUTH_TOKEN=
+
+# Aptabase app key for usage telemetry (leave empty to disable). Format:
+# A-EU-XXXXXXXXXX
+APTABASE_APP_KEY=
+
 # Android SDK location (set by Android Studio, usually not needed for CI)
 # sdk.dir=/Users/you/Library/Android/sdk
