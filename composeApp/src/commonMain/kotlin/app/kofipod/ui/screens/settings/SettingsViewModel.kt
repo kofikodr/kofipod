@@ -63,6 +63,7 @@ class SettingsViewModel(
     private val backup: BackupController,
     private val folderStore: BackupFolderStore,
     private val diagnostics: DiagnosticsConfigRepository,
+    private val telemetry: app.kofipod.diagnostics.Telemetry,
     private val library: LibraryRepository,
     private val episodes: EpisodesRepository,
     private val notifier: Notifier,
@@ -195,6 +196,19 @@ class SettingsViewModel(
      * persists the event to disk before exit and uploads it on next launch.
      */
     fun forceCrash(): Nothing = error("Kofipod force-crash test from Settings → Debug")
+
+    /**
+     * Debug entry point: forces a telemetry smoke-test event to Aptabase,
+     * bypassing the disclosure gate and the `enabled` flag. Surfaces the
+     * SDK's status (init result, exception class+message if any) via
+     * snackbar so we can tell apart "gating broken" from "SDK unreachable
+     * from this process" during on-device verification.
+     */
+    fun debugSendTestTelemetry() =
+        viewModelScope.launch {
+            val result = telemetry.debugSmokeTest("debug_smoke_test")
+            uiEvents.emit(UiEvent.Snackbar(result))
+        }
 
     /**
      * Debug entry point: post the rich single-episode notification using a randomly

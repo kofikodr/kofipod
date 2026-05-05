@@ -288,6 +288,7 @@ val commonDataModule =
                 backup = get(),
                 folderStore = get<BackupFolderStore>(),
                 diagnostics = get(),
+                telemetry = get(),
                 library = get(),
                 episodes = get<EpisodesRepository>(),
                 notifier = get(),

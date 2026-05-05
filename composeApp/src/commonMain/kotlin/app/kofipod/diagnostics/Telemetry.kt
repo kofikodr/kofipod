@@ -15,6 +15,15 @@ interface Telemetry {
     fun disable()
 
     fun track(event: TelemetryEvent)
+
+    /**
+     * Debug-only smoke test: ensures the SDK is initialized (idempotent),
+     * fires a single named event directly to the underlying SDK bypassing
+     * the [enable]/[disable] gate, and returns a one-line status string
+     * suitable for a snackbar. Isolates "is the SDK reachable from this
+     * process?" from "is our gating wired correctly?".
+     */
+    fun debugSmokeTest(eventName: String): String
 }
 
 object NoOpTelemetry : Telemetry {
@@ -23,4 +32,6 @@ object NoOpTelemetry : Telemetry {
     override fun disable() = Unit
 
     override fun track(event: TelemetryEvent) = Unit
+
+    override fun debugSmokeTest(eventName: String): String = "no-op (Telemetry stubbed)"
 }

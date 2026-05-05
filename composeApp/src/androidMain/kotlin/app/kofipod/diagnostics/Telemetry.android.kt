@@ -34,4 +34,14 @@ class AndroidTelemetry(private val context: Context) : Telemetry {
         if (!enabled) return
         Aptabase.instance.trackEvent(event.name, event.props)
     }
+
+    override fun debugSmokeTest(eventName: String): String {
+        val key = BuildKonfig.APTABASE_APP_KEY
+        if (key.isBlank()) return "FAIL: APTABASE_APP_KEY blank in BuildKonfig"
+        return runCatching {
+            Aptabase.instance.initialize(context, key)
+            Aptabase.instance.trackEvent(eventName, emptyMap())
+            "fired '$eventName' (gated.enabled=$enabled, key=${key.take(7)}…)"
+        }.getOrElse { e -> "FAIL: ${e::class.simpleName}: ${e.message ?: "(no message)"}" }
+    }
 }

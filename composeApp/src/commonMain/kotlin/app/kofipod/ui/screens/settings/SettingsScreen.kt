@@ -232,6 +232,13 @@ fun SettingsScreen(
                 subtitle = "Throws an unhandled exception; reopen to upload",
                 onClick = { viewModel.forceCrash() },
             )
+            Spacer(Modifier.height(10.dp))
+            SettingRow(
+                icon = KPIconName.Send,
+                title = "Send test telemetry (Aptabase)",
+                subtitle = "Bypasses gating; snackbar shows SDK status",
+                onClick = { viewModel.debugSendTestTelemetry() },
+            )
         }
 
         Spacer(Modifier.height(16.dp))
