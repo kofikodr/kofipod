@@ -23,6 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kofipod.bookmarks.Bookmark
+import app.kofipod.bookmarks.formatBookmarkTimestamp
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.primitives.SectionLabel
@@ -66,7 +67,7 @@ internal fun SavedSection(
                 Spacer(Modifier.size(12.dp))
                 Column(Modifier) {
                     Text(
-                        formatHms(b.timestampMs),
+                        formatBookmarkTimestamp(b.timestampMs),
                         color = c.text,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
@@ -84,17 +85,5 @@ internal fun SavedSection(
                 }
             }
         }
-    }
-}
-
-private fun formatHms(ms: Long): String {
-    val totalSec = (ms / 1000L).coerceAtLeast(0L)
-    val h = totalSec / 3600L
-    val m = (totalSec % 3600L) / 60L
-    val s = totalSec % 60L
-    return if (h > 0) {
-        "$h:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
-    } else {
-        "$m:${s.toString().padStart(2, '0')}"
     }
 }

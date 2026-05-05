@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kofipod.bookmarks.BookmarkWithContext
+import app.kofipod.bookmarks.formatBookmarkTimestamp
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.theme.LocalKofipodColors
@@ -168,7 +169,7 @@ private fun BookmarkRow(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            formatHms(row.bookmark.timestampMs),
+            formatBookmarkTimestamp(row.bookmark.timestampMs),
             color = c.purple,
             fontWeight = FontWeight.Bold,
             fontSize = 13.sp,
@@ -203,17 +204,5 @@ private fun EmptyState(filtered: Boolean) {
             color = c.textMute,
             fontSize = 14.sp,
         )
-    }
-}
-
-private fun formatHms(ms: Long): String {
-    val totalSec = (ms / 1000L).coerceAtLeast(0L)
-    val h = totalSec / 3600L
-    val m = (totalSec % 3600L) / 60L
-    val s = totalSec % 60L
-    return if (h > 0) {
-        "$h:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
-    } else {
-        "$m:${s.toString().padStart(2, '0')}"
     }
 }

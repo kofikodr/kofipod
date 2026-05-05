@@ -126,7 +126,10 @@ class BookmarkRepository(
             .flowOn(Dispatchers.Default)
 
     private fun generateId(nowMs: Long): String {
+        // Sortable-ish id: base36 timestamp prefix + 8-char base36 random suffix.
+        // takeLast keeps the most variable chars (the high-order bits of a uniform
+        // Long are barely ever set; the tail carries the entropy).
         val rand = Random.nextLong(0L, Long.MAX_VALUE)
-        return nowMs.toString(36).padStart(8, '0') + "-" + rand.toString(36).take(8)
+        return nowMs.toString(36) + "-" + rand.toString(36).takeLast(8)
     }
 }

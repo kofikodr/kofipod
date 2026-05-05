@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import app.kofipod.bookmarks.BookmarkComposer
 import app.kofipod.bookmarks.BookmarkComposerState
 import app.kofipod.bookmarks.BookmarkRepository
+import app.kofipod.bookmarks.formatBookmarkTimestamp
 import app.kofipod.ui.primitives.KPButton
 import app.kofipod.ui.primitives.KPButtonStyle
 import app.kofipod.ui.theme.LocalKofipodColors
@@ -77,7 +78,7 @@ fun BookmarkComposerSheet() {
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                formatTimestamp(visible.timestampMs),
+                formatBookmarkTimestamp(visible.timestampMs),
                 color = c.purple,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
@@ -136,15 +137,3 @@ fun BookmarkComposerSheet() {
 }
 
 private const val NOTE_MAX_CHARS = 280
-
-private fun formatTimestamp(ms: Long): String {
-    val totalSec = (ms / 1000L).coerceAtLeast(0L)
-    val h = totalSec / 3600L
-    val m = (totalSec % 3600L) / 60L
-    val s = totalSec % 60L
-    return if (h > 0) {
-        "$h:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
-    } else {
-        "$m:${s.toString().padStart(2, '0')}"
-    }
-}
