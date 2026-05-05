@@ -118,16 +118,16 @@ else
 fi
 
 # 7. publish to GitHub
-#if [ "$PUBLISH" = "1" ]; then
-#    BRANCH=$(git rev-parse --abbrev-ref HEAD)
-#    blue "Pushing ${BRANCH} and tag v${VERSION_NAME}..."
-#    git push origin "$BRANCH"
-#    git push origin "v${VERSION_NAME}"
-#
-#    blue "Creating GitHub release v${VERSION_NAME}..."
-#    gh release create "v${VERSION_NAME}" \
-#        --title "v${VERSION_NAME}" \
-#        --generate-notes \
-#        "$APK_DST"
-#    green "Published v${VERSION_NAME} to GitHub."
-#fi
+if [ "$PUBLISH" = "1" ]; then
+    BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    blue "Pushing ${BRANCH} and tag v${VERSION_NAME}..."
+    git push origin "$BRANCH"
+    git push origin "v${VERSION_NAME}"
+
+    blue "Creating GitHub release v${VERSION_NAME}..."
+    gh release create "v${VERSION_NAME}" \
+        --title "v${VERSION_NAME}" \
+        --generate-notes \
+        "$APK_DST"
+    green "Published v${VERSION_NAME} to GitHub."
+fi
