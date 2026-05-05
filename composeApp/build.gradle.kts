@@ -232,8 +232,8 @@ buildkonfig {
 // token are unset (forks without secrets, F-Droid, debug-only iteration).
 sentry {
     val dsn = readSecret("SENTRY_DSN")
-    val authToken = System.getenv("SENTRY_AUTH_TOKEN").orEmpty()
-    val canUpload = dsn.isNotBlank() && authToken.isNotBlank()
+    val token = readSecret("SENTRY_AUTH_TOKEN")
+    val canUpload = dsn.isNotBlank() && token.isNotBlank()
 
     autoUploadProguardMapping.set(canUpload)
     includeProguardMapping.set(canUpload)
@@ -245,8 +245,13 @@ sentry {
 
     if (canUpload) {
         url.set(deriveUploadUrl(dsn))
-        org.set(System.getenv("SENTRY_ORG") ?: "kofipod")
-        projectName.set(System.getenv("SENTRY_PROJECT") ?: "kofipod-android")
+        authToken.set(token)
+        // Defaults match the maintainer's GlitchTip instance. Forks can
+        // override via local.properties or env (SENTRY_ORG, SENTRY_PROJECT).
+        // Note: GlitchTip locks the org slug to the first user's account
+        // name, so renaming the org in the UI does not change the slug.
+        org.set(readSecret("SENTRY_ORG").ifBlank { "kofikodr" })
+        projectName.set(readSecret("SENTRY_PROJECT").ifBlank { "kofipod-android" })
     }
 }
 
