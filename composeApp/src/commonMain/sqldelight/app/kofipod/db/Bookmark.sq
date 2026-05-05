@@ -1,0 +1,72 @@
+-- Slice 1 (Pro): per-timestamp bookmark on an episode, with optional one-line note.
+-- Independent of Snippets — a Bookmark stores a moment, no audio.
+--
+-- Cascades from both Episode and Podcast. The episodeId FK on its own is enough
+-- (Episode cascades from Podcast already), but the redundant podcastId column is
+-- materialised so the global Bookmarks list can render podcast title / artwork
+-- without a JOIN through Episode for every row.
+CREATE TABLE Bookmark (
+    id           TEXT NOT NULL PRIMARY KEY,
+    episodeId    TEXT NOT NULL,
+    podcastId    TEXT NOT NULL,
+    timestampMs  INTEGER NOT NULL,
+    note         TEXT,
+    createdAtMs  INTEGER NOT NULL,
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE,
+    FOREIGN KEY (podcastId) REFERENCES Podcast(id) ON DELETE CASCADE
+);
+
+CREATE INDEX Bookmark_byEpisode ON Bookmark(episodeId, timestampMs);
+CREATE INDEX Bookmark_byPodcast ON Bookmark(podcastId, createdAtMs);
+CREATE INDEX Bookmark_byCreated ON Bookmark(createdAtMs);
+
+insert:
+INSERT INTO Bookmark (id, episodeId, podcastId, timestampMs, note, createdAtMs)
+VALUES (?, ?, ?, ?, ?, ?);
+
+updateNote:
+UPDATE Bookmark SET note = ? WHERE id = ?;
+
+deleteById:
+DELETE FROM Bookmark WHERE id = ?;
+
+selectByEpisode:
+SELECT * FROM Bookmark WHERE episodeId = ? ORDER BY timestampMs ASC;
+
+countByEpisode:
+SELECT COUNT(*) AS c FROM Bookmark WHERE episodeId = ?;
+
+-- Global list, newest-first. JOIN materialises podcast/episode metadata
+-- so the UI doesn't fan out to per-row look-ups.
+selectAllWithContext:
+SELECT
+    b.id           AS id,
+    b.episodeId    AS episodeId,
+    b.podcastId    AS podcastId,
+    b.timestampMs  AS timestampMs,
+    b.note         AS note,
+    b.createdAtMs  AS createdAtMs,
+    e.title        AS episodeTitle,
+    p.title        AS podcastTitle,
+    p.artworkUrl   AS artworkUrl
+FROM Bookmark b
+INNER JOIN Episode e ON e.id = b.episodeId
+INNER JOIN Podcast p ON p.id = b.podcastId
+ORDER BY b.createdAtMs DESC;
+
+selectByPodcastWithContext:
+SELECT
+    b.id           AS id,
+    b.episodeId    AS episodeId,
+    b.podcastId    AS podcastId,
+    b.timestampMs  AS timestampMs,
+    b.note         AS note,
+    b.createdAtMs  AS createdAtMs,
+    e.title        AS episodeTitle,
+    p.title        AS podcastTitle,
+    p.artworkUrl   AS artworkUrl
+FROM Bookmark b
+INNER JOIN Episode e ON e.id = b.episodeId
+INNER JOIN Podcast p ON p.id = b.podcastId
+WHERE b.podcastId = ?
+ORDER BY b.createdAtMs DESC;

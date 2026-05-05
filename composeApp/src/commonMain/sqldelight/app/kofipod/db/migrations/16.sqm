@@ -1,0 +1,18 @@
+-- Slice 1 (Pro Bookmarks): introduce the Bookmark table.
+-- Brand-new table — no live data to migrate. Indexes are part of the same
+-- transaction so a partial migration can't leave the table un-indexed.
+
+CREATE TABLE Bookmark (
+    id           TEXT NOT NULL PRIMARY KEY,
+    episodeId    TEXT NOT NULL,
+    podcastId    TEXT NOT NULL,
+    timestampMs  INTEGER NOT NULL,
+    note         TEXT,
+    createdAtMs  INTEGER NOT NULL,
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE,
+    FOREIGN KEY (podcastId) REFERENCES Podcast(id) ON DELETE CASCADE
+);
+
+CREATE INDEX Bookmark_byEpisode ON Bookmark(episodeId, timestampMs);
+CREATE INDEX Bookmark_byPodcast ON Bookmark(podcastId, createdAtMs);
+CREATE INDEX Bookmark_byCreated ON Bookmark(createdAtMs);

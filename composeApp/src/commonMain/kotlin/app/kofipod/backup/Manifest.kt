@@ -67,4 +67,4 @@ const val MANIFEST_SCHEMA_VERSION = 1
  * with every new `.sqm` file. Backups carry this number in the manifest so a restore
  * can refuse a schema newer than what the current build can open.
  */
-const val DB_SCHEMA_VERSION = 15
+const val DB_SCHEMA_VERSION = 16
