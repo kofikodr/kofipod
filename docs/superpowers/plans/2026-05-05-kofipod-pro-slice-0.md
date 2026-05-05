@@ -6,7 +6,7 @@
 
 **Goal:** Lay every piece of plumbing needed to gate Pro features in v1 — `play`/`foss` Gradle flavors, a `BillingClientPort` with three platform-specific implementations (Play Billing v6+, FOSS stub, iOS stub), a `ProEntitlementRepository` with backup-excluded device-local cache, a Paywall bottom sheet, Settings entry, restore-purchase plumbing, and one toy gate (Player Bookmark button) that exercises the whole pipeline end-to-end. Slices 1+ then attach real Pro features (Bookmarks, Snippets, etc.) to the same plumbing without changing the entitlement contract.
 
-**Architecture (3 sentences):** Two product flavors (`play`, `foss`) live in a single `:composeApp` module; Play Billing v6+ is a `playAndroid`-only dependency, so the FOSS APK has zero proprietary code (F-Droid eligibility) and unconditionally returns Pro. Entitlement state flows through a single `commonMain` `BillingClientPort` interface, bound per-flavor via `flavorPlatformModule` (same Koin val name in both flavor source sets, mutually exclusive at build time); the cache lives in a backup-excluded `kofipod_entitlement.xml` SharedPreferences file so device clones / restores can't fake Pro. The Paywall is a `ModalBottomSheet` hoisted in `AppShell`, driven by a `PaywallRouter` state flow — not a NavHost destination, because NavHost destinations are full-screen and would show a blank background behind the sheet.
+**Architecture (3 sentences):** Two product flavors (`play`, `foss`) live in a single `:composeApp` module; Play Billing v6+ is a `androidPlay`-only dependency, so the FOSS APK has zero proprietary code (F-Droid eligibility) and unconditionally returns Pro. Entitlement state flows through a single `commonMain` `BillingClientPort` interface, bound per-flavor via `flavorPlatformModule` (same Koin val name in both flavor source sets, mutually exclusive at build time); the cache lives in a backup-excluded `kofipod_entitlement.xml` SharedPreferences file so device clones / restores can't fake Pro. The Paywall is a `ModalBottomSheet` hoisted in `AppShell`, driven by a `PaywallRouter` state flow — not a NavHost destination, because NavHost destinations are full-screen and would show a blank background behind the sheet.
 
 **Tech Stack:** Kotlin Multiplatform · Compose Multiplatform · Koin DI · Google Play Billing Library v7+ (latest stable v7 at time of writing; v7 supersedes v6 and the SDK semantics we need are unchanged) · SharedPreferences (Android) · existing `UiEventBus` for Snackbars · existing `appScope` named CoroutineScope for repository long-lived collectors.
 
@@ -24,7 +24,7 @@
 - **Package roots for this work:**
   - `app.kofipod.pro` — entitlement domain (commonMain + per-platform actuals).
   - `app.kofipod.ui.screens.paywall` — Paywall composable + ViewModel (commonMain).
-  - `app.kofipod.di` — flavor-specific Koin modules under `playAndroid` / `fossAndroid` source sets.
+  - `app.kofipod.di` — flavor-specific Koin modules under `androidPlay` / `androidFoss` source sets.
 - **Green-check sequence per task** (run before each commit):
   ```bash
   ./gradlew :composeApp:ktlintFormat \
@@ -34,7 +34,7 @@
   ```
   Tasks that touch tests additionally run `./gradlew :composeApp:testFossDebugUnitTest :composeApp:testPlayDebugUnitTest` (the unit-test source set is shared, but Gradle still emits per-flavor test variants once flavors exist).
 - **The pre-commit hook** (`scripts/git-hooks/pre-commit`) re-runs `ktlintFormat` + `detekt` on every commit. Run `./gradlew installGitHooks` once per clone if it isn't installed.
-- **Detekt forbidden imports:** every new Android-only artefact added to `androidMain` (or `playAndroid` / `fossAndroid`) gets added to `config/detekt/detekt.yml` `style>ForbiddenImport>imports` so it can't leak into `commonMain`. Slice 0 adds `com.android.billingclient.**`.
+- **Detekt forbidden imports:** every new Android-only artefact added to `androidMain` (or `androidPlay` / `androidFoss`) gets added to `config/detekt/detekt.yml` `style>ForbiddenImport>imports` so it can't leak into `commonMain`. Slice 0 adds `com.android.billingclient.**`.
 - **No prompts, responses, account IDs, or purchase tokens in any log.** Billing failures log status code + short reason only. Same posture as the BYOK Gemini key.
 - **The Pro entitlement cache file** (`kofipod_entitlement.xml`) is **excluded** from Auto Backup (cloud + device-transfer) so a device clone / restore cannot resurrect a stale "Pro" state. Real entitlement always re-verifies via Play Billing on cold start.
 - **Family Sharing spike (Slice 0 acceptance):** the spec defers "confirm Play Billing v7+ Family Sharing actually grants entitlement to family-group accounts on cold start" to this slice. Task 9 includes the spike write-up in `PlayBillingClientPort.kt`'s KDoc; if the Play Billing v7 docs / behavior contradict the v1.0 SKU pricing, raise a SPIKE_BLOCKED issue and stop — do not silently work around.
@@ -54,17 +54,17 @@ New files (paths relative to repo root):
 - `composeApp/src/commonMain/kotlin/app/kofipod/ui/screens/paywall/PaywallViewModel.kt` — restore + purchase action triggers.
 - `composeApp/src/androidMain/kotlin/app/kofipod/pro/AndroidEntitlementCache.kt` — SharedPreferences-backed.
 - `composeApp/src/androidMain/kotlin/app/kofipod/ui/ActivityHolder.kt` — current-foreground-activity registry, used by Play impl to launch billing flow.
-- `composeApp/src/playAndroid/kotlin/app/kofipod/pro/PlayBillingClientPort.kt` — real Play Billing v7+ wrapper.
-- `composeApp/src/playAndroid/kotlin/app/kofipod/di/FlavorPlatformModule.kt` — binds `BillingClientPort` to play impl.
-- `composeApp/src/fossAndroid/kotlin/app/kofipod/pro/FossBillingClientPort.kt` — `Pro(FossBuild)` stub.
-- `composeApp/src/fossAndroid/kotlin/app/kofipod/di/FlavorPlatformModule.kt` — binds `BillingClientPort` to foss impl.
+- `composeApp/src/androidPlay/kotlin/app/kofipod/pro/PlayBillingClientPort.kt` — real Play Billing v7+ wrapper.
+- `composeApp/src/androidPlay/kotlin/app/kofipod/di/FlavorPlatformModule.kt` — binds `BillingClientPort` to play impl.
+- `composeApp/src/androidFoss/kotlin/app/kofipod/pro/FossBillingClientPort.kt` — `Pro(FossBuild)` stub.
+- `composeApp/src/androidFoss/kotlin/app/kofipod/di/FlavorPlatformModule.kt` — binds `BillingClientPort` to foss impl.
 - `composeApp/src/iosMain/kotlin/app/kofipod/pro/IosBillingClientPort.kt` — Free stub.
 - `composeApp/src/iosMain/kotlin/app/kofipod/pro/IosEntitlementCache.kt` — no-op.
 - `composeApp/src/commonTest/kotlin/app/kofipod/pro/ProEntitlementRepositoryTest.kt` — repo state-machine tests with fakes.
 
 Modified files:
 
-- `composeApp/build.gradle.kts` — `productFlavors` block + per-flavor `playAndroidImplementation` + per-flavor source-set declarations.
+- `composeApp/build.gradle.kts` — `productFlavors` block + per-flavor `androidPlayImplementation` + per-flavor source-set declarations.
 - `gradle/libs.versions.toml` — Play Billing version + library entry.
 - `config/detekt/detekt.yml` — add `com.android.billingclient.**` to forbidden imports.
 - `composeApp/src/androidMain/res/xml/backup_rules.xml` — exclude `kofipod_entitlement.xml`.
@@ -88,7 +88,7 @@ Modified files:
 **Files:**
 - Modify: `composeApp/build.gradle.kts`
 
-The Android Gradle Plugin requires `flavorDimensions` + `productFlavors` declarations. Per-flavor source sets `src/playAndroid/kotlin/` and `src/fossAndroid/kotlin/` are auto-discovered by AGP based on the flavor name + variant — no explicit `sourceSets { … }` declaration needed for the flavor source sets themselves; we only need that for sharing dependencies if any.
+The Android Gradle Plugin requires `flavorDimensions` + `productFlavors` declarations. Per-flavor source sets `src/androidPlay/kotlin/` and `src/androidFoss/kotlin/` are auto-discovered by AGP based on the flavor name + variant — no explicit `sourceSets { … }` declaration needed for the flavor source sets themselves; we only need that for sharing dependencies if any.
 
 - [ ] **Step 1: Read the current `android { … }` block**
 
@@ -181,7 +181,7 @@ device. Release-output filename includes the flavor.
 
 This is Slice 0 plumbing — no per-flavor source files exist yet, so
 both compile from the same commonMain + androidMain sources. Future
-tasks add playAndroid/ and fossAndroid/ source sets.
+tasks add androidPlay/ and androidFoss/ source sets.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -196,7 +196,7 @@ EOF
 - Modify: `gradle/libs.versions.toml`
 - Modify: `composeApp/build.gradle.kts`
 
-Play Billing Library v7 is the current stable line (v6 superseded). The `playAndroid` source set is the only place this dependency lands; the `fossAndroid` flavor never sees `com.android.billingclient.*`.
+Play Billing Library v7 is the current stable line (v6 superseded). The `androidPlay` source set is the only place this dependency lands; the `androidFoss` flavor never sees `com.android.billingclient.*`.
 
 - [ ] **Step 1: Add the version + library to the catalog**
 
@@ -219,20 +219,20 @@ Use `billing-ktx` (the Kotlin extensions artifact) rather than the raw `billing`
 Open `composeApp/build.gradle.kts`. Find the `kotlin { sourceSets { … } }` block. Inside `sourceSets`, after the existing `androidMain` block (which ends with `}` around line 98 in the current source), append a new flavor-specific source-set block:
 
 ```kotlin
-        val playAndroidMain by creating {
+        val androidPlay by creating {
             dependsOn(androidMain)
             dependencies {
                 implementation(libs.google.play.billing)
             }
         }
-        val fossAndroidMain by creating {
+        val androidFoss by creating {
             dependsOn(androidMain)
             // No flavor-specific dependencies. The FOSS flavor stays
             // proprietary-code-free so F-Droid will accept it.
         }
 ```
 
-**Why `by creating`, not `by getting`:** AGP creates the *flavored* variant source sets (`androidPlayDebug`, `androidPlayRelease`, etc.) automatically, but the *flavor-only* source sets (`playAndroid`, `fossAndroid`) used here for sharing across debug+release of one flavor must be explicitly created in Kotlin Multiplatform. Both flavor source sets `dependsOn(androidMain)` so they inherit the Android-target dependencies (Media3, WorkManager, etc.).
+**Why `by creating`, not `by getting`:** AGP creates the *flavored* variant source sets (`androidPlayDebug`, `androidPlayRelease`, etc.) automatically, but the *flavor-only* source sets (`androidPlay`, `androidFoss`) used here for sharing across debug+release of one flavor must be explicitly created in Kotlin Multiplatform. Both flavor source sets `dependsOn(androidMain)` so they inherit the Android-target dependencies (Media3, WorkManager, etc.).
 
 - [ ] **Step 3: Verify the dependency lands only on play**
 
@@ -264,13 +264,13 @@ Expected: BUILD SUCCESSFUL.
 ```bash
 git add gradle/libs.versions.toml composeApp/build.gradle.kts
 git commit -m "$(cat <<'EOF'
-build(pro): add Google Play Billing 7.1.1 to playAndroid only
+build(pro): add Google Play Billing 7.1.1 to androidPlay only
 
 Uses billing-ktx for the suspending coroutine wrappers. Wired via
-playAndroidMain source set so the FOSS flavor never pulls in any
+androidPlay source set so the FOSS flavor never pulls in any
 proprietary com.android.billingclient.* classes (F-Droid eligibility).
 
-fossAndroidMain is declared empty (just dependsOn(androidMain)) so
+androidFoss is declared empty (just dependsOn(androidMain)) so
 later tasks can add foss-specific files without re-touching the build
 script.
 
@@ -294,7 +294,7 @@ Open `config/detekt/detekt.yml`. Find the `imports:` list under `style.Forbidden
 
 ```yaml
       - value: 'com.android.billingclient.**'
-        reason: 'Play Billing is play-flavor-only. Scope to playAndroid/, never commonMain.'
+        reason: 'Play Billing is play-flavor-only. Scope to androidPlay/, never commonMain.'
 ```
 
 **Side cleanup (in scope, related to Pre-Slice-0):** the existing rule `androidx.core.content.FileProvider` carries the comment "used by the in-app updater" — that's stale. Replace just that one line's `reason:` with:
@@ -321,7 +321,7 @@ git commit -m "$(cat <<'EOF'
 build(pro): forbid com.android.billingclient.** in commonMain
 
 Adds the Play Billing namespace to detekt's ForbiddenImport rule so
-billing classes can't leak from playAndroid into commonMain. Also
+billing classes can't leak from androidPlay into commonMain. Also
 freshens the FileProvider rule's reason — the in-app updater is gone.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
@@ -388,8 +388,8 @@ package app.kofipod.pro
  * Platform-agnostic billing surface used by [ProEntitlementRepository].
  *
  * Three implementations:
- * - `playAndroid/.../PlayBillingClientPort.kt` — real Google Play Billing v7+ wrapper.
- * - `fossAndroid/.../FossBillingClientPort.kt` — unconditional `Pro(FossBuild)`.
+ * - `androidPlay/.../PlayBillingClientPort.kt` — real Google Play Billing v7+ wrapper.
+ * - `androidFoss/.../FossBillingClientPort.kt` — unconditional `Pro(FossBuild)`.
  * - `iosMain/.../IosBillingClientPort.kt` — `Free` stub until iOS becomes a focus.
  *
  * The port models a long-lived service: [connect] starts the underlying client (idempotent),
@@ -1258,10 +1258,10 @@ EOF
 ## Task 8: FOSS `BillingClientPort` impl + flavor Koin module
 
 **Files:**
-- Create: `composeApp/src/fossAndroid/kotlin/app/kofipod/pro/FossBillingClientPort.kt`
-- Create: `composeApp/src/fossAndroid/kotlin/app/kofipod/di/FlavorPlatformModule.kt`
+- Create: `composeApp/src/androidFoss/kotlin/app/kofipod/pro/FossBillingClientPort.kt`
+- Create: `composeApp/src/androidFoss/kotlin/app/kofipod/di/FlavorPlatformModule.kt`
 
-The FOSS flavor unconditionally unlocks Pro. The Koin module name `flavorPlatformModule` is identical between `playAndroid` and `fossAndroid` — Gradle picks exactly one based on the active flavor at build time, so there's no clash.
+The FOSS flavor unconditionally unlocks Pro. The Koin module name `flavorPlatformModule` is identical between `androidPlay` and `androidFoss` — Gradle picks exactly one based on the active flavor at build time, so there's no clash.
 
 - [ ] **Step 1: Create `FossBillingClientPort.kt`**
 
@@ -1297,7 +1297,7 @@ class FossBillingClientPort : BillingClientPort {
 
 - [ ] **Step 2: Create the FOSS flavor Koin module**
 
-Create `composeApp/src/fossAndroid/kotlin/app/kofipod/di/FlavorPlatformModule.kt`:
+Create `composeApp/src/androidFoss/kotlin/app/kofipod/di/FlavorPlatformModule.kt`:
 
 ```kotlin
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -1339,14 +1339,14 @@ Expected: BUILD SUCCESSFUL — and `flavorPlatformModule` defined here must rema
 - [ ] **Step 5: Commit**
 
 ```bash
-git add composeApp/src/fossAndroid/kotlin/
+git add composeApp/src/androidFoss/kotlin/
 git commit -m "$(cat <<'EOF'
 feat(pro): add FOSS BillingClientPort + flavor Koin module
 
 FossBillingClientPort returns Pro(FossBuild) for every method —
 self-builds and F-Droid users get full Pro unconditionally. The
 flavorPlatformModule val is declared with the same name in
-playAndroid (Task 9) so KofipodApplication can load it without
+androidPlay (Task 9) so KofipodApplication can load it without
 knowing the active flavor.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
@@ -1359,8 +1359,8 @@ EOF
 ## Task 9: Play `BillingClientPort` impl + flavor Koin module + Family Sharing spike
 
 **Files:**
-- Create: `composeApp/src/playAndroid/kotlin/app/kofipod/pro/PlayBillingClientPort.kt`
-- Create: `composeApp/src/playAndroid/kotlin/app/kofipod/di/FlavorPlatformModule.kt`
+- Create: `composeApp/src/androidPlay/kotlin/app/kofipod/pro/PlayBillingClientPort.kt`
+- Create: `composeApp/src/androidPlay/kotlin/app/kofipod/di/FlavorPlatformModule.kt`
 - Create: `composeApp/src/androidMain/kotlin/app/kofipod/ui/ActivityHolder.kt`
 - Modify: `composeApp/src/androidMain/kotlin/app/kofipod/di/AndroidModule.kt`
 - Modify: `composeApp/src/androidMain/kotlin/app/kofipod/MainActivity.kt`
@@ -1647,7 +1647,7 @@ private const val LOG_TAG = "Kofipod-Pro-Play"
 
 - [ ] **Step 5: Create the Play flavor Koin module**
 
-Create `composeApp/src/playAndroid/kotlin/app/kofipod/di/FlavorPlatformModule.kt`:
+Create `composeApp/src/androidPlay/kotlin/app/kofipod/di/FlavorPlatformModule.kt`:
 
 ```kotlin
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -1659,7 +1659,7 @@ import org.koin.android.ext.koin.androidApplication
 import org.koin.dsl.module
 
 /**
- * Play flavor's platform Koin bindings. Mirror of fossAndroid/.../FlavorPlatformModule.kt;
+ * Play flavor's platform Koin bindings. Mirror of androidFoss/.../FlavorPlatformModule.kt;
  * Gradle picks exactly one based on the active flavor.
  */
 val flavorPlatformModule =
@@ -1687,7 +1687,7 @@ Expected: BUILD SUCCESSFUL.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add composeApp/src/playAndroid/ \
+git add composeApp/src/androidPlay/ \
         composeApp/src/androidMain/kotlin/app/kofipod/ui/ActivityHolder.kt \
         composeApp/src/androidMain/kotlin/app/kofipod/di/AndroidModule.kt \
         composeApp/src/androidMain/kotlin/app/kofipod/MainActivity.kt
@@ -2687,7 +2687,7 @@ Add a one-line note to the *task PR description* (not a code comment) summarizin
 
 - [ ] Tasks 1–15 all committed.
 - [ ] `./gradlew :composeApp:assembleFossDebug :composeApp:assemblePlayDebug :composeApp:compileKotlinIosSimulatorArm64 :composeApp:testFossDebugUnitTest :composeApp:testPlayDebugUnitTest` is green from a clean checkout of the post-Task-15 commit.
-- [ ] `grep -r "com\.android\.billingclient" composeApp/src/commonMain composeApp/src/androidMain composeApp/src/iosMain composeApp/src/fossAndroid` returns **no matches**. (Only `composeApp/src/playAndroid/` may contain billing imports.)
+- [ ] `grep -r "com\.android\.billingclient" composeApp/src/commonMain composeApp/src/androidMain composeApp/src/iosMain composeApp/src/androidFoss` returns **no matches**. (Only `composeApp/src/androidPlay/` may contain billing imports.)
 - [ ] `grep -rn "BillingClientPort" composeApp/src/` returns at least: the interface in commonMain, three actuals (Play/FOSS/iOS), one binding in each of the two `FlavorPlatformModule.kt` files and `IosPlatformModule.kt`, the repo, the spec — i.e. at least 7 hits.
 - [ ] Both flavors install on Pixel_9a. FOSS shows "Pro · Self-build" in Settings; Play shows "Free" + an Upgrade CTA.
 - [ ] Paywall sheet renders all elements: feature list, $12.99 CTA, $19.99 Family CTA, Restore, Maybe later.
@@ -2709,7 +2709,7 @@ Add a one-line note to the *task PR description* (not a code comment) summarizin
 ## Spec coverage check
 
 - ✅ "Add `play` / `foss` flavors" — Task 1.
-- ✅ "BillingClientPort expect/actual across `playAndroid` + `fossAndroid` source sets" — Tasks 4, 8, 9. (Note: implemented as a regular `interface` with per-flavor Koin bindings rather than `expect class`; the Pre-Slice-0 review flagged the project's preference to avoid `expect class` Beta warnings, and Koin per-flavor bindings achieve the same isolation.)
+- ✅ "BillingClientPort expect/actual across `androidPlay` + `androidFoss` source sets" — Tasks 4, 8, 9. (Note: implemented as a regular `interface` with per-flavor Koin bindings rather than `expect class`; the Pre-Slice-0 review flagged the project's preference to avoid `expect class` Beta warnings, and Koin per-flavor bindings achieve the same isolation.)
 - ✅ "ProEntitlementRepository, Paywall sheet, restore-purchase" — Tasks 6, 11, 12.
 - ✅ "Gates a single toy feature for end-to-end validation in both flavors" — Task 13.
 - ✅ "README update for new distribution policy" — Task 14.

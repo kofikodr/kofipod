@@ -42,4 +42,4 @@ style:
       - value: 'com.google.android.**'
         reason: 'Android-only. Scope to androidMain.'
       - value: 'com.android.billingclient.**'
-        reason: 'Play Billing is play-flavor-only. Scope to playAndroid/, never commonMain.'
+        reason: 'Play Billing is play-flavor-only. Scope to androidPlay/, never commonMain.'
