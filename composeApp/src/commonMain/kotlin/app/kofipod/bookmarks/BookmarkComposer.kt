@@ -28,6 +28,12 @@ sealed class BookmarkComposerState {
  * tapping bookmark again while a previous quick-add is still open
  * replaces the in-flight snapshot. That matches user intent ("oops,
  * actually grab THIS moment instead").
+ *
+ * Save semantics: this class is pure UI state — it never writes to the
+ * database. Saving is the sheet's responsibility: `BookmarkComposerSheet`
+ * reads the current snapshot, calls `BookmarkRepository.add(...)`, then
+ * calls [cancel] to dismiss. Keeping the repository out of this class lets
+ * tests verify the seam without touching SQLDelight.
  */
 class BookmarkComposer {
     private val _state = MutableStateFlow<BookmarkComposerState>(BookmarkComposerState.Hidden)
