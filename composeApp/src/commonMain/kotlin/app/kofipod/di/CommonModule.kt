@@ -370,7 +370,7 @@ val commonDataModule =
                 downloads = get(),
                 pro = get(),
                 paywallRouter = get(),
-                bus = get(),
+                bookmarks = get(),
             )
         }
         viewModel { StatsViewModel(get()) }

@@ -3,6 +3,7 @@ package app.kofipod.ui.screens.player
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.kofipod.bookmarks.BookmarkComposer
 import app.kofipod.data.repo.DownloadRepository
 import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.data.repo.PlaybackRepository
@@ -15,8 +16,6 @@ import app.kofipod.pro.PaywallRouter
 import app.kofipod.pro.ProEntitlement
 import app.kofipod.pro.ProEntitlementRepository
 import app.kofipod.share.Sharer
-import app.kofipod.ui.UiEvent
-import app.kofipod.ui.UiEventBus
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -48,7 +47,7 @@ class PlayerViewModel(
     private val downloads: DownloadRepository,
     private val pro: ProEntitlementRepository,
     private val paywallRouter: PaywallRouter,
-    private val bus: UiEventBus,
+    private val bookmarks: BookmarkComposer,
 ) : ViewModel() {
     private val toast = MutableStateFlow<String?>(null)
 
@@ -175,14 +174,26 @@ class PlayerViewModel(
     }
 
     /**
-     * Slice 0 toy gate for the Pro entitlement plumbing. Pro users get a
-     * placeholder snackbar via [UiEventBus]; Free / Unknown users get routed
-     * to the Paywall sheet via [PaywallRouter]. Slice 1 swaps the snackbar
-     * for actual bookmark creation; the paywall path stays as-is.
+     * Pro users get a quick-add composer pre-filled with the current player
+     * position and episode metadata. Free / Unknown users get routed to the
+     * Paywall sheet via [PaywallRouter]. The composer is hoisted at AppShell
+     * (see [BookmarkComposer] KDoc) so navigation away from the player does
+     * not dismiss it.
      */
     fun onBookmarkTapped() {
         when (pro.state.value) {
-            is ProEntitlement.Pro -> bus.emit(UiEvent.Snackbar("Bookmarks ship in Slice 1"))
+            is ProEntitlement.Pro -> {
+                val p = state.value.player
+                val episodeId = p.episodeId ?: return
+                if (p.podcastId.isBlank()) return
+                bookmarks.requestQuickAdd(
+                    episodeId = episodeId,
+                    podcastId = p.podcastId,
+                    episodeTitle = p.title,
+                    podcastTitle = p.podcastTitle,
+                    timestampMs = p.positionMs,
+                )
+            }
             ProEntitlement.Free,
             ProEntitlement.Unknown,
             -> paywallRouter.requestPaywall("paywall_bookmark")
