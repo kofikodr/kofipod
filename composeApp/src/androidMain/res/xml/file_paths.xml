@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Exposes <filesDir>/updates/ where downloaded APKs land, so we can hand a
+         content:// URI to the system installer via FileProvider. Scoped narrowly to
+         this directory only — no other internal storage is shared. -->
+    <files-path
+        name="updates"
+        path="updates/" />
+</paths>

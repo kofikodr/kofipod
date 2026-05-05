@@ -28,6 +28,13 @@ object DeepLinks {
         )
     val openLibrary: SharedFlow<Unit> = _openLibrary.asSharedFlow()
 
+    private val _openSettings =
+        MutableSharedFlow<Unit>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
+    val openSettings: SharedFlow<Unit> = _openSettings.asSharedFlow()
+
     fun requestOpenPlayer() {
         _openPlayer.tryEmit(Unit)
     }
@@ -38,5 +45,9 @@ object DeepLinks {
 
     fun requestOpenLibrary() {
         _openLibrary.tryEmit(Unit)
+    }
+
+    fun requestOpenSettings() {
+        _openSettings.tryEmit(Unit)
     }
 }
