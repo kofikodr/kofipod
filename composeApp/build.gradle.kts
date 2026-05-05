@@ -219,7 +219,7 @@ buildkonfig {
     defaultConfigs {
         buildConfigField(STRING, "PODCAST_INDEX_KEY", readSecret("PODCAST_INDEX_KEY"))
         buildConfigField(STRING, "PODCAST_INDEX_SECRET", readSecret("PODCAST_INDEX_SECRET"))
-        buildConfigField(STRING, "USER_AGENT", "Kofipod/$appVersionName (github.com/ebernie/kofipod)")
+        buildConfigField(STRING, "USER_AGENT", "Kofipod/$appVersionName (github.com/kofikodr/kofipod)")
         buildConfigField(STRING, "VERSION_NAME", appVersionName)
         buildConfigField(INT, "VERSION_CODE", appVersionCode.toString())
         buildConfigField(STRING, "SENTRY_DSN", readSecret("SENTRY_DSN"))

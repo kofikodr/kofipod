@@ -196,7 +196,7 @@ fun SettingsScreen(
             onCrashesEnabledChange = viewModel::setCrashesEnabled,
             onUsageEnabledChange = viewModel::setUsageEnabled,
             onOpenPrivacyPolicy = {
-                uriHandler.openUri("https://github.com/ebernie/kofipod/blob/master/PRIVACY.md")
+                uriHandler.openUri("https://github.com/kofikodr/kofipod/blob/master/PRIVACY.md")
             },
         )
 
