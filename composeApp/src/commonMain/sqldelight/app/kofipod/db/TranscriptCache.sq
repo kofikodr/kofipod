@@ -1,0 +1,28 @@
+-- Slice 2 (Pro Library Search): cached transcript text per episode.
+--
+-- The text is captured opportunistically by AiSummaryRepository.runTranscript
+-- — it was already fetched there to feed Gemini, so persisting it costs only
+-- the disk write. The entire row's purpose is to give the LibrarySearchIndex
+-- FTS triggers something to mirror: transcripts are how users find episodes
+-- by topic. fetchedAtMs is informational (no TTL — transcripts are immutable
+-- once published).
+
+CREATE TABLE TranscriptCache (
+    episodeId    TEXT NOT NULL PRIMARY KEY,
+    text         TEXT NOT NULL,
+    fetchedAtMs  INTEGER NOT NULL,
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
+);
+
+upsert:
+INSERT OR REPLACE INTO TranscriptCache (episodeId, text, fetchedAtMs)
+VALUES (?, ?, ?);
+
+selectByEpisode:
+SELECT * FROM TranscriptCache WHERE episodeId = ?;
+
+deleteByEpisode:
+DELETE FROM TranscriptCache WHERE episodeId = ?;
+
+deleteAll:
+DELETE FROM TranscriptCache;
