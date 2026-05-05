@@ -25,10 +25,13 @@ import app.kofipod.ui.theme.LocalKofipodColors
 @Composable
 fun DiagnosticsDisclosureSheet(
     visible: Boolean,
+    crashAvailable: Boolean,
+    usageAvailable: Boolean,
     onAcknowledge: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     if (!visible) return
+    if (!crashAvailable && !usageAvailable) return
     val c = LocalKofipodColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -46,10 +49,7 @@ fun DiagnosticsDisclosureSheet(
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                "Kofipod sends anonymous crash reports and usage counts so the developer " +
-                    "can fix bugs and prioritize features. No personal information, no " +
-                    "tracking across apps. You can turn either off in Settings → Privacy " +
-                    "& Diagnostics at any time.",
+                disclosureBody(crashAvailable, usageAvailable),
                 color = c.textSoft,
             )
             Spacer(Modifier.height(24.dp))
@@ -66,4 +66,26 @@ fun DiagnosticsDisclosureSheet(
             Spacer(Modifier.height(8.dp))
         }
     }
+}
+
+internal fun disclosureBody(
+    crashAvailable: Boolean,
+    usageAvailable: Boolean,
+): String {
+    require(crashAvailable || usageAvailable) {
+        "disclosureBody is only meaningful when at least one channel is available; " +
+            "callers must gate on DiagnosticsCapabilities first."
+    }
+    val what =
+        when {
+            crashAvailable && usageAvailable ->
+                "anonymous crash reports and usage counts"
+            crashAvailable -> "anonymous crash reports"
+            else -> "anonymous usage counts"
+        }
+    val euLine = if (usageAvailable) " Usage data is hosted in the EU." else ""
+    return "Kofipod sends $what so the developer can fix bugs and prioritize " +
+        "features. No personal information, no tracking across apps.$euLine " +
+        "You can turn ${if (crashAvailable && usageAvailable) "either" else "it"} off " +
+        "in Settings → Privacy & Diagnostics at any time."
 }
