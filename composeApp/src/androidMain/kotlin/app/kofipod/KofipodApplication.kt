@@ -11,10 +11,15 @@ import app.kofipod.diagnostics.DiagnosticsBootstrapper
 import app.kofipod.diagnostics.Telemetry
 import app.kofipod.diagnostics.TelemetryEvent
 import app.kofipod.ui.theme.ThemeSystem
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.core.context.startKoin
+import org.koin.core.qualifier.named
 import org.koin.java.KoinJavaComponent.get
+import org.koin.mp.KoinPlatform
 
 class KofipodApplication : Application() {
     override fun onCreate() {
@@ -42,8 +47,17 @@ class KofipodApplication : Application() {
         // Wire diagnostics flag flows to SDK enable/disable. Until the user
         // acknowledges the first-launch disclosure, both subsystems stay
         // disabled regardless of toggle state.
-        get<DiagnosticsBootstrapper>(DiagnosticsBootstrapper::class.java).start()
-        // Telemetry no-op when disabled or pre-acknowledgement, so this is safe.
-        get<Telemetry>(Telemetry::class.java).track(TelemetryEvent.AppOpened)
+        val bootstrapper = get<DiagnosticsBootstrapper>(DiagnosticsBootstrapper::class.java)
+        bootstrapper.start()
+        // AppOpened must wait until the bootstrapper has actually called
+        // Telemetry.enable() — firing track() too early loses the event
+        // because the SDK isn't initialized yet. The telemetryReady flow
+        // flips only AFTER enable() returns, eliminating the cold-start race.
+        val appScope = KoinPlatform.getKoin().get<CoroutineScope>(named("appScope"))
+        val telemetry = get<Telemetry>(Telemetry::class.java)
+        appScope.launch {
+            bootstrapper.telemetryReady.first { it }
+            telemetry.track(TelemetryEvent.AppOpened)
+        }
     }
 }
