@@ -18,7 +18,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.kofipod.ui.primitives.SectionLabel
 import app.kofipod.ui.theme.LocalKofipodColors
 
@@ -112,8 +114,18 @@ private fun DiagnosticsToggleRow(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(Modifier.weight(1f)) {
-                Text(title, color = c.text)
-                Text(subtitle, color = c.textSoft)
+                Text(
+                    title,
+                    color = c.text,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    subtitle,
+                    color = c.textMute,
+                    fontSize = 11.5.sp,
+                )
             }
             Switch(
                 checked = checked,
@@ -124,7 +136,9 @@ private fun DiagnosticsToggleRow(
         Spacer(Modifier.height(4.dp))
         Text(
             text = "What's sent?",
-            color = c.textMute,
+            color = c.text,
+            fontWeight = FontWeight.Bold,
+            fontSize = 14.sp,
             modifier =
                 Modifier
                     .testTag("$tag.disclosureToggle")
@@ -134,7 +148,11 @@ private fun DiagnosticsToggleRow(
         if (expanded) {
             Column(Modifier.padding(start = 8.dp)) {
                 disclosureLines.forEach { line ->
-                    Text("• $line", color = c.textSoft)
+                    Text(
+                        "• $line",
+                        color = c.textMute,
+                        fontSize = 11.5.sp,
+                    )
                 }
             }
         }

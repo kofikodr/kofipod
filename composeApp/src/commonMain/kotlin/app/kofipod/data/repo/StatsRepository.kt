@@ -23,7 +23,12 @@ import kotlin.coroutines.CoroutineContext
 /** Per-day listening total, in seconds. */
 data class DailyListening(val epochDay: Int, val seconds: Long)
 
-data class TopPodcast(val podcastId: String, val podcastTitle: String, val seconds: Long)
+data class TopPodcast(
+    val podcastId: String,
+    val podcastTitle: String,
+    val seconds: Long,
+    val artworkUrl: String?,
+)
 
 /**
  * Snapshot of every stat the screen needs. Computed in one combine() so the UI gets
@@ -85,6 +90,7 @@ class StatsRepository(
                         podcastId = it.podcastId,
                         podcastTitle = it.podcastTitle,
                         seconds = it.seconds ?: 0L,
+                        artworkUrl = it.artworkUrl,
                     )
                 }
             }

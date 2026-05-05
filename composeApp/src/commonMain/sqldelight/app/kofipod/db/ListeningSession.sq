@@ -25,9 +25,10 @@ GROUP BY epochDay
 ORDER BY epochDay ASC;
 
 selectTopPodcasts:
-SELECT podcastId, podcastTitle, SUM(secondsListened) AS seconds
-FROM ListeningSession
-GROUP BY podcastId
+SELECT s.podcastId, s.podcastTitle, SUM(s.secondsListened) AS seconds, p.artworkUrl
+FROM ListeningSession s
+LEFT JOIN Podcast p ON p.id = s.podcastId
+GROUP BY s.podcastId
 ORDER BY seconds DESC
 LIMIT :maxRows;
 

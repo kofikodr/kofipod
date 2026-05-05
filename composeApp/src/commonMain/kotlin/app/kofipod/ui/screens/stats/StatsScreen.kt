@@ -48,6 +48,7 @@ import app.kofipod.data.repo.TopPodcast
 import app.kofipod.domain.Tier
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
+import app.kofipod.ui.primitives.KofipodArtwork
 import app.kofipod.ui.primitives.SectionLabel
 import app.kofipod.ui.theme.LocalKofipodColors
 import app.kofipod.ui.theme.LocalKofipodRadii
@@ -853,7 +854,16 @@ private fun TopPodcastRow(
                     fontWeight = FontWeight.ExtraBold,
                 )
             }
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(10.dp))
+            KofipodArtwork(
+                size = 40.dp,
+                seed = entry.podcastId.hashCode(),
+                model = entry.artworkUrl?.ifBlank { null },
+                label = entry.podcastTitle,
+                contentDescription = entry.podcastTitle,
+                radius = 8.dp,
+            )
+            Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     entry.podcastTitle.ifBlank { "Untitled podcast" },

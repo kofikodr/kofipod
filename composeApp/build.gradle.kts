@@ -1,3 +1,4 @@
+import com.codingfeline.buildkonfig.compiler.FieldSpec.Type.BOOLEAN
 import com.codingfeline.buildkonfig.compiler.FieldSpec.Type.INT
 import com.codingfeline.buildkonfig.compiler.FieldSpec.Type.STRING
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
@@ -250,11 +251,15 @@ buildkonfig {
     defaultConfigs {
         buildConfigField(STRING, "PODCAST_INDEX_KEY", readSecret("PODCAST_INDEX_KEY"))
         buildConfigField(STRING, "PODCAST_INDEX_SECRET", readSecret("PODCAST_INDEX_SECRET"))
-        buildConfigField(STRING, "USER_AGENT", "Kofipod/$appVersionName (github.com/ebernie/kofipod)")
+        buildConfigField(STRING, "USER_AGENT", "Kofipod/$appVersionName (github.com/kofikodr/kofipod)")
         buildConfigField(STRING, "VERSION_NAME", appVersionName)
         buildConfigField(INT, "VERSION_CODE", appVersionCode.toString())
         buildConfigField(STRING, "SENTRY_DSN", readSecret("SENTRY_DSN"))
         buildConfigField(STRING, "APTABASE_APP_KEY", readSecret("APTABASE_APP_KEY"))
+        // Sideload-update channel (GitHub Releases). Default true for the GitHub
+        // build; flip to "false" via local.properties or env when packaging the
+        // Play Store flavor (Play forbids self-updaters).
+        buildConfigField(BOOLEAN, "UPDATER_ENABLED", readSecret("UPDATER_ENABLED").ifBlank { "true" })
     }
 }
 

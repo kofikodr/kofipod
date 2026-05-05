@@ -13,6 +13,8 @@ import app.kofipod.diagnostics.Telemetry
 import app.kofipod.diagnostics.TelemetryEvent
 import app.kofipod.pro.ProEntitlementRepository
 import app.kofipod.ui.theme.ThemeSystem
+import app.kofipod.update.UpdateInstaller
+import app.kofipod.update.UpdaterCapability
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -37,6 +39,13 @@ class KofipodApplication : Application() {
             androidLogger()
             androidContext(this@KofipodApplication)
             modules(commonDataModule, androidPlatformModule, flavorPlatformModule)
+        }
+        // The downloaded-APK pointer rides Auto Backup but the file itself doesn't —
+        // clear it on cold start if the file isn't where the pointer says it is, so a
+        // restored device doesn't crash on "Install". Capability-gated so the Play
+        // Store flavor can ship without the sideload updater.
+        if (UpdaterCapability.enabled) {
+            get<UpdateInstaller>(UpdateInstaller::class.java).reconcileDownloadedApk()
         }
         // Recover any AI summary requests that were mid-flight when the previous
         // process died. Worker is the primary backstop while the app is killed,
