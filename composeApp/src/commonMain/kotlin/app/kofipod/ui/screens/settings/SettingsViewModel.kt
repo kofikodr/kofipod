@@ -189,6 +189,14 @@ class SettingsViewModel(
     fun acknowledgeDisclosure() = viewModelScope.launch { diagnostics.acknowledgeDisclosure() }
 
     /**
+     * Debug entry point: throws an unhandled exception synchronously on the
+     * main thread so the Sentry uncaught-exception handler captures it. Used
+     * to verify GlitchTip end-to-end ingestion. The process will die; Sentry
+     * persists the event to disk before exit and uploads it on next launch.
+     */
+    fun forceCrash(): Nothing = error("Kofipod force-crash test from Settings → Debug")
+
+    /**
      * Debug entry point: post the rich single-episode notification using a randomly
      * picked episode from a randomly picked subscribed podcast. Surfaces a snackbar
      * if there's nothing to test with (no podcasts, or none with episodes yet).

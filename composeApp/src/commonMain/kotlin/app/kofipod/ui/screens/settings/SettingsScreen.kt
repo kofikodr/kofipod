@@ -225,6 +225,13 @@ fun SettingsScreen(
                 subtitle = "Generic count summary; tap opens Library",
                 onClick = { viewModel.sendTestManyNotification() },
             )
+            Spacer(Modifier.height(10.dp))
+            SettingRow(
+                icon = KPIconName.Trash,
+                title = "Force crash (test GlitchTip)",
+                subtitle = "Throws an unhandled exception; reopen to upload",
+                onClick = { viewModel.forceCrash() },
+            )
         }
 
         Spacer(Modifier.height(16.dp))
