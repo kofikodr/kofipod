@@ -100,6 +100,7 @@ fun PlayerScreen(
                 if (p.podcastId.isNotBlank()) onOpenPodcast(p.podcastId)
             },
             onMarkPlayed = viewModel::markAsPlayed,
+            onBookmark = viewModel::onBookmarkTapped,
         )
         Spacer(Modifier.height(16.dp))
         PlayerArtworkCard(

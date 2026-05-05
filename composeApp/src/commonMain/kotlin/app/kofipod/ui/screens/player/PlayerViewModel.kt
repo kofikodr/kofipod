@@ -11,7 +11,12 @@ import app.kofipod.db.Episode
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.playback.PlayableEpisode
 import app.kofipod.playback.PlayerState
+import app.kofipod.pro.PaywallRouter
+import app.kofipod.pro.ProEntitlement
+import app.kofipod.pro.ProEntitlementRepository
 import app.kofipod.share.Sharer
+import app.kofipod.ui.UiEvent
+import app.kofipod.ui.UiEventBus
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -41,6 +46,9 @@ class PlayerViewModel(
     private val settings: SettingsRepository,
     private val sharer: Sharer,
     private val downloads: DownloadRepository,
+    private val pro: ProEntitlementRepository,
+    private val paywallRouter: PaywallRouter,
+    private val bus: UiEventBus,
 ) : ViewModel() {
     private val toast = MutableStateFlow<String?>(null)
 
@@ -164,6 +172,21 @@ class PlayerViewModel(
 
     fun dismissToast() {
         toast.value = null
+    }
+
+    /**
+     * Slice 0 toy gate for the Pro entitlement plumbing. Pro users get a
+     * placeholder snackbar via [UiEventBus]; Free / Unknown users get routed
+     * to the Paywall sheet via [PaywallRouter]. Slice 1 swaps the snackbar
+     * for actual bookmark creation; the paywall path stays as-is.
+     */
+    fun onBookmarkTapped() {
+        when (pro.state.value) {
+            is ProEntitlement.Pro -> bus.emit(UiEvent.Snackbar("Bookmarks ship in Slice 1"))
+            ProEntitlement.Free,
+            ProEntitlement.Unknown,
+            -> paywallRouter.requestPaywall("paywall_bookmark")
+        }
     }
 
     private fun flashToast(message: String) {

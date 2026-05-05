@@ -310,6 +310,18 @@ val commonDataModule =
                 aiConfig = get(),
             )
         }
-        viewModel { PlayerViewModel(get(), get(), get(), get(), get(), get()) }
+        viewModel {
+            PlayerViewModel(
+                player = get(),
+                playback = get(),
+                episodes = get<EpisodeSource>(),
+                settings = get(),
+                sharer = get(),
+                downloads = get(),
+                pro = get(),
+                paywallRouter = get(),
+                bus = get(),
+            )
+        }
         viewModel { StatsViewModel(get()) }
     }

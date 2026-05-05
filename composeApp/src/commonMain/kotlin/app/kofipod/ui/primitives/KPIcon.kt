@@ -57,6 +57,13 @@ enum class KPIconName {
      * so the assistive-tech label can stay action-specific.
      */
     Send,
+
+    /**
+     * Outline bookmark / ribbon glyph used by the Player's Pro-gated bookmark
+     * action. Outline-only for Slice 0; Slice 1 may swap in a filled variant
+     * to indicate "this position is bookmarked".
+     */
+    Bookmark,
 }
 
 @Composable
@@ -428,6 +435,16 @@ private fun buildKPIconPath(
                 moveTo(6f * scale, 11f * scale)
                 lineTo(12f * scale, 5f * scale)
                 lineTo(18f * scale, 11f * scale)
+            }
+        KPIconName.Bookmark ->
+            Path().apply {
+                // Classic ribbon bookmark: rectangular body with a V-notch cut into the bottom.
+                moveTo(6f * scale, 4f * scale)
+                lineTo(18f * scale, 4f * scale)
+                lineTo(18f * scale, 20f * scale)
+                lineTo(12f * scale, 16f * scale)
+                lineTo(6f * scale, 20f * scale)
+                close()
             }
         KPIconName.Sparkle ->
             Path().apply {
