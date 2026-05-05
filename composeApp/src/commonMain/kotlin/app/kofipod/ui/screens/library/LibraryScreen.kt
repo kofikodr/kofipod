@@ -94,7 +94,7 @@ fun LibraryScreen(
     val recent: List<Podcast> =
         podcasts
             .sortedByDescending { it.addedAt }
-            .take(3)
+            .take(6)
 
     // Tile slot descriptor: either a real list, an unfiled bucket, or the "New list" CTA.
     // Lets the grid iterate uniformly without special-casing indices inline.
