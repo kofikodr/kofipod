@@ -38,12 +38,21 @@ class DiagnosticsBootstrapper(
 
     fun start() {
         effective(config.crashesEnabled, config.disclosureAcknowledged)
-            .onEach { if (it) crashes.enable() else crashes.disable() }
+            .onEach { effective ->
+                runCatching { if (effective) crashes.enable() else crashes.disable() }
+            }
             .launchIn(appScope)
         effective(config.usageEnabled, config.disclosureAcknowledged)
-            .onEach {
-                if (it) telemetry.enable() else telemetry.disable()
-                _telemetryReady.value = it
+            .onEach { effective ->
+                // Wrap SDK calls in runCatching so a throwing initialize() never
+                // tears down the collector — if it did, telemetryReady would
+                // stay false forever and any awaiter (e.g. AppOpened in
+                // KofipodApplication) would suspend for the process lifetime.
+                // We still flip telemetryReady so awaiters unblock; the
+                // !enabled guard inside Telemetry.track() handles a failed
+                // init gracefully (track becomes a no-op).
+                runCatching { if (effective) telemetry.enable() else telemetry.disable() }
+                _telemetryReady.value = effective
             }
             .launchIn(appScope)
     }

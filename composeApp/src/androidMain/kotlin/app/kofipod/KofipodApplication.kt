@@ -14,6 +14,7 @@ import app.kofipod.ui.theme.ThemeSystem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.core.context.startKoin
@@ -56,8 +57,13 @@ class KofipodApplication : Application() {
         val appScope = KoinPlatform.getKoin().get<CoroutineScope>(named("appScope"))
         val telemetry = get<Telemetry>(Telemetry::class.java)
         appScope.launch {
-            bootstrapper.telemetryReady.first { it }
-            telemetry.track(TelemetryEvent.AppOpened)
+            // Bound the await: if the bootstrapper never flips telemetryReady
+            // true (disclosure not acknowledged, telemetry toggle off, or
+            // SDK init failed), this coroutine would otherwise suspend for
+            // the process lifetime. 5s is generous — readiness usually
+            // settles in <50ms once prefs are decrypted.
+            val ready = withTimeoutOrNull(5_000) { bootstrapper.telemetryReady.first { it } }
+            if (ready == true) telemetry.track(TelemetryEvent.AppOpened)
         }
     }
 }

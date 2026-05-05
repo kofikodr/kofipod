@@ -91,4 +91,22 @@ class CrashReporterScrubberTest {
         val crumb = Breadcrumb(category = "ui", message = "navigate to Library", data = emptyMap())
         assertEquals(crumb, CrashReporterScrubber.scrubBreadcrumb(crumb))
     }
+
+    /**
+     * Sentry's HTTP integration sometimes records the URL only in `data` (under
+     * keys like `url`, `http.url`) while the breadcrumb `message` is just the
+     * status line ("HTTP 200 OK"). The drop check must inspect data values too,
+     * not only the message — otherwise a Gemini call with a generic-looking
+     * status message would slip through and leak the URL.
+     */
+    @Test
+    fun `scrubBreadcrumb drops http breadcrumb when sensitive host appears only in data values`() {
+        val crumb =
+            Breadcrumb(
+                category = "http",
+                message = "HTTP 200 OK",
+                data = mapOf("url" to "https://generativelanguage.googleapis.com/v1/models"),
+            )
+        assertNull(CrashReporterScrubber.scrubBreadcrumb(crumb))
+    }
 }

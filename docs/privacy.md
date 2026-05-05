@@ -12,7 +12,7 @@ fix them. Sent over HTTPS to a self-hosted GlitchTip instance.
 
 | Field | Example | Notes |
 |---|---|---|
-| Stack trace | `NullPointerException at app.kofipod...:123` | Deobfuscated server-side from R8 mappings |
+| Stack trace | `NullPointerException at app.kofipod...:123` | Human-readable — R8 minification is currently disabled, so no obfuscation is applied |
 | Exception class & message | `IOException: Failed to fetch ...` | URLs scrubbed of query strings |
 | OS version | `Android 14` | |
 | Device model | `Pixel 7` | Not unique |

@@ -10,7 +10,18 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class DiagnosticsConfigRepositoryTest {
+/**
+ * Contract tests for [FakeDiagnosticsConfigRepository], the in-memory test
+ * double that other tests in this module substitute for the real
+ * [AndroidDiagnosticsConfigRepository]. The Android impl's persistence
+ * (EncryptedSharedPreferences round-trip, file-system durability, MasterKey
+ * setup) is intentionally NOT covered here — the project's testing scope
+ * is JVM-only (Compose UI tests + Paparazzi snapshots), and adding
+ * Robolectric for one repository's prefs path is out of scope. This suite
+ * just guarantees the fake behaves like the contract requires, so any
+ * test using it as a substitute can rely on the documented semantics.
+ */
+class FakeDiagnosticsConfigRepositoryContractTest {
     @Test
     fun `defaults — crashes on, usage on, disclosure not acknowledged`() =
         runTest {
