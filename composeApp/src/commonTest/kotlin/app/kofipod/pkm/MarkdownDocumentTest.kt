@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.pkm
 
 import kotlin.test.Test
