@@ -1,0 +1,95 @@
+-- Slice 3 (Pro Snippets MVP, MP3-only): per-episode snippet draft + render
+-- bookkeeping. Cascades from both Episode and Podcast (the redundant
+-- podcastId column matches the Bookmark pattern from Slice 1, so per-podcast
+-- snippet aggregation can render without a JOIN through Episode).
+--
+-- lastExportFormat / lastExportPath are nullable: NULL means the snippet has
+-- never been rendered (it's a draft). Re-rendering with a different trim or
+-- format overwrites these and replaces the file at lastExportPath.
+CREATE TABLE Snippet (
+    id                TEXT NOT NULL PRIMARY KEY,
+    episodeId         TEXT NOT NULL,
+    podcastId         TEXT NOT NULL,
+    startMs           INTEGER NOT NULL,
+    endMs             INTEGER NOT NULL,
+    title             TEXT,
+    captionOverride   TEXT,
+    createdAtMs       INTEGER NOT NULL,
+    lastExportFormat  TEXT,
+    lastExportPath    TEXT,
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE,
+    FOREIGN KEY (podcastId) REFERENCES Podcast(id) ON DELETE CASCADE
+);
+
+CREATE INDEX snippet_byEpisode  ON Snippet(episodeId, startMs);
+CREATE INDEX snippet_byPodcast  ON Snippet(podcastId, createdAtMs);
+CREATE INDEX snippet_byCreated  ON Snippet(createdAtMs);
+
+insert:
+INSERT INTO Snippet (id, episodeId, podcastId, startMs, endMs, title, captionOverride, createdAtMs, lastExportFormat, lastExportPath)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+updateTrim:
+UPDATE Snippet SET startMs = ?, endMs = ? WHERE id = ?;
+
+updateTitle:
+UPDATE Snippet SET title = ? WHERE id = ?;
+
+updateCaptionOverride:
+UPDATE Snippet SET captionOverride = ? WHERE id = ?;
+
+setRendered:
+UPDATE Snippet SET lastExportFormat = ?, lastExportPath = ? WHERE id = ?;
+
+deleteById:
+DELETE FROM Snippet WHERE id = ?;
+
+selectById:
+SELECT * FROM Snippet WHERE id = ?;
+
+selectByEpisode:
+SELECT * FROM Snippet WHERE episodeId = ? ORDER BY startMs ASC;
+
+selectAllWithContext:
+SELECT
+    s.id               AS id,
+    s.episodeId        AS episodeId,
+    s.podcastId        AS podcastId,
+    s.startMs          AS startMs,
+    s.endMs            AS endMs,
+    s.title            AS title,
+    s.captionOverride  AS captionOverride,
+    s.createdAtMs      AS createdAtMs,
+    s.lastExportFormat AS lastExportFormat,
+    s.lastExportPath   AS lastExportPath,
+    e.title            AS episodeTitle,
+    p.title            AS podcastTitle,
+    p.artworkUrl       AS artworkUrl
+FROM Snippet s
+INNER JOIN Episode e ON e.id = s.episodeId
+INNER JOIN Podcast p ON p.id = s.podcastId
+ORDER BY s.createdAtMs DESC;
+
+selectByPodcastWithContext:
+SELECT
+    s.id               AS id,
+    s.episodeId        AS episodeId,
+    s.podcastId        AS podcastId,
+    s.startMs          AS startMs,
+    s.endMs            AS endMs,
+    s.title            AS title,
+    s.captionOverride  AS captionOverride,
+    s.createdAtMs      AS createdAtMs,
+    s.lastExportFormat AS lastExportFormat,
+    s.lastExportPath   AS lastExportPath,
+    e.title            AS episodeTitle,
+    p.title            AS podcastTitle,
+    p.artworkUrl       AS artworkUrl
+FROM Snippet s
+INNER JOIN Episode e ON e.id = s.episodeId
+INNER JOIN Podcast p ON p.id = s.podcastId
+WHERE s.podcastId = ?
+ORDER BY s.createdAtMs DESC;
+
+countByEpisode:
+SELECT COUNT(*) AS c FROM Snippet WHERE episodeId = ?;
