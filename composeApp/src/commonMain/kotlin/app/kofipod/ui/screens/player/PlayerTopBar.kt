@@ -39,8 +39,6 @@ internal fun PlayerTopBar(
     onShare: () -> Unit,
     onGoToPodcast: () -> Unit,
     onMarkPlayed: () -> Unit,
-    onBookmark: () -> Unit,
-    onSnip: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
     var menuOpen by remember { mutableStateOf(false) }
@@ -73,10 +71,6 @@ internal fun PlayerTopBar(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        Spacer(Modifier.size(8.dp))
-        TopRoundButton(icon = KPIconName.Scissors, onClick = onSnip)
-        Spacer(Modifier.size(8.dp))
-        TopRoundButton(icon = KPIconName.Bookmark, onClick = onBookmark)
         Spacer(Modifier.size(8.dp))
         Box {
             TopRoundButton(icon = KPIconName.More, onClick = { menuOpen = true })

@@ -57,6 +57,22 @@ class PlayerViewModel(
 
     val audioLevels: StateFlow<FloatArray> = player.audioLevels
 
+    /**
+     * Current Pro entitlement state delegated from [ProEntitlementRepository]. Collected by
+     * [PlayerProActionsRow] to conditionally render the PRO badge on each chip.
+     */
+    val entitlement: StateFlow<ProEntitlement> = pro.state
+
+    /**
+     * True once the user has dismissed the NEW coachmark banner at least once.
+     * Defaults to `true` (dismissed) until the first DB read resolves, to prevent
+     * a banner flash on cold start before the preference is known.
+     */
+    val isProTipDismissed: StateFlow<Boolean> =
+        settings.proTipDismissedAt()
+            .map { it != null }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
     @OptIn(ExperimentalCoroutinesApi::class)
     private val episodesForCurrent: StateFlow<List<Episode>> =
         player.state
@@ -240,6 +256,14 @@ class PlayerViewModel(
             ProEntitlement.Unknown,
             -> paywallRouter.requestPaywall("paywall_snippet")
         }
+    }
+
+    /**
+     * Persists the current epoch-ms as the dismissal timestamp so the NEW coachmark
+     * is never shown again on this device.
+     */
+    fun dismissProTip() {
+        settings.setProTipDismissedAt(Clock.System.now().toEpochMilliseconds())
     }
 
     private fun flashToast(message: String) {

@@ -41,6 +41,8 @@ fun PlayerScreen(
     val state by viewModel.state.collectAsState()
     val c = LocalKofipodColors.current
     val p = state.player
+    val ent by viewModel.entitlement.collectAsState()
+    val tipDismissed by viewModel.isProTipDismissed.collectAsState()
 
     LaunchedEffect(viewModel) {
         viewModel.snippetEditorRoute.collect { id -> onOpenSnippetEditor(id) }
@@ -106,8 +108,6 @@ fun PlayerScreen(
                 if (p.podcastId.isNotBlank()) onOpenPodcast(p.podcastId)
             },
             onMarkPlayed = viewModel::markAsPlayed,
-            onBookmark = viewModel::onBookmarkTapped,
-            onSnip = viewModel::onSnipTapped,
         )
         Spacer(Modifier.height(16.dp))
         PlayerArtworkCard(
@@ -142,6 +142,17 @@ fun PlayerScreen(
             onSkipForward = viewModel::skipForward,
             onPrev = viewModel::prev,
             onNext = viewModel::next,
+        )
+        Spacer(Modifier.height(20.dp))
+        PlayerProActionsRow(
+            entitlement = ent,
+            onSnipTapped = viewModel::onSnipTapped,
+            onBookmarkTapped = viewModel::onBookmarkTapped,
+        )
+        Spacer(Modifier.height(8.dp))
+        PlayerProTipBanner(
+            visible = !tipDismissed,
+            onDismiss = viewModel::dismissProTip,
         )
         Spacer(Modifier.height(20.dp))
         PlayerBottomBar(
