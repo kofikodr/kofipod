@@ -153,18 +153,25 @@ actual class SnippetExporter(private val context: Context) {
             //    Remote URLs are deliberately excluded — only pass local paths.
             val localCoverPath =
                 coverArtUriOrPath?.takeIf { !it.startsWith("http://") && !it.startsWith("https://") }
-            val coverFrame =
-                WaveformBitmapRenderer.renderWaveformCard(
-                    samples = waveformSamples,
-                    coverArtPath = localCoverPath,
-                )
-            // Use a timestamp suffix to avoid collisions if the same snippet is
-            // exported concurrently (e.g. double-tap). parentFile fallback to
-            // cacheDir guards against a bare-filename outputPath.
             val frameDir = outputFile.absoluteFile.parentFile ?: context.cacheDir
-            val frameFile = File(frameDir, "${snippet.id}-frame-${System.currentTimeMillis()}.png")
-            frameFile.outputStream().use { coverFrame.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            coverFrame.recycle()
+            // Random UUID suffix avoids collisions if two renders fire in the same
+            // millisecond (System.currentTimeMillis is millisecond-resolution and
+            // not collision-resistant under fast back-to-back enqueues).
+            val frameFile = File(frameDir, "${snippet.id}-frame-${java.util.UUID.randomUUID()}.png")
+            withContext(Dispatchers.IO) {
+                val coverFrame =
+                    WaveformBitmapRenderer.renderWaveformCard(
+                        samples = waveformSamples,
+                        coverArtPath = localCoverPath,
+                    )
+                try {
+                    frameFile.outputStream().use {
+                        coverFrame.compress(Bitmap.CompressFormat.PNG, 100, it)
+                    }
+                } finally {
+                    coverFrame.recycle()
+                }
+            }
 
             val durationUs = (snippet.endMs - snippet.startMs) * 1_000L
 
