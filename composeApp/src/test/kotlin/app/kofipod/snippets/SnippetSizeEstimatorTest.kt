@@ -42,4 +42,18 @@ class SnippetSizeEstimatorTest {
     fun formatBytes_over_100_MB_drops_decimal() {
         assertEquals("123 MB", SnippetSizeEstimator.formatBytes(123_000_000L))
     }
+
+    @Test
+    fun formatBytes_at_one_MB_boundary() {
+        // Pin the KB/MB threshold — most likely point of accidental regression
+        // if someone changes 1_000_000 to 1_048_576 (binary MB).
+        assertEquals("1.0 MB", SnippetSizeEstimator.formatBytes(1_000_000L))
+        assertEquals("999 KB", SnippetSizeEstimator.formatBytes(999_999L))
+    }
+
+    @Test
+    fun formatBytes_rejects_negative_input() {
+        val ex = kotlin.runCatching { SnippetSizeEstimator.formatBytes(-1L) }.exceptionOrNull()
+        assertTrue(ex is IllegalArgumentException, "expected IAE, got ${ex?.javaClass}")
+    }
 }

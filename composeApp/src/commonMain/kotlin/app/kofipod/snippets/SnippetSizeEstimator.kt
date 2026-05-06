@@ -26,6 +26,7 @@ object SnippetSizeEstimator {
     }
 
     fun formatBytes(bytes: Long): String {
+        require(bytes >= 0L) { "bytes must be non-negative, got $bytes" }
         val mb = bytes.toDouble() / 1_000_000.0
         return when {
             mb >= 100.0 -> "${mb.toInt()} MB"
@@ -33,7 +34,7 @@ object SnippetSizeEstimator {
                 val rounded = (mb * 10).toInt() / 10.0
                 "$rounded MB"
             }
-            else -> "${(bytes / 1_000).toInt()} KB"
+            else -> "${(bytes / 1_000).toInt()} KB" // truncates toward zero — estimates are rough by design (see KDoc)
         }
     }
 }
