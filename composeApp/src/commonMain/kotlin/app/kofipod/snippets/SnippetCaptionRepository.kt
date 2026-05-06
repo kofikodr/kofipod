@@ -45,7 +45,11 @@ class SnippetCaptionRepository(
                     when {
                         !isAudioReady -> CaptionResolution.NoneReason.NoAudioDownloaded
                         key.isNullOrBlank() -> CaptionResolution.NoneReason.NoGeminiKey
-                        else -> CaptionResolution.NoneReason.NoTranscript
+                        else ->
+                            error(
+                                "SnippetCaptionPicker.Path.None with audio=$isAudioReady key=${!key.isNullOrBlank()} " +
+                                    "— picker contract violated",
+                            )
                     }
                 CaptionResolution.None(reason)
             }
