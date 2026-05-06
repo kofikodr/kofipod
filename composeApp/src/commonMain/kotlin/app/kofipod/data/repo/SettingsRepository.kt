@@ -72,6 +72,16 @@ class SettingsRepository(
 
     fun setAiModel(model: GeminiModel) = put(KEY_AI_MODEL, model.apiId)
 
+    /**
+     * Player Pro Actions tip-banner dismissal timestamp. Null when the user has
+     * never dismissed; epoch-ms when they have. Slice 4 reads this in
+     * [PlayerProTipBanner] to decide whether to show the NEW coachmark below
+     * the chip row.
+     */
+    fun proTipDismissedAt(): Flow<Long?> = metaFlow(KEY_PRO_TIP_DISMISSED_AT).map { it?.toLongOrNull() }
+
+    fun setProTipDismissedAt(epochMs: Long) = put(KEY_PRO_TIP_DISMISSED_AT, epochMs.toString())
+
     fun autoUpdateCheckEnabled(): Flow<Boolean> = metaFlow(KEY_AUTO_UPDATE_CHECK).map { it?.toBoolean() ?: true }
 
     fun autoUpdateCheckEnabledNow(): Boolean = getMetaNow(KEY_AUTO_UPDATE_CHECK)?.toBoolean() ?: true
@@ -95,6 +105,7 @@ class SettingsRepository(
         const val KEY_SCHEDULER_RUNS = "scheduler_runs"
         const val KEY_AUTO_UPDATE_CHECK = "auto_update_check_enabled"
         const val KEY_AI_MODEL = "ai_model_id"
+        const val KEY_PRO_TIP_DISMISSED_AT = "pro_tip_dismissed_at"
 
         // Update-checker keys. These ride existing Auto Backup so the user's "skipped
         // v1.2.0" preference and last-checked timestamp persist across reinstalls. The
