@@ -4,7 +4,6 @@ package app.kofipod.ui.screens.detail
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -37,15 +36,17 @@ import app.kofipod.ui.theme.LocalKofipodColors
 /**
  * Per-episode Saved section. Sibling to the tab content area, not a fifth tab —
  * the tab strip stays four max per project convention. Tap a bookmark row to
- * seek/play at the bookmark's timestamp; long-press to delete. Tap a snippet
- * row to open the snippet editor.
+ * seek/play at the bookmark's timestamp; long-press a bookmark or snippet row
+ * to open the Pro-gated markdown export sheet. Tap a snippet row to open the
+ * snippet editor. Bookmark deletion lives on the global Bookmarks screen.
  */
 @Composable
 internal fun SavedSection(
     items: List<SavedItem>,
     onBookmarkTap: (Long) -> Unit,
-    onBookmarkDelete: (String) -> Unit,
     onSnippetTap: (String) -> Unit,
+    onBookmarkLongPress: (Bookmark) -> Unit,
+    onSnippetLongPress: (Snippet) -> Unit,
 ) {
     if (items.isEmpty()) return
 
@@ -59,13 +60,14 @@ internal fun SavedSection(
                     BookmarkRow(
                         bookmark = item.bookmark,
                         onTap = onBookmarkTap,
-                        onDelete = onBookmarkDelete,
+                        onLongPress = onBookmarkLongPress,
                     )
                 is SavedItem.SnippetItem ->
                     SnippetRow(
                         snippet = item.snippet,
                         sizeBytes = item.sizeBytes,
                         onTap = onSnippetTap,
+                        onLongPress = onSnippetLongPress,
                     )
             }
         }
@@ -77,7 +79,7 @@ internal fun SavedSection(
 private fun BookmarkRow(
     bookmark: Bookmark,
     onTap: (Long) -> Unit,
-    onDelete: (String) -> Unit,
+    onLongPress: (Bookmark) -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Row(
@@ -89,7 +91,7 @@ private fun BookmarkRow(
                 .border(1.dp, c.border, RoundedCornerShape(12.dp))
                 .combinedClickable(
                     onClick = { onTap(bookmark.timestampMs) },
-                    onLongClick = { onDelete(bookmark.id) },
+                    onLongClick = { onLongPress(bookmark) },
                 )
                 .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -117,11 +119,13 @@ private fun BookmarkRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SnippetRow(
     snippet: Snippet,
     sizeBytes: Long,
     onTap: (String) -> Unit,
+    onLongPress: (Snippet) -> Unit,
 ) {
     val c = LocalKofipodColors.current
     val window =
@@ -138,7 +142,10 @@ private fun SnippetRow(
                 .clip(RoundedCornerShape(12.dp))
                 .background(c.surface)
                 .border(1.dp, c.border, RoundedCornerShape(12.dp))
-                .clickable { onTap(snippet.id) }
+                .combinedClickable(
+                    onClick = { onTap(snippet.id) },
+                    onLongClick = { onLongPress(snippet) },
+                )
                 .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

@@ -17,8 +17,13 @@ import app.kofipod.db.PlaybackState
 import app.kofipod.db.Podcast
 import app.kofipod.downloads.DownloadJob
 import app.kofipod.downloads.downloadFileName
+import app.kofipod.pkm.PkmExportCoordinator
+import app.kofipod.pkm.PkmExportRequest
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.playback.PlayableEpisode
+import app.kofipod.pro.PaywallRouter
+import app.kofipod.pro.ProEntitlement
+import app.kofipod.pro.ProEntitlementRepository
 import app.kofipod.share.Sharer
 import app.kofipod.snippets.FileSizer
 import app.kofipod.snippets.SnippetRepository
@@ -65,6 +70,9 @@ class EpisodeDetailViewModel(
     private val bookmarkRepo: BookmarkRepository,
     snippetRepo: SnippetRepository,
     private val fileSizer: FileSizer,
+    private val pkmExport: PkmExportCoordinator,
+    private val paywallRouter: PaywallRouter,
+    private val pro: ProEntitlementRepository,
 ) : ViewModel() {
     private val error = MutableStateFlow<String?>(null)
 
@@ -257,6 +265,49 @@ class EpisodeDetailViewModel(
     fun seekToBookmark(timestampMs: Long) = seekToChapter(timestampMs)
 
     fun deleteBookmark(id: String) = bookmarkRepo.deleteById(id)
+
+    /**
+     * Pro-gated. On Pro: open the markdown export sheet for [snippetId].
+     * On Free / Unknown: open the paywall sheet via [PaywallRouter].
+     */
+    fun onSnippetExportRequested(snippetId: String) {
+        when (pro.state.value) {
+            is ProEntitlement.Pro -> pkmExport.show(PkmExportRequest.Snippet(snippetId))
+            ProEntitlement.Free,
+            ProEntitlement.Unknown,
+            -> paywallRouter.requestPaywall("paywall_pkm_export_snippet")
+        }
+    }
+
+    /**
+     * Pro-gated. On Pro: open the markdown export sheet for [bookmarkId].
+     * On Free / Unknown: open the paywall sheet.
+     */
+    fun onBookmarkExportRequested(bookmarkId: String) {
+        when (pro.state.value) {
+            is ProEntitlement.Pro -> pkmExport.show(PkmExportRequest.Bookmark(bookmarkId))
+            ProEntitlement.Free,
+            ProEntitlement.Unknown,
+            -> paywallRouter.requestPaywall("paywall_pkm_export_bookmark")
+        }
+    }
+
+    /**
+     * Pro-gated. On Pro: open the markdown export sheet for the AI summary
+     * cached for this episode. Caller is responsible for only invoking this
+     * when the summary state is Ready (the SummaryCard shows the affordance
+     * conditionally on Ready).
+     *
+     * On Free / Unknown: open the paywall sheet.
+     */
+    fun onAiSummaryExportRequested() {
+        when (pro.state.value) {
+            is ProEntitlement.Pro -> pkmExport.show(PkmExportRequest.AiSummary(episodeId))
+            ProEntitlement.Free,
+            ProEntitlement.Unknown,
+            -> paywallRouter.requestPaywall("paywall_pkm_export_summary")
+        }
+    }
 
     fun share() {
         val ep = state.value.episode ?: return

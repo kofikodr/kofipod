@@ -472,6 +472,9 @@ val commonDataModule =
                 bookmarkRepo = get(),
                 snippetRepo = get(),
                 fileSizer = get(),
+                pkmExport = get(),
+                paywallRouter = get(),
+                pro = get(),
             )
         }
         viewModel {

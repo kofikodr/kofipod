@@ -38,9 +38,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kofipod.ai.AiSummaryUiState
+import app.kofipod.bookmarks.Bookmark
 import app.kofipod.db.Episode
 import app.kofipod.db.EpisodeChapter
 import app.kofipod.db.Podcast
+import app.kofipod.snippets.Snippet
 import app.kofipod.ui.primitives.KPButton
 import app.kofipod.ui.primitives.KPButtonStyle
 import app.kofipod.ui.primitives.KPIcon
@@ -86,8 +88,9 @@ fun EpisodeDetailScreen(
             viewModel.seekToBookmark(ms)
             if (!state.isCurrentEpisode) onOpenPlayer()
         },
-        onBookmarkDelete = viewModel::deleteBookmark,
         onSnippetTap = onOpenSnippetEditor,
+        onBookmarkLongPress = { bm -> viewModel.onBookmarkExportRequested(bm.id) },
+        onSnippetLongPress = { sn -> viewModel.onSnippetExportRequested(sn.id) },
         onOpenAiSetup = onOpenAiSetup,
         onOpenAskGemini = onOpenAskGemini,
     )
@@ -115,8 +118,9 @@ internal fun EpisodeDetailContent(
     onOpenAskGemini: (String) -> Unit = {},
     saved: List<SavedItem> = emptyList(),
     onBookmarkTap: (Long) -> Unit = {},
-    onBookmarkDelete: (String) -> Unit = {},
     onSnippetTap: (String) -> Unit = {},
+    onBookmarkLongPress: (Bookmark) -> Unit = {},
+    onSnippetLongPress: (Snippet) -> Unit = {},
 ) {
     val c = LocalKofipodColors.current
 
@@ -158,8 +162,9 @@ internal fun EpisodeDetailContent(
                     onOpenAskGemini = onOpenAskGemini,
                     saved = saved,
                     onBookmarkTap = onBookmarkTap,
-                    onBookmarkDelete = onBookmarkDelete,
                     onSnippetTap = onSnippetTap,
+                    onBookmarkLongPress = onBookmarkLongPress,
+                    onSnippetLongPress = onSnippetLongPress,
                 )
             }
         }
@@ -215,8 +220,9 @@ private fun EpisodeBody(
     onOpenAskGemini: (String) -> Unit,
     saved: List<SavedItem>,
     onBookmarkTap: (Long) -> Unit,
-    onBookmarkDelete: (String) -> Unit,
     onSnippetTap: (String) -> Unit,
+    onBookmarkLongPress: (Bookmark) -> Unit,
+    onSnippetLongPress: (Snippet) -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Spacer(Modifier.height(8.dp))
@@ -326,8 +332,9 @@ private fun EpisodeBody(
         SavedSection(
             items = saved,
             onBookmarkTap = onBookmarkTap,
-            onBookmarkDelete = onBookmarkDelete,
             onSnippetTap = onSnippetTap,
+            onBookmarkLongPress = onBookmarkLongPress,
+            onSnippetLongPress = onSnippetLongPress,
         )
     }
 }
