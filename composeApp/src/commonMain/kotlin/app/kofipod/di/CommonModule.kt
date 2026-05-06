@@ -317,6 +317,46 @@ val commonDataModule =
                 get<app.kofipod.snippets.SnippetCaptionPicker>(),
             )
         }
+        // ────────────────────────────────────────────────────────────────────
+        // PKM (Slice 5) — Markdown export
+        // ────────────────────────────────────────────────────────────────────
+        single<app.kofipod.pkm.MarkdownFormatter> { app.kofipod.pkm.MarkdownFormatterImpl() }
+
+        // MarkdownExporter is the production MarkdownSink. Both the concrete and the
+        // interface bind to the same instance so callers that depend on either type
+        // resolve the same singleton — same pattern as e.g. AndroidOpmlFilePort.
+        single { app.kofipod.pkm.MarkdownExporter(get(), get(), get()) }
+        single<app.kofipod.pkm.MarkdownSink> { get<app.kofipod.pkm.MarkdownExporter>() }
+
+        // PkmExportDeps adapter — five-method seam over the production repos. Lives
+        // in DI rather than its own file so the only extra surface is one Koin block.
+        single<app.kofipod.pkm.PkmExportDeps> {
+            val snippetRepo: app.kofipod.snippets.SnippetRepository = get()
+            val bookmarkRepo: app.kofipod.bookmarks.BookmarkRepository = get()
+            val summaryRepo: app.kofipod.ai.AiSummaryRepository = get()
+            val episodeRepo: app.kofipod.data.repo.EpisodesRepository = get()
+            val libraryRepo: app.kofipod.data.repo.LibraryRepository = get()
+            object : app.kofipod.pkm.PkmExportDeps {
+                override suspend fun snippetById(id: String) = snippetRepo.selectById(id)
+
+                override suspend fun bookmarkById(id: String) = bookmarkRepo.selectById(id)
+
+                override suspend fun summaryFor(episodeId: String) = summaryRepo.cachedNow(episodeId)
+
+                override fun episode(id: String) = episodeRepo.episodeNow(id)
+
+                override fun podcast(id: String) = libraryRepo.podcastNow(id)
+            }
+        }
+
+        single {
+            app.kofipod.pkm.PkmExportCoordinator(
+                deps = get(),
+                formatter = get(),
+                sink = get(),
+                appScope = get(org.koin.core.qualifier.named("appScope")),
+            )
+        }
         single { app.kofipod.search.LibrarySearchRepository(driver = get()) }
         single {
             app.kofipod.diagnostics.DiagnosticsBootstrapper(

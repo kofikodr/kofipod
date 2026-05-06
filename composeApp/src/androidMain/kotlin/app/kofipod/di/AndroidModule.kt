@@ -81,6 +81,11 @@ val androidPlatformModule =
         single<app.kofipod.snippets.FileCheckerApi> { get<FileChecker>() }
         single { SnippetExporter(androidContext()) }
         single { SnippetRenderLauncher(androidContext()) }
+        // PKM (Slice 5) — platform ports. ClipboardPort and MarkdownTempFilePort
+        // are concrete-only `actual class`es (no expect class interface), so a
+        // single binding each is sufficient.
+        single { app.kofipod.pkm.ClipboardPort(androidContext()) }
+        single { app.kofipod.pkm.MarkdownTempFilePort(androidContext()) }
         single { ThemeSystem(androidContext()) }
         single<PalettePort> { AndroidPalettePort(androidContext()) }
         single<LocalApkPathStore> { AndroidLocalApkPathStore(androidContext()) }
