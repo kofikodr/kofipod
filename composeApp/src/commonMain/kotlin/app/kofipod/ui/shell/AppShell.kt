@@ -54,6 +54,7 @@ import app.kofipod.ui.player.MiniPlayer
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.screens.bookmarks.BookmarkComposerSheet
+import app.kofipod.ui.screens.export.MarkdownExportSheet
 import app.kofipod.ui.screens.paywall.PaywallSheet
 import app.kofipod.ui.theme.LocalKofipodColors
 import kotlinx.coroutines.launch
@@ -171,6 +172,9 @@ fun AppShell() {
     // Bookmark quick-add sheet for the Pro feature. Self-gates on its own
     // BookmarkComposerState — when Hidden, returns before composing.
     BookmarkComposerSheet()
+    // PKM export sink picker for the Pro feature. Self-gates on
+    // PkmExportCoordinator.pendingRequest — when null, returns before composing.
+    MarkdownExportSheet()
     // Paywall lives at the shell level — a NavHost destination would render full-screen
     // and leave a blank background behind the ModalBottomSheet. Hoisting here overlays
     // the sheet on top of whichever screen triggered it.
