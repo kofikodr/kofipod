@@ -178,7 +178,7 @@ class MarkdownDocumentTest {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `./gradlew :composeApp:testDebugUnitTest --tests "app.kofipod.pkm.MarkdownDocumentTest"`
+Run: `./gradlew :composeApp:testFossDebugUnitTest --tests "app.kofipod.pkm.MarkdownDocumentTest"`
 Expected: FAIL with "unresolved reference: MarkdownDocument".
 
 - [ ] **Step 3: Implement MarkdownDocument**
@@ -227,7 +227,7 @@ data class MarkdownDocument(
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `./gradlew :composeApp:testDebugUnitTest --tests "app.kofipod.pkm.MarkdownDocumentTest"`
+Run: `./gradlew :composeApp:testFossDebugUnitTest --tests "app.kofipod.pkm.MarkdownDocumentTest"`
 Expected: PASS (4/4).
 
 - [ ] **Step 5: Run lint + iOS compile + commit**
@@ -289,7 +289,7 @@ class TimestampFormatterTest {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `./gradlew :composeApp:testDebugUnitTest --tests "app.kofipod.pkm.SluggerTest" --tests "app.kofipod.pkm.TimestampFormatterTest"`
+Run: `./gradlew :composeApp:testFossDebugUnitTest --tests "app.kofipod.pkm.SluggerTest" --tests "app.kofipod.pkm.TimestampFormatterTest"`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement Slugger**
@@ -382,7 +382,7 @@ fun formatHms(ms: Long): String {
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `./gradlew :composeApp:testDebugUnitTest --tests "app.kofipod.pkm.SluggerTest" --tests "app.kofipod.pkm.TimestampFormatterTest"`
+Run: `./gradlew :composeApp:testFossDebugUnitTest --tests "app.kofipod.pkm.SluggerTest" --tests "app.kofipod.pkm.TimestampFormatterTest"`
 Expected: PASS (8 + 5 = 13/13).
 
 - [ ] **Step 6: Lint + iOS + commit**
@@ -809,7 +809,7 @@ class MarkdownFormatterImpl : MarkdownFormatter {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `./gradlew :composeApp:testDebugUnitTest --tests "app.kofipod.pkm.MarkdownFormatterTest"`
+Run: `./gradlew :composeApp:testFossDebugUnitTest --tests "app.kofipod.pkm.MarkdownFormatterTest"`
 Expected: PASS (10/10).
 
 - [ ] **Step 5: Lint + iOS + commit**
@@ -1266,7 +1266,7 @@ Required test cases:
 
 - [ ] **Step 3: Run tests**
 
-Run: `./gradlew :composeApp:testDebugUnitTest --tests "app.kofipod.pkm.PkmExportCoordinatorTest"`
+Run: `./gradlew :composeApp:testFossDebugUnitTest --tests "app.kofipod.pkm.PkmExportCoordinatorTest"`
 Expected: PASS (8/8).
 
 - [ ] **Step 4: Lint + commit**
@@ -1633,7 +1633,7 @@ git commit -m "slice5(pkm): export-result snackbars (Copied / Failed) at AppShel
 ./gradlew :composeApp:ktlintFormat :composeApp:detekt
 ./gradlew :composeApp:compileDebugKotlinAndroid
 ./gradlew :composeApp:compileKotlinIosSimulatorArm64
-./gradlew :composeApp:testDebugUnitTest
+./gradlew :composeApp:testFossDebugUnitTest
 ./gradlew :composeApp:verifyPaparazziDebug
 ```
 
