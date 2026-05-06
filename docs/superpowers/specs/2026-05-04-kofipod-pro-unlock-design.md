@@ -247,6 +247,16 @@ The bundled `docs/kofipod-pro-ui-design.html` is the visual reference for every 
 - Implementing any new screen or composable that the design doc covers.
 - Touching a Pro-gated entry point on a modified screen — match the design.
 
+**How to consult this reference (mandatory before implementing any Pro UI):**
+
+The HTML is a self-contained JS bundle — opening the file as plain text shows only the loader scaffolding, not the actual screens. To see the design content you have to render it.
+
+- **Human review:** `open -a "Google Chrome" docs/kofipod-pro-ui-design.html`. Wait for the "Unpacking..." indicator to disappear, then scroll. Each screen tile is labeled `N · Screen name · state` (e.g. `2 · Snippet editor · idle`).
+- **AI agent runs:** before implementing any Pro UI, render the doc with Playwright/Chromium and screenshot every relevant labeled tile (every state of every screen the slice touches). Save screenshots under `/tmp/kofipod-design-<slug>.png` and reference those paths in the slice plan's task descriptions. The `seo-visual` agent and the `general-purpose` agent both have Playwright access.
+- **Plans derived from this spec MUST include a step that captures the relevant design tiles** before starting implementation. A slice that hasn't visually verified its target screens against this reference is incomplete.
+
+Treat captured screenshots like an API contract — every divergence (defer-to-later-slice, cosmetic-only, swapped-for-feasibility) needs a deliberate decision recorded in the slice plan, not silent omission. If the implementation stops short of design fidelity (e.g. waveform widget waiting on a primitive that ships in a later slice), the plan must say so explicitly and call out which design elements are deferred.
+
 **Do NOT use it as a backlog of UI drift:**
 - Existing free-tier surfaces that the design doc happens to depict (e.g. Now-playing transport controls, the Library tile grid, Stats tiles, Episode Detail tab strip styling, Settings rows unrelated to Pro/Connections) may have drifted from current production. **That drift is intentional out-of-scope for the Pro project.** Do not "fix" non-Pro UI to match the design doc as a side effect of implementing a Pro slice. If the design doc and live app disagree on a non-Pro surface, the live app wins.
 
