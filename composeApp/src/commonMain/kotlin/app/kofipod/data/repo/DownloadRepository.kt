@@ -155,6 +155,9 @@ class DownloadRepository(
     /** Raw filesystem path for the completed local file for [episodeId], or null. */
     fun localPathFor(episodeId: String): String? = db.downloadQueries.localPathFor(episodeId).executeAsOneOrNull()?.localPath
 
+    /** Full [Download] row for [episodeId], or null when no row exists. */
+    fun rowFor(episodeId: String): Download? = db.downloadQueries.selectByEpisode(episodeId).executeAsOneOrNull()
+
     /** Same as [localPathFor] but wrapped in a `file://` URI for passing to a URL-scheme consumer. */
     fun localUriFor(episodeId: String): String? = localPathFor(episodeId)?.let { "file://$it" }
 
