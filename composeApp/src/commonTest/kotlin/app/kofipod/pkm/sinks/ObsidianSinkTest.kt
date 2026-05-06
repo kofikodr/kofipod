@@ -27,11 +27,21 @@ class ObsidianSinkTest {
             assertEquals("demo-snippet-s1.md", result.externalId)
             assertEquals("content://tree/abc", writer.lastTreeUri)
             assertEquals("demo-snippet-s1.md", writer.lastFilename)
+            assertEquals(doc.render(), writer.lastBody)
         }
 
     @Test fun missingConnectionReturnsPermanentFailure() =
         runTest {
             val sink = ObsidianSink(FakeWriter()) { null }
+            val doc = MarkdownDocument(emptyList(), "", "x.md")
+            val result = sink.export(doc, PkmExportRequest.Snippet("s1"), null)
+            assertIs<ExportSinkResult.PermanentFailure>(result)
+        }
+
+    @Test fun missingFolderUriReturnsPermanentFailure() =
+        runTest {
+            val conn = PkmConnection("obsidian", ConnectionKind.Obsidian, null, null, 0L, null)
+            val sink = ObsidianSink(FakeWriter()) { conn }
             val doc = MarkdownDocument(emptyList(), "", "x.md")
             val result = sink.export(doc, PkmExportRequest.Snippet("s1"), null)
             assertIs<ExportSinkResult.PermanentFailure>(result)
@@ -51,6 +61,7 @@ class ObsidianSinkTest {
 private class FakeWriter(val throwOnWrite: Throwable? = null) : ObsidianFolderWriter {
     var lastTreeUri: String? = null
     var lastFilename: String? = null
+    var lastBody: String? = null
 
     override suspend fun write(
         treeUri: String,
@@ -60,5 +71,6 @@ private class FakeWriter(val throwOnWrite: Throwable? = null) : ObsidianFolderWr
         throwOnWrite?.let { throw it }
         lastTreeUri = treeUri
         lastFilename = filename
+        lastBody = body
     }
 }
