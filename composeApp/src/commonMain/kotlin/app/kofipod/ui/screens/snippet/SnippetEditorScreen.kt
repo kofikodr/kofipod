@@ -64,10 +64,12 @@ fun SnippetEditorScreen(
     val snackbarHost = remember { SnackbarHostState() }
 
     LaunchedEffect(state.progress) {
-        when (val p = state.progress) {
-            is RenderProgress.Failed -> snackbarHost.showSnackbar("Render failed: ${p.message}")
-            is RenderProgress.Complete -> { /* share sheet fires from service */ }
-            else -> { /* nothing */ }
+        val p = state.progress
+        if (p is RenderProgress.Failed) {
+            // Dismiss any visible snackbar so the new failure message
+            // gets a fresh timer rather than snapping mid-wait.
+            snackbarHost.currentSnackbarData?.dismiss()
+            snackbarHost.showSnackbar("Render failed: ${p.message}")
         }
     }
 
@@ -135,27 +137,39 @@ fun SnippetEditorScreen(
             }
         }
 
-        // Bottom CTA strip — varies with progress.
-        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(c.bg).padding(20.dp)) {
-            when (val p = state.progress) {
-                is RenderProgress.InFlight ->
-                    RenderingStrip(
-                        fraction = p.fraction,
-                        onCancel = {
-                            viewModel.cancelRender()
-                            onBack()
-                        },
-                    )
-                is RenderProgress.Complete -> ReadyStrip(onShare = onBack)
-                else ->
-                    IdleStrip(
-                        onCancel = onBack,
-                        onRenderAndShare = viewModel::saveAndRender,
-                    )
+        // Bottom CTA strip — varies with progress. Stacked with snackbar above it.
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            // Snackbar above the strip so they never overlap.
+            SnackbarHost(hostState = snackbarHost)
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .background(c.bg)
+                    .padding(20.dp),
+            ) {
+                when (val p = state.progress) {
+                    is RenderProgress.InFlight ->
+                        RenderingStrip(
+                            fraction = p.fraction,
+                            onCancel = {
+                                viewModel.cancelRender()
+                                onBack()
+                            },
+                        )
+                    is RenderProgress.Complete -> ReadyStrip(onShare = onBack)
+                    else ->
+                        IdleStrip(
+                            onCancel = onBack,
+                            onRenderAndShare = viewModel::saveAndRender,
+                        )
+                }
             }
         }
-
-        SnackbarHost(snackbarHost, modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
 
