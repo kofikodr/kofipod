@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
 /**
@@ -55,6 +56,24 @@ class BookmarkRepository(
     ) {
         db.bookmarkQueries.updateNote(note?.takeIf { it.isNotBlank() }, id)
     }
+
+    /**
+     * One-shot fetch by id. Used by [PkmExportCoordinator] to resolve a
+     * bookmark referenced from the export sheet without subscribing to a flow.
+     */
+    suspend fun selectById(id: String): Bookmark? =
+        withContext(Dispatchers.Default) {
+            db.bookmarkQueries.selectById(id).executeAsOneOrNull()?.let {
+                Bookmark(
+                    id = it.id,
+                    episodeId = it.episodeId,
+                    podcastId = it.podcastId,
+                    timestampMs = it.timestampMs,
+                    note = it.note,
+                    createdAtMs = it.createdAtMs,
+                )
+            }
+        }
 
     fun observeForEpisode(episodeId: String): Flow<List<Bookmark>> =
         db.bookmarkQueries

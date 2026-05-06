@@ -33,6 +33,9 @@ DELETE FROM Bookmark WHERE id = ?;
 selectByEpisode:
 SELECT * FROM Bookmark WHERE episodeId = ? ORDER BY timestampMs ASC;
 
+selectById:
+SELECT * FROM Bookmark WHERE id = ?;
+
 countByEpisode:
 SELECT COUNT(*) AS c FROM Bookmark WHERE episodeId = ?;
 
