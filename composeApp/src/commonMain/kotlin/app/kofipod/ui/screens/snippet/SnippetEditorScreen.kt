@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,11 +18,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,7 +35,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kofipod.snippets.RenderProgress
-import app.kofipod.snippets.SnippetWindow
 import app.kofipod.ui.primitives.KPButton
 import app.kofipod.ui.primitives.KPButtonStyle
 import app.kofipod.ui.primitives.KPIcon
@@ -40,15 +44,14 @@ import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
 
 /**
- * Snippet editor: title field, start/end nudge rows, format hint, render
- * trigger. The screen is stateless beyond what the [SnippetEditorViewModel]
- * exposes — every interaction routes through the VM so the persistence +
- * render-launch order stays single-sourced.
+ * Snippet editor: waveform-based trim, title/caption fields, format chip, and
+ * a bottom CTA strip that switches between Idle / InFlight / Complete states
+ * driven by [RenderProgress].
  *
- * Format display reads "MP3 · MP4 coming soon" by intent: Slice 4 will add
- * MP4 support via Media3 Transformer's video graph; surfacing it here as a
- * roadmap hint avoids a future UX surprise without enabling a chip that
- * would today produce a broken render.
+ * All mutations route through [SnippetEditorViewModel] to keep persistence and
+ * render-launch order single-sourced. The screen stays open after
+ * [SnippetEditorViewModel.saveAndRender] — the user leaves via Cancel or Share
+ * once the strip reaches Complete.
  */
 @Composable
 fun SnippetEditorScreen(
@@ -58,73 +61,141 @@ fun SnippetEditorScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val c = LocalKofipodColors.current
+    val snackbarHost = remember { SnackbarHostState() }
+
+    LaunchedEffect(state.progress) {
+        when (val p = state.progress) {
+            is RenderProgress.Failed -> snackbarHost.showSnackbar("Render failed: ${p.message}")
+            is RenderProgress.Complete -> { /* share sheet fires from service */ }
+            else -> { /* nothing */ }
+        }
+    }
 
     if (state.loading) {
-        Box(
-            Modifier.fillMaxSize().background(c.bg),
-            contentAlignment = Alignment.Center,
-        ) {
+        Box(Modifier.fillMaxSize().background(c.bg), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = c.pink)
         }
         return
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(c.bg)
-            .verticalScroll(rememberScrollState()),
-    ) {
-        SnippetEditorTopBar(onBack = onBack)
-
+    Box(Modifier.fillMaxSize().background(c.bg)) {
         Column(
             Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 120.dp),
         ) {
-            OutlinedTextField(
-                value = state.title,
-                onValueChange = viewModel::setTitle,
-                label = { Text("Title") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
+            SnippetEditorTopBar(onBack = onBack)
 
-            TrimRow(
-                label = "Start",
-                value = state.startMs,
-                onMinus5 = { viewModel.setStart(state.startMs - FIVE_SECONDS_MS) },
-                onMinus1 = { viewModel.setStart(state.startMs - ONE_SECOND_MS) },
-                onPlus1 = { viewModel.setStart(state.startMs + ONE_SECOND_MS) },
-                onPlus5 = { viewModel.setStart(state.startMs + FIVE_SECONDS_MS) },
-            )
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                OutlinedTextField(
+                    value = state.title,
+                    onValueChange = viewModel::setTitle,
+                    label = { Text("Title") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
 
-            TrimRow(
-                label = "End",
-                value = state.endMs,
-                onMinus5 = { viewModel.setEnd(state.endMs - FIVE_SECONDS_MS) },
-                onMinus1 = { viewModel.setEnd(state.endMs - ONE_SECOND_MS) },
-                onPlus1 = { viewModel.setEnd(state.endMs + ONE_SECOND_MS) },
-                onPlus5 = { viewModel.setEnd(state.endMs + FIVE_SECONDS_MS) },
-            )
+                SnippetWaveform(
+                    samples = state.waveform,
+                    durationMs = state.episodeDurationMs,
+                    startMs = state.startMs,
+                    endMs = state.endMs,
+                    playheadMs = state.previewPositionMs,
+                    onStartChanged = viewModel::setStart,
+                    onEndChanged = viewModel::setEnd,
+                )
 
-            Text(
-                "Format: MP3  ·  MP4 coming soon",
-                color = c.textMute,
-                fontSize = 13.sp,
-            )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SnippetTrimChips(startMs = state.startMs, endMs = state.endMs)
+                    SnippetPreviewControl(isPlaying = state.previewing, onTap = viewModel::previewToggle)
+                }
 
-            Spacer(Modifier.height(8.dp))
-            KPButton(
-                label = if (state.progress !is RenderProgress.Idle) "Rendering…" else "Render & Share",
-                onClick = {
-                    if (state.progress is RenderProgress.Idle) viewModel.saveAndRender()
-                },
-                style = KPButtonStyle.PrimaryPink,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(24.dp))
+                OutlinedTextField(
+                    value = state.caption,
+                    onValueChange = viewModel::setCaption,
+                    label = { Text("Caption") },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp, max = 160.dp),
+                    minLines = 2,
+                    maxLines = 4,
+                )
+
+                SnippetFormatChip(
+                    selected = state.format,
+                    durationMs = (state.endMs - state.startMs),
+                    onSelect = viewModel::setFormat,
+                )
+            }
+        }
+
+        // Bottom CTA strip — varies with progress.
+        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(c.bg).padding(20.dp)) {
+            when (val p = state.progress) {
+                is RenderProgress.InFlight ->
+                    RenderingStrip(
+                        fraction = p.fraction,
+                        onCancel = {
+                            viewModel.cancelRender()
+                            onBack()
+                        },
+                    )
+                is RenderProgress.Complete -> ReadyStrip(onShare = onBack)
+                else ->
+                    IdleStrip(
+                        onCancel = onBack,
+                        onRenderAndShare = viewModel::saveAndRender,
+                    )
+            }
+        }
+
+        SnackbarHost(snackbarHost, modifier = Modifier.align(Alignment.BottomCenter))
+    }
+}
+
+@Composable
+private fun IdleStrip(
+    onCancel: () -> Unit,
+    onRenderAndShare: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        KPButton(label = "Cancel", onClick = onCancel, style = KPButtonStyle.Outline, modifier = Modifier.weight(1f))
+        KPButton(label = "Render & Share", onClick = onRenderAndShare, style = KPButtonStyle.PrimaryPink, modifier = Modifier.weight(2f))
+    }
+}
+
+@Composable
+private fun RenderingStrip(
+    fraction: Float,
+    onCancel: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LinearProgressIndicator(progress = { fraction.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), color = c.pink)
+        Text("Rendering ${(fraction * 100).toInt()}%", color = c.textMute, fontSize = 12.sp)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            KPButton(label = "Cancel", onClick = onCancel, style = KPButtonStyle.Outline, modifier = Modifier.weight(1f))
+            KPButton(label = "Rendering…", onClick = { }, style = KPButtonStyle.PrimaryPink, modifier = Modifier.weight(2f))
+        }
+    }
+}
+
+@Composable
+private fun ReadyStrip(onShare: () -> Unit) {
+    val c = LocalKofipodColors.current
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Ready · opening share sheet", color = c.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            KPButton(label = "Cancel", onClick = onShare, style = KPButtonStyle.Outline, modifier = Modifier.weight(1f))
+            KPButton(label = "Share", onClick = onShare, style = KPButtonStyle.PrimaryPink, modifier = Modifier.weight(2f))
         }
     }
 }
@@ -137,10 +208,7 @@ private fun SnippetEditorTopBar(onBack: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .clickable(onClick = onBack),
+            Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onBack),
             contentAlignment = Alignment.Center,
         ) {
             KPIcon(name = KPIconName.Back, color = c.text, size = 22.dp)
@@ -149,33 +217,3 @@ private fun SnippetEditorTopBar(onBack: () -> Unit) {
         Text("Snippet", color = c.text, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
     }
 }
-
-@Composable
-private fun TrimRow(
-    label: String,
-    value: Long,
-    onMinus5: () -> Unit,
-    onMinus1: () -> Unit,
-    onPlus1: () -> Unit,
-    onPlus5: () -> Unit,
-) {
-    val c = LocalKofipodColors.current
-    Column {
-        Text(
-            "$label: ${SnippetWindow.formatTimestampDeci(value)}",
-            color = c.text,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 14.sp,
-        )
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            KPButton(label = "-5s", onClick = onMinus5, style = KPButtonStyle.Outline)
-            KPButton(label = "-1s", onClick = onMinus1, style = KPButtonStyle.Outline)
-            KPButton(label = "+1s", onClick = onPlus1, style = KPButtonStyle.Outline)
-            KPButton(label = "+5s", onClick = onPlus5, style = KPButtonStyle.Outline)
-        }
-    }
-}
-
-private const val ONE_SECOND_MS = 1_000L
-private const val FIVE_SECONDS_MS = 5_000L
