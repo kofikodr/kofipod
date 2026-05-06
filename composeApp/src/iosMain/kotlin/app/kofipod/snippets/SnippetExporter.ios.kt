@@ -8,4 +8,14 @@ actual class SnippetExporter {
         outputPath: String,
         onProgress: (Float) -> Unit,
     ): Result<String> = Result.failure(NotImplementedError("Snippets not supported on iOS"))
+
+    actual suspend fun exportMp4(
+        snippet: Snippet,
+        sourceUriOrPath: String,
+        outputPath: String,
+        coverArtUriOrPath: String?,
+        captionText: String?,
+        waveformSamples: WaveformSamples,
+        onProgress: (Float) -> Unit,
+    ): Result<String> = Result.failure(NotImplementedError("Snippets MP4 not yet supported on iOS"))
 }
