@@ -17,6 +17,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import app.kofipod.snippets.WaveformSamples
 import app.kofipod.ui.theme.LocalKofipodColors
@@ -34,34 +35,48 @@ fun SnippetWaveform(
 ) {
     val c = LocalKofipodColors.current
     val widthPxState = remember { mutableStateOf(0f) }
+    val draggingHandleState = remember { mutableStateOf<DragHandle?>(null) }
 
     Box(
         modifier
             .fillMaxWidth()
             .height(140.dp)
             .padding(horizontal = 4.dp)
+            .onSizeChanged { widthPxState.value = it.width.toFloat() }
             .pointerInput(durationMs) {
                 detectDragGestures(
-                    onDragStart = { /* per-handle hit-testing happens onDrag */ },
+                    onDragStart = { offset ->
+                        val w = widthPxState.value
+                        if (w <= 0f || durationMs <= 0L) return@detectDragGestures
+                        // Latch which handle the user grabbed by initial proximity.
+                        // Honour this choice for the rest of the gesture so dragging
+                        // past the other handle's position doesn't flip the snap.
+                        val ratio = (offset.x / w).coerceIn(0f, 1f)
+                        val tappedMs = (ratio * durationMs).toLong()
+                        draggingHandleState.value =
+                            if (kotlin.math.abs(tappedMs - startMs) <= kotlin.math.abs(tappedMs - endMs)) {
+                                DragHandle.Start
+                            } else {
+                                DragHandle.End
+                            }
+                    },
+                    onDragEnd = { draggingHandleState.value = null },
+                    onDragCancel = { draggingHandleState.value = null },
                     onDrag = { change, _ ->
                         val w = widthPxState.value
                         if (w <= 0f || durationMs <= 0L) return@detectDragGestures
                         val ratio = (change.position.x / w).coerceIn(0f, 1f)
                         val tappedMs = (ratio * durationMs).toLong()
-                        // Snap to whichever handle is closer.
-                        val distStart = kotlin.math.abs(tappedMs - startMs)
-                        val distEnd = kotlin.math.abs(tappedMs - endMs)
-                        if (distStart <= distEnd) {
-                            onStartChanged(tappedMs.coerceAtMost(endMs - MIN_WINDOW_MS))
-                        } else {
-                            onEndChanged(tappedMs.coerceAtLeast(startMs + MIN_WINDOW_MS))
+                        when (draggingHandleState.value) {
+                            DragHandle.Start -> onStartChanged(tappedMs.coerceAtMost(endMs - MIN_WINDOW_MS))
+                            DragHandle.End -> onEndChanged(tappedMs.coerceAtLeast(startMs + MIN_WINDOW_MS))
+                            null -> { /* gesture not yet started */ }
                         }
                     },
                 )
             },
     ) {
         Canvas(Modifier.fillMaxWidth().height(140.dp)) {
-            widthPxState.value = size.width
             drawBars(
                 bars = samples.bars,
                 durationMs = durationMs,
@@ -112,3 +127,5 @@ private fun DrawScope.drawBars(
 }
 
 private const val MIN_WINDOW_MS = 1_000L
+
+private enum class DragHandle { Start, End }

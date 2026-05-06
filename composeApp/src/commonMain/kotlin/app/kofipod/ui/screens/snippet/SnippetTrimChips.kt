@@ -29,7 +29,6 @@ fun SnippetTrimChips(
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Pill(label = "IN", value = SnippetWindow.formatTimestampDeci(startMs))
         Pill(label = "OUT", value = SnippetWindow.formatTimestampDeci(endMs))
-        Spacer(Modifier.width(0.dp))
         Pill(label = "", value = SnippetWindow.formatTimestampDeci(endMs - startMs) + " selected", filled = true)
     }
 }

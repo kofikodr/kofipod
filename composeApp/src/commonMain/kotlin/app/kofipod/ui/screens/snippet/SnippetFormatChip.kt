@@ -51,7 +51,6 @@ fun SnippetFormatChip(
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
                     )
-                    Spacer(Modifier.height(0.dp))
                     Text(
                         " · $size",
                         color = if (active) c.bg else c.textMute,
