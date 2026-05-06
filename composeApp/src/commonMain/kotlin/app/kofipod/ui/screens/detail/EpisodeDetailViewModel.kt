@@ -4,7 +4,6 @@ package app.kofipod.ui.screens.detail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.kofipod.ai.AiConfigRepository
-import app.kofipod.bookmarks.Bookmark
 import app.kofipod.bookmarks.BookmarkRepository
 import app.kofipod.data.repo.ChaptersRepository
 import app.kofipod.data.repo.DownloadRepository
@@ -21,6 +20,7 @@ import app.kofipod.downloads.downloadFileName
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.playback.PlayableEpisode
 import app.kofipod.share.Sharer
+import app.kofipod.snippets.SnippetRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -62,6 +62,7 @@ class EpisodeDetailViewModel(
     private val chapters: ChaptersRepository,
     aiConfig: AiConfigRepository,
     private val bookmarkRepo: BookmarkRepository,
+    snippetRepo: SnippetRepository,
 ) : ViewModel() {
     private val error = MutableStateFlow<String?>(null)
 
@@ -122,9 +123,18 @@ class EpisodeDetailViewModel(
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EpisodeDetailUiState())
 
-    val bookmarks: StateFlow<List<Bookmark>> =
-        bookmarkRepo.observeForEpisode(episodeId)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /**
+     * Per-episode "Saved" list — bookmarks (Slice 1) and snippets (Slice 3) merged into
+     * one newest-first stream. UI switches on [SavedItem] to render each variant.
+     */
+    val saved: StateFlow<List<SavedItem>> =
+        combine(
+            bookmarkRepo.observeForEpisode(episodeId),
+            snippetRepo.observeForEpisode(episodeId),
+        ) { bms, sns ->
+            (bms.map(SavedItem::BookmarkItem) + sns.map(SavedItem::SnippetItem))
+                .sortedByDescending { it.createdAtMs }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun togglePlay() {
         val s = state.value

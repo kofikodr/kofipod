@@ -383,6 +383,7 @@ val commonDataModule =
                 chapters = get(),
                 aiConfig = get(),
                 bookmarkRepo = get(),
+                snippetRepo = get(),
             )
         }
         viewModel {

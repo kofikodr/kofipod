@@ -142,6 +142,9 @@ fun KofipodNavHost(navController: NavHostController) {
                 },
                 onOpenAiSetup = { navController.navigate(Route.AiSetup) },
                 onOpenAskGemini = { episodeId -> navController.navigate(Route.AskGemini(episodeId)) },
+                onOpenSnippetEditor = { id ->
+                    navController.navigate(Route.SnippetEditor(snippetId = id))
+                },
             )
         }
         composable<Route.AskGemini> { entry ->

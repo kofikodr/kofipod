@@ -4,6 +4,7 @@ package app.kofipod.ui.screens.detail
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,12 +19,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kofipod.bookmarks.Bookmark
 import app.kofipod.bookmarks.formatBookmarkTimestamp
+import app.kofipod.snippets.Snippet
+import app.kofipod.snippets.SnippetWindow
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.primitives.SectionLabel
@@ -31,59 +35,153 @@ import app.kofipod.ui.theme.LocalKofipodColors
 
 /**
  * Per-episode Saved section. Sibling to the tab content area, not a fifth tab —
- * the tab strip stays four max per project convention. Tap a row to seek/play
- * at the bookmark's timestamp; long-press to delete.
+ * the tab strip stays four max per project convention. Tap a bookmark row to
+ * seek/play at the bookmark's timestamp; long-press to delete. Tap a snippet
+ * row to open the snippet editor.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun SavedSection(
-    bookmarks: List<Bookmark>,
-    onTap: (Long) -> Unit,
-    onDelete: (String) -> Unit,
+    items: List<SavedItem>,
+    onBookmarkTap: (Long) -> Unit,
+    onBookmarkDelete: (String) -> Unit,
+    onSnippetTap: (String) -> Unit,
 ) {
-    if (bookmarks.isEmpty()) return
-    val c = LocalKofipodColors.current
+    if (items.isEmpty()) return
 
     Column(Modifier.fillMaxWidth()) {
         SectionLabel("Saved")
         Spacer(Modifier.height(8.dp))
-        bookmarks.forEachIndexed { idx, b ->
+        items.forEachIndexed { idx, item ->
             if (idx > 0) Spacer(Modifier.height(8.dp))
-            Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(c.surface)
-                        .border(1.dp, c.border, RoundedCornerShape(12.dp))
-                        .combinedClickable(
-                            onClick = { onTap(b.timestampMs) },
-                            onLongClick = { onDelete(b.id) },
-                        )
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                KPIcon(name = KPIconName.Bookmark, color = c.purple, size = 18.dp)
-                Spacer(Modifier.size(12.dp))
-                Column(Modifier) {
-                    Text(
-                        formatBookmarkTimestamp(b.timestampMs),
-                        color = c.text,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
+            when (item) {
+                is SavedItem.BookmarkItem ->
+                    BookmarkRow(
+                        bookmark = item.bookmark,
+                        onTap = onBookmarkTap,
+                        onDelete = onBookmarkDelete,
                     )
-                    if (!b.note.isNullOrBlank()) {
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            b.note,
-                            color = c.textMute,
-                            fontSize = 13.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
+                is SavedItem.SnippetItem ->
+                    SnippetRow(
+                        snippet = item.snippet,
+                        onTap = onSnippetTap,
+                    )
             }
         }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun BookmarkRow(
+    bookmark: Bookmark,
+    onTap: (Long) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(c.surface)
+                .border(1.dp, c.border, RoundedCornerShape(12.dp))
+                .combinedClickable(
+                    onClick = { onTap(bookmark.timestampMs) },
+                    onLongClick = { onDelete(bookmark.id) },
+                )
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        KPIcon(name = KPIconName.Bookmark, color = c.purple, size = 18.dp)
+        Spacer(Modifier.size(12.dp))
+        Column(Modifier) {
+            Text(
+                formatBookmarkTimestamp(bookmark.timestampMs),
+                color = c.text,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+            )
+            if (!bookmark.note.isNullOrBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    bookmark.note,
+                    color = c.textMute,
+                    fontSize = 13.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SnippetRow(
+    snippet: Snippet,
+    onTap: (String) -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    val window =
+        SnippetWindow.formatTimestampDeci(snippet.startMs) +
+            "–" +
+            SnippetWindow.formatTimestampDeci(snippet.endMs)
+    val displayTitle =
+        snippet.title?.takeIf { it.isNotBlank() } ?: "Snippet · $window"
+
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(c.surface)
+                .border(1.dp, c.border, RoundedCornerShape(12.dp))
+                .clickable { onTap(snippet.id) }
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        KPIcon(name = KPIconName.Scissors, color = c.pink, size = 18.dp)
+        Spacer(Modifier.size(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                displayTitle,
+                color = c.text,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                window,
+                color = c.textMute,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+        if (snippet.isRendered) {
+            Spacer(Modifier.size(8.dp))
+            Mp3Chip()
+        }
+    }
+}
+
+@Composable
+private fun Mp3Chip() {
+    val c = LocalKofipodColors.current
+    Row(
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(999.dp))
+                .border(1.dp, c.pink, RoundedCornerShape(999.dp))
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "MP3",
+            color = c.pink,
+            fontWeight = FontWeight.Bold,
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+        )
     }
 }
