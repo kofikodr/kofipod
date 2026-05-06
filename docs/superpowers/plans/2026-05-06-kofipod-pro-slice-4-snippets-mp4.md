@@ -795,12 +795,54 @@ git commit -m "slice4(snippets): WebVTT/SRT-aware transcript slicer"
 
 ### Task 6: Caption repository (transcript fetch + Gemini fallback)
 
+**Design adjustment from initial plan draft:** the production deps `DownloadRepository`, `AudioUploadCoordinator`, `GeminiClient`, `AiConfigRepository` are concrete *final* classes — they cannot be anonymously implemented in test-only fakes. To keep the repo unit-testable without hauling in MockK or the in-memory SQLite driver, this task introduces a small per-feature seam interface (`CaptionDeps`) that the repo depends on. Production wiring (in Task 16 DI) provides an adapter that delegates to the four final classes; tests fake `CaptionDeps` directly. `EpisodeSource` (interface) and `TranscriptFetcher` (`fun interface`) already exist in the codebase and are used as-is.
+
 **Files:**
+- Create: `composeApp/src/commonMain/kotlin/app/kofipod/snippets/CaptionDeps.kt`
 - Create: `composeApp/src/commonMain/kotlin/app/kofipod/snippets/SnippetCaptionPrompts.kt`
 - Create: `composeApp/src/commonMain/kotlin/app/kofipod/snippets/SnippetCaptionRepository.kt`
 - Create: `composeApp/src/test/kotlin/app/kofipod/snippets/SnippetCaptionRepositoryTest.kt`
 
-- [ ] **Step 1: Implement the Gemini prompt holder.**
+- [ ] **Step 1: Define the small-interface seam `CaptionDeps`.**
+
+```kotlin
+// composeApp/src/commonMain/kotlin/app/kofipod/snippets/CaptionDeps.kt
+// SPDX-License-Identifier: GPL-3.0-or-later
+package app.kofipod.snippets
+
+/**
+ * Per-feature seam that [SnippetCaptionRepository] depends on. Production
+ * wiring (CommonModule, Task 16 DI step) provides an adapter that delegates
+ * to [app.kofipod.data.repo.DownloadRepository],
+ * [app.kofipod.ai.AudioUploadCoordinator], [app.kofipod.ai.GeminiClient],
+ * and [app.kofipod.ai.AiConfigRepository]. Tests fake [CaptionDeps] directly
+ * — none of those four production classes are interfaces, so a small seam
+ * is the only way to keep this repo unit-testable without MockK / DB driver.
+ */
+interface CaptionDeps {
+    /** True iff the episode's audio is on local disk (i.e. fully downloaded). */
+    suspend fun isAudioReadyFor(episodeId: String): Boolean
+
+    /** The user's Gemini API key, or null when disconnected / not configured. */
+    suspend fun currentGeminiKey(): String?
+
+    /**
+     * One-shot upload-then-transcribe. The implementation:
+     *   1. resolves the API key (returns failure if missing),
+     *   2. uses [app.kofipod.ai.AudioUploadCoordinator.acquire] to upload-or-cache
+     *      the episode audio to Gemini Files API,
+     *   3. calls [app.kofipod.ai.GeminiClient.generateFromAudio] with [prompt].
+     *
+     * Returns the transcribed text on success, a failure on any pipeline error.
+     * The repository does not need to inspect *which* step failed —
+     * `Result.failure` collapses all of them into [CaptionResolution.None]
+     * with reason [CaptionResolution.NoneReason.GeminiFailed].
+     */
+    suspend fun transcribeForCaption(episodeId: String, prompt: String): Result<String>
+}
+```
+
+- [ ] **Step 2: Implement the Gemini prompt holder.**
 
 ```kotlin
 // composeApp/src/commonMain/kotlin/app/kofipod/snippets/SnippetCaptionPrompts.kt
@@ -824,18 +866,14 @@ object SnippetCaptionPrompts {
 }
 ```
 
-- [ ] **Step 2: Implement `SnippetCaptionRepository`.**
+- [ ] **Step 3: Implement `SnippetCaptionRepository`.**
 
 ```kotlin
 // composeApp/src/commonMain/kotlin/app/kofipod/snippets/SnippetCaptionRepository.kt
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.snippets
 
-import app.kofipod.ai.AiConfigRepository
-import app.kofipod.ai.AudioUploadCoordinator
-import app.kofipod.ai.GeminiClient
-import app.kofipod.ai.HttpTranscriptFetcher
-import app.kofipod.data.repo.DownloadRepository
+import app.kofipod.ai.TranscriptFetcher
 import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.db.Episode
 import kotlinx.coroutines.flow.firstOrNull
@@ -851,33 +889,30 @@ import kotlinx.coroutines.flow.firstOrNull
  */
 class SnippetCaptionRepository(
     private val episodes: EpisodeSource,
-    private val downloads: DownloadRepository,
-    private val transcripts: HttpTranscriptFetcher,
-    private val coordinator: AudioUploadCoordinator,
-    private val gemini: GeminiClient,
-    private val config: AiConfigRepository,
+    private val transcripts: TranscriptFetcher,
+    private val deps: CaptionDeps,
     private val picker: SnippetCaptionPicker = SnippetCaptionPicker(),
 ) {
     suspend fun resolveFor(snippet: Snippet): CaptionResolution {
         val episode = episodes.episodeFlow(snippet.episodeId).firstOrNull()
-            ?: return CaptionResolution.None(NoneReason.NoTranscript)
-        val localPath = downloads.localPathFor(snippet.episodeId)
-        val key = config.getKey()
+            ?: return CaptionResolution.None(CaptionResolution.NoneReason.NoTranscript)
+        val isAudioReady = deps.isAudioReadyFor(snippet.episodeId)
+        val key = deps.currentGeminiKey()
 
         val path = picker.pick(
             transcriptUrl = episode.transcriptUrl,
-            isAudioDownloaded = !localPath.isNullOrBlank(),
+            isAudioDownloaded = isAudioReady,
             hasGeminiKey = !key.isNullOrBlank(),
         )
 
         return when (path) {
             SnippetCaptionPicker.Path.Transcript -> resolveFromTranscript(episode, snippet)
-            SnippetCaptionPicker.Path.Gemini -> resolveFromGemini(episode, snippet, localPath, key)
+            SnippetCaptionPicker.Path.Gemini -> resolveFromGemini(snippet)
             SnippetCaptionPicker.Path.None -> {
                 val reason = when {
-                    localPath.isNullOrBlank() -> NoneReason.NoAudioDownloaded
-                    key.isNullOrBlank() -> NoneReason.NoGeminiKey
-                    else -> NoneReason.NoTranscript
+                    !isAudioReady -> CaptionResolution.NoneReason.NoAudioDownloaded
+                    key.isNullOrBlank() -> CaptionResolution.NoneReason.NoGeminiKey
+                    else -> CaptionResolution.NoneReason.NoTranscript
                 }
                 CaptionResolution.None(reason)
             }
@@ -888,55 +923,72 @@ class SnippetCaptionRepository(
         episode: Episode,
         snippet: Snippet,
     ): CaptionResolution {
-        val url = episode.transcriptUrl ?: return CaptionResolution.None(NoneReason.NoTranscript)
+        val url = episode.transcriptUrl
+            ?: return CaptionResolution.None(CaptionResolution.NoneReason.NoTranscript)
         val text = transcripts.fetch(url).getOrElse {
-            return CaptionResolution.None(NoneReason.NoTranscript)
+            return CaptionResolution.None(CaptionResolution.NoneReason.NoTranscript)
         }
         val sliced = TranscriptSlicer.sliceForWindow(text, snippet.startMs, snippet.endMs)
-            ?: return CaptionResolution.None(NoneReason.NoTranscript)
+            ?: return CaptionResolution.None(CaptionResolution.NoneReason.NoTranscript)
         return CaptionResolution.FromTranscript(sliced)
     }
 
-    private suspend fun resolveFromGemini(
-        episode: Episode,
-        snippet: Snippet,
-        localPath: String?,
-        apiKey: String?,
-    ): CaptionResolution {
-        if (localPath.isNullOrBlank() || apiKey.isNullOrBlank()) {
-            return CaptionResolution.None(NoneReason.NoAudioDownloaded)
-        }
-        val download = downloads.rowFor(snippet.episodeId)
-            ?: return CaptionResolution.None(NoneReason.NoAudioDownloaded)
-        val acquired = coordinator.acquire(apiKey = apiKey, episode = episode, download = download)
-            .getOrElse { return CaptionResolution.None(NoneReason.GeminiFailed) }
+    private suspend fun resolveFromGemini(snippet: Snippet): CaptionResolution {
         val prompt = SnippetCaptionPrompts.transcriptionPrompt(snippet.startMs, snippet.endMs)
-        val text = gemini.generateFromAudio(
-            apiKey = apiKey,
-            fileUri = acquired.fileUri,
-            mimeType = acquired.mimeType,
-            prompt = prompt,
-        ).getOrElse { return CaptionResolution.None(NoneReason.GeminiFailed) }
-        if (text.isBlank()) return CaptionResolution.None(NoneReason.GeminiFailed)
+        val text = deps.transcribeForCaption(snippet.episodeId, prompt).getOrElse {
+            return CaptionResolution.None(CaptionResolution.NoneReason.GeminiFailed)
+        }
+        if (text.isBlank()) return CaptionResolution.None(CaptionResolution.NoneReason.GeminiFailed)
         return CaptionResolution.FromGemini(text.trim())
     }
 }
 ```
 
-> Implementer note: `DownloadRepository.rowFor(episodeId): Download?` is the synchronous DB lookup — verify the method name when implementing; if the existing repo only exposes a flow, add the synchronous accessor in this same task. Same for `AiConfigRepository.getKey()` (the existing repo has `getKey()` per the AI feature notes — confirm). Do not invent new methods on `EpisodeSource`/`HttpTranscriptFetcher` — they already exist with the signatures used above.
+> Implementer note on production wiring (Task 16 will also do this — recorded here so the contract is explicit when this commit lands): the production `CaptionDeps` binding lives in `CommonModule.kt` and is a single-method object that delegates to the four production classes:
+>
+> ```kotlin
+> single<CaptionDeps> {
+>     val episodes: EpisodeSource = get()
+>     val downloads: DownloadRepository = get()
+>     val coordinator: AudioUploadCoordinator = get()
+>     val gemini: GeminiClient = get()
+>     val config: AiConfigRepository = get()
+>     object : CaptionDeps {
+>         override suspend fun isAudioReadyFor(episodeId: String): Boolean =
+>             !downloads.localPathFor(episodeId).isNullOrBlank()
+>
+>         override suspend fun currentGeminiKey(): String? = config.currentKey()
+>
+>         override suspend fun transcribeForCaption(
+>             episodeId: String,
+>             prompt: String,
+>         ): Result<String> = runCatching {
+>             val key = config.currentKey() ?: error("no Gemini key")
+>             val episode = episodes.episodeNow(episodeId) ?: error("no episode")
+>             val download = downloads.rowFor(episodeId) ?: error("no download row")
+>             val acquired = coordinator.acquire(key, episode, download).getOrThrow()
+>             gemini.generateFromAudio(key, acquired.fileUri, acquired.mimeType, prompt).getOrThrow()
+>         }
+>     }
+> }
+> single { SnippetCaptionRepository(get(), get(), get()) }
+> ```
+>
+> `EpisodesRepository.episodeNow(episodeId): Episode?` already exists. `DownloadRepository.rowFor(episodeId): Download?` does NOT exist yet — the implementer of Task 6 must add it (one-line synchronous query into `db.downloadQueries`, mirroring `localPathFor`). The Task 6 commit therefore touches `DownloadRepository.kt` too. Add the new method via a SQLDelight named query in `Download.sq` if no `selectByEpisode` query exists, else reuse the existing one. **AiConfigRepository's API for reading the key is `suspend fun currentKey(): String?`, NOT `getKey()`** — the original plan draft said `getKey()` and that was wrong.
 
-- [ ] **Step 3: Write fake-driven unit tests.**
+- [ ] **Step 4: Write fake-driven unit tests.**
 
 ```kotlin
 // composeApp/src/test/kotlin/app/kofipod/snippets/SnippetCaptionRepositoryTest.kt
+// SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.snippets
 
-// Use the existing test fakes for EpisodeSource / DownloadRepository /
-// HttpTranscriptFetcher / AudioUploadCoordinator / GeminiClient / AiConfigRepository
-// (some live under composeApp/src/test/kotlin/app/kofipod/testing/ — confirm
-// during implementation; if any is missing, write a minimal stub in the same
-// test file).
-
+import app.kofipod.ai.TranscriptFetcher
+import app.kofipod.data.repo.EpisodeSource
+import app.kofipod.data.repo.RefreshResult
+import app.kofipod.db.Episode
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -958,7 +1010,7 @@ class SnippetCaptionRepositoryTest {
         )
         val r = repo.resolveFor(snippet(startMs = 10_000, endMs = 15_000))
         assertTrue(r is CaptionResolution.FromTranscript)
-        assertEquals("Bazel inflection.", (r).text)
+        assertEquals("Bazel inflection.", r.text)
     }
 
     @Test
@@ -972,7 +1024,7 @@ class SnippetCaptionRepositoryTest {
         )
         val r = repo.resolveFor(snippet())
         assertTrue(r is CaptionResolution.FromGemini)
-        assertEquals("Audio caption from Gemini.", (r).text)
+        assertEquals("Audio caption from Gemini.", r.text)
     }
 
     @Test
@@ -982,7 +1034,8 @@ class SnippetCaptionRepositoryTest {
             audioDownloaded = false, geminiKey = "k",
         )
         val r = repo.resolveFor(snippet())
-        assertTrue(r is CaptionResolution.None && r.reason == NoneReason.NoAudioDownloaded)
+        assertTrue(r is CaptionResolution.None)
+        assertEquals(CaptionResolution.NoneReason.NoAudioDownloaded, r.reason)
     }
 
     @Test
@@ -992,7 +1045,8 @@ class SnippetCaptionRepositoryTest {
             audioDownloaded = true, geminiKey = null,
         )
         val r = repo.resolveFor(snippet())
-        assertTrue(r is CaptionResolution.None && r.reason == NoneReason.NoGeminiKey)
+        assertTrue(r is CaptionResolution.None)
+        assertEquals(CaptionResolution.NoneReason.NoGeminiKey, r.reason)
     }
 
     @Test
@@ -1003,7 +1057,21 @@ class SnippetCaptionRepositoryTest {
             geminiResponse = null, // forces failure
         )
         val r = repo.resolveFor(snippet())
-        assertTrue(r is CaptionResolution.None && r.reason == NoneReason.GeminiFailed)
+        assertTrue(r is CaptionResolution.None)
+        assertEquals(CaptionResolution.NoneReason.GeminiFailed, r.reason)
+    }
+
+    @Test
+    fun gemini_blank_response_treated_as_failure() = runTest {
+        // Empty/blank Gemini output is not a useful caption — fall through to None.
+        val repo = makeRepoWith(
+            transcriptUrl = null, transcriptBody = "",
+            audioDownloaded = true, geminiKey = "k",
+            geminiResponse = "   ",
+        )
+        val r = repo.resolveFor(snippet())
+        assertTrue(r is CaptionResolution.None)
+        assertEquals(CaptionResolution.NoneReason.GeminiFailed, r.reason)
     }
 
     // Helpers -------------------------------------------------------------
@@ -1013,6 +1081,19 @@ class SnippetCaptionRepositoryTest {
         createdAtMs = 1_000L, lastExportFormat = null, lastExportPath = null,
     )
 
+    /**
+     * Builds a `SnippetCaptionRepository` with three small fakes:
+     * - A fake `EpisodeSource` that emits a single Episode with the given transcriptUrl.
+     * - A fake `TranscriptFetcher` (`fun interface`) that returns `transcriptBody` if non-blank.
+     * - A fake `CaptionDeps` parameterised by audioDownloaded / geminiKey / geminiResponse.
+     *
+     * The Episode constructor must match the SQLDelight-generated `Episode` row
+     * shape EXACTLY — the implementer should peek at
+     * `composeApp/build/generated/sqldelight/code/.../Episode.kt` (or run a
+     * single test, see the compile error, and copy the constructor signature
+     * from there) to get every field name right. The list below is what we
+     * expect at the time of writing — adjust any field whose name has drifted.
+     */
     private fun makeRepoWith(
         transcriptUrl: String?,
         transcriptBody: String,
@@ -1033,78 +1114,76 @@ class SnippetCaptionRepositoryTest {
             fileSizeBytes = 1_000_000L,
             seasonNumber = null,
             episodeNumber = null,
-            imageUrl = null,
+            imageUrl = "", // NOT NULL with DEFAULT '' in Episode.sq
             chaptersUrl = null,
             transcriptUrl = transcriptUrl,
         )
-        val download = if (audioDownloaded) Download(
-            episodeId = "ep-1",
-            podcastId = "pc-1",
-            url = "https://x/audio.mp3",
-            localPath = "/tmp/ep-1.mp3",
-            downloadedBytes = 1_000_000L,
-            totalBytes = 1_000_000L,
-            status = "complete",
-            queuedAtMs = 0L,
-            completedAtMs = 0L,
-            attempts = 0L,
-            lastError = null,
-        ) else null
         val episodes = object : EpisodeSource {
-            override fun episodeFlow(id: String) = kotlinx.coroutines.flow.flowOf(episode)
-            override fun episodesFlow(podcastId: String) = kotlinx.coroutines.flow.flowOf(listOf(episode))
+            override fun episodesFlow(podcastId: String): Flow<List<Episode>> = flowOf(listOf(episode))
+            override fun episodeFlow(episodeId: String): Flow<Episode?> = flowOf(episode)
+            override fun newEpisodeCountsFlow(): Flow<Map<String, Int>> = flowOf(emptyMap())
+            override suspend fun refresh(podcastId: String, feedId: Long, nowMillis: Long): RefreshResult =
+                error("refresh() should not be called from SnippetCaptionRepository")
         }
-        val downloads = object : DownloadRepository {
-            override fun localPathFor(episodeId: String): String? = download?.localPath
-            override fun rowFor(episodeId: String): Download? = download
-            // other methods throw — they're not used by the picker/repo paths under test
-            override fun toString(): String = "FakeDownloadRepository"
+        val transcripts = TranscriptFetcher { url ->
+            if (transcriptBody.isNotBlank()) Result.success(transcriptBody)
+            else Result.failure(IllegalStateException("empty transcript"))
         }
-        val transcripts = object : HttpTranscriptFetcher {
-            override suspend fun fetch(url: String): Result<String> =
-                if (transcriptBody.isNotBlank()) Result.success(transcriptBody)
-                else Result.failure(IllegalStateException("empty transcript"))
-        }
-        val coordinator = object : AudioUploadCoordinator {
-            override suspend fun acquire(
-                apiKey: String, episode: Episode, download: Download,
-                onStage: (Any) -> Unit,
-            ): Result<AcquiredAudioFile> = Result.success(AcquiredAudioFile(
-                fileUri = "files/uploaded", geminiName = "n", mimeType = "audio/mpeg", fromCache = false,
-            ))
-        }
-        val gemini = object : GeminiClient {
-            override suspend fun generateFromAudio(
-                apiKey: String, fileUri: String, mimeType: String, prompt: String,
-            ): Result<String> = if (geminiResponse != null) Result.success(geminiResponse)
+        val deps = object : CaptionDeps {
+            override suspend fun isAudioReadyFor(episodeId: String): Boolean = audioDownloaded
+            override suspend fun currentGeminiKey(): String? = geminiKey
+            override suspend fun transcribeForCaption(
+                episodeId: String,
+                prompt: String,
+            ): Result<String> =
+                if (geminiResponse != null) Result.success(geminiResponse)
                 else Result.failure(IllegalStateException("gemini failed"))
         }
-        val config = object : AiConfigRepository {
-            override fun getKey(): String? = geminiKey
-        }
-        return SnippetCaptionRepository(episodes, downloads, transcripts, coordinator, gemini, config)
+        return SnippetCaptionRepository(episodes, transcripts, deps)
     }
 }
 ```
 
-> Implementer note: the fakes above use the simplest viable stubs — they implement only the methods the repo actually calls. If the production interfaces have additional methods, leave them as `error("unused")` or rely on Kotlin's open-class-with-default behaviour. If the production types are `class` not `interface` (e.g. `AudioUploadCoordinator` is a final class with no interface), refactor to introduce a thin interface or use a `mockk` relaxed mock. The five test cases above MUST pass.
+> Implementer note: if the `Episode` constructor signature has drifted from the list above (SQLDelight regenerates from `Episode.sq`, so column adds/removes change the constructor), match whatever the current generated file requires — every field is non-default. If `EpisodeSource` has gained a new method since this plan was authored, override it with `error("unused")` rather than guessing semantics.
 
-- [ ] **Step 4: Run tests.**
+- [ ] **Step 5: Add `DownloadRepository.rowFor(episodeId): Download?` for the production wiring.**
+
+`DownloadRepository.localPathFor(episodeId)` already exists. The Task 16 DI wiring needs the full `Download` row to pass to `AudioUploadCoordinator.acquire(...)`. Add a synchronous accessor (mirroring `localPathFor`):
+
+```kotlin
+// in composeApp/src/commonMain/kotlin/app/kofipod/data/repo/DownloadRepository.kt
+fun rowFor(episodeId: String): Download? =
+    db.downloadQueries.selectByEpisode(episodeId).executeAsOneOrNull()
+```
+
+Verify the `Download.sq` named query is `selectByEpisode` (or equivalent). If a query of that exact name doesn't exist, add one to `Download.sq`:
+
+```sql
+selectByEpisode:
+SELECT * FROM Download WHERE episodeId = ?;
+```
+
+Pre-existing query names may differ — `selectById`, `selectAllForEpisode`, etc. Reuse rather than duplicate. The Task 6 commit therefore touches `DownloadRepository.kt` and possibly `Download.sq`.
+
+- [ ] **Step 6: Run tests.**
 
 Run: `./gradlew :composeApp:testDebugUnitTest --tests "app.kofipod.snippets.SnippetCaptionRepositoryTest"`
-Expected: PASS — 5 tests pass.
+Expected: PASS — 6 tests pass (5 happy paths + the blank-response edge case).
 
-- [ ] **Step 5: Compile-only green check (incl. iOS).**
+- [ ] **Step 7: Compile-only green check (incl. iOS).**
 
 Run: `./gradlew :composeApp:compileDebugKotlinAndroid :composeApp:compileKotlinIosSimulatorArm64`
 Expected: BUILD SUCCESSFUL.
 
-- [ ] **Step 6: Commit.**
+- [ ] **Step 8: Commit.**
 
 ```bash
-git add composeApp/src/commonMain/kotlin/app/kofipod/snippets/SnippetCaptionPrompts.kt \
+git add composeApp/src/commonMain/kotlin/app/kofipod/snippets/CaptionDeps.kt \
+        composeApp/src/commonMain/kotlin/app/kofipod/snippets/SnippetCaptionPrompts.kt \
         composeApp/src/commonMain/kotlin/app/kofipod/snippets/SnippetCaptionRepository.kt \
-        composeApp/src/test/kotlin/app/kofipod/snippets/SnippetCaptionRepositoryTest.kt
+        composeApp/src/test/kotlin/app/kofipod/snippets/SnippetCaptionRepositoryTest.kt \
+        composeApp/src/commonMain/kotlin/app/kofipod/data/repo/DownloadRepository.kt
+# also stage Download.sq if you added a named query there
 git commit -m "slice4(snippets): caption repo (transcript-first, Gemini fallback)"
 ```
 
