@@ -68,7 +68,7 @@ class SnippetEditorViewModel(
         viewModelScope.launch {
             val s = snippets.selectById(snippetId) ?: return@launch
             _state.value =
-                SnippetEditorUiState(
+                _state.value.copy(
                     loading = false,
                     snippet = s,
                     title = s.title.orEmpty(),
