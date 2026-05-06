@@ -6,4 +6,10 @@
     <files-path
         name="updates"
         path="updates/" />
+    <!-- Exposes <cacheDir>/snippets/ where rendered snippet MP3s land before the
+         user shares them via the system share sheet. Scoped narrowly to this
+         directory only. -->
+    <cache-path
+        name="snippets"
+        path="snippets/" />
 </paths>
