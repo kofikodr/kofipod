@@ -265,6 +265,7 @@ val commonDataModule =
         single { PaywallRouter() }
         single { app.kofipod.bookmarks.BookmarkRepository(db = get()) }
         single { app.kofipod.bookmarks.BookmarkComposer() }
+        single { app.kofipod.search.LibrarySearchRepository(driver = get()) }
         single {
             app.kofipod.diagnostics.DiagnosticsBootstrapper(
                 config = get(),
@@ -303,6 +304,7 @@ val commonDataModule =
                 downloads = get(),
             )
         }
+        viewModel { app.kofipod.ui.screens.search.LibrarySearchViewModel(get()) }
         viewModel { StarterPackViewModel(get(), get()) }
         viewModel {
             PaywallViewModel(
