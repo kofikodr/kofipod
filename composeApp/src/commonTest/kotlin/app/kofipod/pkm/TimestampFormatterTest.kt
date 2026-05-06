@@ -14,4 +14,12 @@ class TimestampFormatterTest {
     @Test fun overAnHour() = assertEquals("1:02:03", formatHms(((1 * 3600) + (2 * 60) + 3) * 1_000L))
 
     @Test fun roundsDown() = assertEquals("00:01", formatHms(1_999))
+
+    @Test fun negativeIsClampedToZero() = assertEquals("00:00", formatHms(-1_000L))
+
+    @Test
+    fun tenHoursDoesNotPadHoursField() =
+        // Exotic but plausible (audio books occasionally appear in podcast feeds).
+        // Hours field is intentionally unpadded — `H:MM:SS`, not `HH:MM:SS`.
+        assertEquals("10:00:00", formatHms(10L * 3600L * 1_000L))
 }

@@ -20,4 +20,13 @@ class SluggerTest {
     @Test fun onlyPunctuationFallsBackToUntitled() = assertEquals("untitled", slugify("!!!---"))
 
     @Test fun trimmingHyphensAtEdges() = assertEquals("foo-bar", slugify("--foo-bar--"))
+
+    @Test
+    fun truncationLandingOnSeparatorReTrims() {
+        // "foo! xyz" → pre-truncation slug is "foo-xyz". Length-4 cap drops the
+        // 'xyz', leaving "foo-". The post-setLength trim must collapse the
+        // dangling hyphen to "foo" — otherwise filenames produced near the
+        // 32-char default cap could end with a stray '-' before ".md".
+        assertEquals("foo", slugify("foo! xyz", maxLen = 4))
+    }
 }
