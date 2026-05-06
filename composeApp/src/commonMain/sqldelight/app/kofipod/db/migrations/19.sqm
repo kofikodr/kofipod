@@ -1,0 +1,26 @@
+-- Slice 6 (Pro PKM): introduce PkmConnection + ExportLog tables for
+-- destination integrations and the export idempotency / retry ledger.
+-- No backfill — both tables are brand new.
+CREATE TABLE PkmConnection (
+    id TEXT NOT NULL PRIMARY KEY,
+    kind TEXT NOT NULL,
+    tokenRef TEXT,
+    folderUri TEXT,
+    enabledAt INTEGER NOT NULL,
+    lastSyncAt INTEGER
+);
+
+CREATE INDEX PkmConnection_kind_idx ON PkmConnection(kind);
+
+CREATE TABLE ExportLog (
+    itemKind TEXT NOT NULL,
+    itemId TEXT NOT NULL,
+    destinationKind TEXT NOT NULL,
+    externalId TEXT,
+    exportedAt INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    errorMessage TEXT,
+    PRIMARY KEY (itemKind, itemId, destinationKind)
+);
+
+CREATE INDEX ExportLog_status_idx ON ExportLog(status);

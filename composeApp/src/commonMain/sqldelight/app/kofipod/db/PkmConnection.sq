@@ -1,0 +1,30 @@
+-- Slice 6 (Pro PKM): per-destination connection record for export integrations.
+-- One row per kind (e.g. 'obsidian', 'logseq', 'notion'); tokenRef points into
+-- EncryptedSharedPreferences when the destination needs an OAuth/PAT, folderUri
+-- holds a SAF tree URI for filesystem-style destinations.
+CREATE TABLE PkmConnection (
+    id TEXT NOT NULL PRIMARY KEY,
+    kind TEXT NOT NULL,
+    tokenRef TEXT,
+    folderUri TEXT,
+    enabledAt INTEGER NOT NULL,
+    lastSyncAt INTEGER
+);
+
+CREATE INDEX PkmConnection_kind_idx ON PkmConnection(kind);
+
+selectAll:
+SELECT * FROM PkmConnection;
+
+selectByKind:
+SELECT * FROM PkmConnection WHERE kind = :kind LIMIT 1;
+
+upsert:
+INSERT OR REPLACE INTO PkmConnection(id, kind, tokenRef, folderUri, enabledAt, lastSyncAt)
+VALUES (?, ?, ?, ?, ?, ?);
+
+updateLastSync:
+UPDATE PkmConnection SET lastSyncAt = :ts WHERE kind = :kind;
+
+deleteByKind:
+DELETE FROM PkmConnection WHERE kind = :kind;
