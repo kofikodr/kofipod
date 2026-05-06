@@ -451,6 +451,8 @@ val commonDataModule =
                 snippetId = snippetId,
                 snippets = get(),
                 launcher = get(),
+                player = get(),
+                waveformGen = get(),
             )
         }
         viewModel { StatsViewModel(get()) }

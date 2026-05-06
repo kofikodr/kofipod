@@ -86,6 +86,21 @@ class SnippetRepository(private val db: KofipodDatabase) {
         path: String,
     ) = db.snippetQueries.setRendered(format.wire, path, id)
 
+    /**
+     * Persist the user-chosen format before enqueuing a render. The render
+     * service reads this column to decide which exporter to call. The
+     * [lastExportPath] column is intentionally left NULL — the service
+     * overwrites both columns via [setRendered] on successful completion.
+     *
+     * Do NOT use [setRendered] here: its contract requires a real path, and
+     * the Saved-section badge relies on `lastExportPath != null` meaning "file
+     * exists on disk".
+     */
+    fun markFormatPending(
+        id: String,
+        format: SnippetFormat,
+    ) = db.snippetQueries.markFormatPending(format.wire, id)
+
     fun deleteById(id: String) = db.snippetQueries.deleteById(id)
 
     suspend fun selectById(id: String): Snippet? =

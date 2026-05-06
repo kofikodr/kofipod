@@ -41,6 +41,9 @@ UPDATE Snippet SET captionOverride = ? WHERE id = ?;
 setRendered:
 UPDATE Snippet SET lastExportFormat = ?, lastExportPath = ? WHERE id = ?;
 
+markFormatPending:
+UPDATE Snippet SET lastExportFormat = ? WHERE id = ?;
+
 deleteById:
 DELETE FROM Snippet WHERE id = ?;
 

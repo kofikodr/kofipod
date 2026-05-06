@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.kofipod.snippets.RenderProgress
 import app.kofipod.snippets.SnippetWindow
 import app.kofipod.ui.primitives.KPButton
 import app.kofipod.ui.primitives.KPButtonStyle
@@ -93,19 +94,19 @@ fun SnippetEditorScreen(
             TrimRow(
                 label = "Start",
                 value = state.startMs,
-                onMinus5 = { viewModel.nudgeStart(-FIVE_SECONDS_MS) },
-                onMinus1 = { viewModel.nudgeStart(-ONE_SECOND_MS) },
-                onPlus1 = { viewModel.nudgeStart(+ONE_SECOND_MS) },
-                onPlus5 = { viewModel.nudgeStart(+FIVE_SECONDS_MS) },
+                onMinus5 = { viewModel.setStart(state.startMs - FIVE_SECONDS_MS) },
+                onMinus1 = { viewModel.setStart(state.startMs - ONE_SECOND_MS) },
+                onPlus1 = { viewModel.setStart(state.startMs + ONE_SECOND_MS) },
+                onPlus5 = { viewModel.setStart(state.startMs + FIVE_SECONDS_MS) },
             )
 
             TrimRow(
                 label = "End",
                 value = state.endMs,
-                onMinus5 = { viewModel.nudgeEnd(-FIVE_SECONDS_MS) },
-                onMinus1 = { viewModel.nudgeEnd(-ONE_SECOND_MS) },
-                onPlus1 = { viewModel.nudgeEnd(+ONE_SECOND_MS) },
-                onPlus5 = { viewModel.nudgeEnd(+FIVE_SECONDS_MS) },
+                onMinus5 = { viewModel.setEnd(state.endMs - FIVE_SECONDS_MS) },
+                onMinus1 = { viewModel.setEnd(state.endMs - ONE_SECOND_MS) },
+                onPlus1 = { viewModel.setEnd(state.endMs + ONE_SECOND_MS) },
+                onPlus5 = { viewModel.setEnd(state.endMs + FIVE_SECONDS_MS) },
             )
 
             Text(
@@ -116,9 +117,9 @@ fun SnippetEditorScreen(
 
             Spacer(Modifier.height(8.dp))
             KPButton(
-                label = if (state.rendering) "Rendering…" else "Render & Share",
+                label = if (state.progress !is RenderProgress.Idle) "Rendering…" else "Render & Share",
                 onClick = {
-                    if (!state.rendering) viewModel.saveAndRender(onBack)
+                    if (state.progress is RenderProgress.Idle) viewModel.saveAndRender()
                 },
                 style = KPButtonStyle.PrimaryPink,
                 modifier = Modifier.fillMaxWidth(),
