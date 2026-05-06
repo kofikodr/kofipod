@@ -74,6 +74,11 @@ val androidPlatformModule =
         // they need an Android Context for FileProvider, MediaCodec, and the
         // foreground service launcher.
         single { FileChecker() }
+        // Resolver injects the FileCheckerApi interface (commonMain), so Koin
+        // needs an explicit binding mapping the interface to the actual.
+        // Without this, SnippetRenderService crashes at first render with
+        // NoDefinitionFoundException for FileCheckerApi.
+        single<app.kofipod.snippets.FileCheckerApi> { get<FileChecker>() }
         single { SnippetExporter(androidContext()) }
         single { SnippetRenderLauncher(androidContext()) }
         single { ThemeSystem(androidContext()) }
