@@ -13,11 +13,11 @@ sealed interface CaptionResolution {
     data class FromGemini(val text: String) : CaptionResolution
 
     data class None(val reason: NoneReason) : CaptionResolution
-}
 
-enum class NoneReason {
-    NoTranscript,
-    NoAudioDownloaded,
-    NoGeminiKey,
-    GeminiFailed,
+    enum class NoneReason {
+        NoTranscript,
+        NoAudioDownloaded,
+        NoGeminiKey,
+        GeminiFailed,
+    }
 }

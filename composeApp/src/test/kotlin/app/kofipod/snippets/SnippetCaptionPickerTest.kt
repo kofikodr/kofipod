@@ -61,4 +61,18 @@ class SnippetCaptionPickerTest {
             )
         assertEquals(SnippetCaptionPicker.Path.Gemini, p)
     }
+
+    @Test
+    fun transcript_present_short_circuits_even_when_no_audio_no_key() {
+        // Pins the transcript-first ordering. A future refactor that accidentally
+        // moves the transcript guard below the key check would silently fail the
+        // "Pro user with publisher transcript but no key + no download" case.
+        val p =
+            picker.pick(
+                transcriptUrl = "https://x.com/transcript.vtt",
+                isAudioDownloaded = false,
+                hasGeminiKey = false,
+            )
+        assertEquals(SnippetCaptionPicker.Path.Transcript, p)
+    }
 }
