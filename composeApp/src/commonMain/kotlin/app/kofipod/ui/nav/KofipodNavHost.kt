@@ -42,6 +42,7 @@ fun KofipodNavHost(navController: NavHostController) {
                 onOpenStarterPack = { navController.navigate(Route.StarterPack) },
                 onOpenStats = { navController.navigate(Route.Stats) },
                 onOpenBookmarks = { navController.navigate(Route.Bookmarks) },
+                onOpenLibrarySearch = { navController.navigate(Route.LibrarySearch) },
             )
         }
         composable<Route.Bookmarks> {

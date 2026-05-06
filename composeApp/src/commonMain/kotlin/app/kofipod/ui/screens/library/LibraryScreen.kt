@@ -74,6 +74,7 @@ fun LibraryScreen(
     onOpenStarterPack: () -> Unit,
     onOpenStats: () -> Unit,
     onOpenBookmarks: () -> Unit,
+    onOpenLibrarySearch: () -> Unit,
     viewModel: LibraryViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -121,6 +122,14 @@ fun LibraryScreen(
                 statsHasBadge = state.statsHasUnseenTierChange,
                 onOpenBookmarks = {
                     if (viewModel.onBookmarksTapped()) onOpenBookmarks()
+                },
+            )
+        }
+
+        item {
+            LibrarySearchEntry(
+                onTap = {
+                    if (viewModel.onLibrarySearchTapped()) onOpenLibrarySearch()
                 },
             )
         }
@@ -237,6 +246,31 @@ private sealed interface Tile {
     data class Unfiled(val podcasts: List<Podcast>) : Tile
 
     data object NewList : Tile
+}
+
+@Composable
+private fun LibrarySearchEntry(onTap: () -> Unit) {
+    val c = LocalKofipodColors.current
+    val r = LocalKofipodRadii.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp, bottom = 4.dp)
+            .clip(RoundedCornerShape(r.md))
+            .background(c.surface)
+            .border(1.dp, c.border, RoundedCornerShape(r.md))
+            .clickable(onClick = onTap)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        KPIcon(name = KPIconName.Search, color = c.textMute, size = 18.dp)
+        Spacer(Modifier.width(10.dp))
+        Text(
+            "Search bookmarks, summaries, transcripts",
+            color = c.textMute,
+            fontSize = 14.sp,
+        )
+    }
 }
 
 @Composable

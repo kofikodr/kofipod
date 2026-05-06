@@ -93,4 +93,21 @@ class LibraryViewModel(
                 false
             }
         }
+
+    /**
+     * Returns true when the caller should navigate to the Library search screen.
+     * Returns false (and opens the paywall) when the user is Free or Unknown.
+     * Same gate semantics as [onBookmarksTapped]. Distinct trigger key so future
+     * conversion analytics can attribute paywall opens by surface.
+     */
+    fun onLibrarySearchTapped(): Boolean =
+        when (pro.state.value) {
+            is ProEntitlement.Pro -> true
+            ProEntitlement.Free,
+            ProEntitlement.Unknown,
+            -> {
+                paywallRouter.requestPaywall("paywall_library_search")
+                false
+            }
+        }
 }
