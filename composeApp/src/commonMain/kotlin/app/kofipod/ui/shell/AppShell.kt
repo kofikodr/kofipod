@@ -43,6 +43,8 @@ import app.kofipod.backup.BackupPickerHost
 import app.kofipod.diagnostics.DiagnosticsCapabilities
 import app.kofipod.diagnostics.DiagnosticsConfigRepository
 import app.kofipod.opml.OpmlPickerHost
+import app.kofipod.pkm.PkmExportCoordinator
+import app.kofipod.pkm.PkmExportResult
 import app.kofipod.pro.PaywallRouter
 import app.kofipod.pro.PaywallState
 import app.kofipod.ui.UiEvent
@@ -83,6 +85,28 @@ fun AppShell() {
                     // Replace any in-flight snackbar so back-to-back failures don't queue.
                     snackbarHostState.currentSnackbarData?.dismiss()
                     snackbarHostState.showSnackbar(message = event.message)
+                }
+            }
+        }
+    }
+    // PKM (Pro) export results. Copied → confirmation snackbar; Failed → error
+    // snackbar with the underlying message; Shared deliberately stays silent —
+    // the system share sheet is its own UI signal and a snackbar would just
+    // double up on confirmation.
+    val pkmCoordinator: PkmExportCoordinator = koinInject()
+    LaunchedEffect(pkmCoordinator) {
+        pkmCoordinator.results.collect { result ->
+            when (result) {
+                PkmExportResult.Copied -> {
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                    snackbarHostState.showSnackbar(message = "Copied to clipboard")
+                }
+                PkmExportResult.Shared -> {
+                    // No snackbar needed — the system share sheet is its own UI signal.
+                }
+                is PkmExportResult.Failed -> {
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                    snackbarHostState.showSnackbar(message = "Export failed: ${result.message}")
                 }
             }
         }
