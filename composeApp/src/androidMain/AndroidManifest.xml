@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Required to install the downloaded APK for the in-app updater. The user is
@@ -43,6 +44,10 @@
         <service
             android:name=".downloads.DownloadService"
             android:foregroundServiceType="dataSync"
+            android:exported="false" />
+        <service
+            android:name=".snippets.SnippetRenderService"
+            android:foregroundServiceType="mediaProcessing|dataSync"
             android:exported="false" />
         <provider
             android:name=".playback.auto.ArtworkProvider"
