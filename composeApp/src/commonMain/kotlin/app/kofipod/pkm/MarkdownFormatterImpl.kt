@@ -27,7 +27,10 @@ class MarkdownFormatterImpl : MarkdownFormatter {
                 "episode" to episode.title,
                 "episodeUrl" to episode.enclosureUrl,
                 "timestampMs" to snippet.startMs.toString(),
-                "durationMs" to (snippet.endMs - snippet.startMs).toString(),
+                // Use Snippet.durationMs (coerceAtLeast(0L)) so a degenerate row with
+                // endMs < startMs cannot leak a negative integer into Slice 6 destination
+                // adapters that parse the YAML.
+                "durationMs" to snippet.durationMs.toString(),
                 "createdAt" to isoFromEpochMs(snippet.createdAtMs),
                 "kofipodId" to snippet.id,
             )

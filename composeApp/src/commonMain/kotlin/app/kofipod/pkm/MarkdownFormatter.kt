@@ -17,6 +17,12 @@ import app.kofipod.snippets.Snippet
  *   - Snippet: kind, podcast, episode, episodeUrl, timestampMs, durationMs, createdAt, kofipodId
  *   - Bookmark: kind, podcast, episode, episodeUrl, timestampMs, createdAt, kofipodId
  *   - AiSummary: kind, podcast, episode, episodeUrl, createdAt, kofipodId
+ *
+ * `kofipodId` is the artifact's own id for snippets and bookmarks. AI summaries
+ * have no artifact-level id — `EpisodeAiSummary` is keyed by `episodeId` — so
+ * the synthetic form `"summary-<episodeId>"` is used. Slice 6 destination
+ * adapters that key off `kofipodId` for upsert MUST tolerate this prefixed
+ * shape.
  */
 interface MarkdownFormatter {
     fun formatSnippet(

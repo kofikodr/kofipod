@@ -144,7 +144,22 @@ class MarkdownFormatterTest {
             listOf("kind", "podcast", "episode", "episodeUrl", "createdAt", "kofipodId"),
             doc.frontmatter.map { it.first },
         )
-        assertEquals("summary", doc.frontmatter.toMap()["kind"])
+        val map = doc.frontmatter.toMap()
+        assertEquals("summary", map["kind"])
+        // EpisodeAiSummary has no artifact-level id; the formatter synthesises
+        // "summary-<episodeId>" so Slice 6 destination adapters get a stable
+        // upsert key. See KDoc on MarkdownFormatter for the contract.
+        assertEquals("summary-${episode.id}", map["kofipodId"])
+    }
+
+    @Test
+    fun snippetWithDegenerateRangeProducesNonNegativeDurationMs() {
+        // Defence-in-depth: if a corrupt DB row had endMs < startMs, the formatter
+        // must use Snippet.durationMs's coerceAtLeast(0L) guard rather than emitting
+        // a negative integer that downstream YAML parsers would accept silently.
+        val s = sampleSnippet().copy(startMs = 100_000, endMs = 0)
+        val doc = formatter.formatSnippet(s, episode, podcast)
+        assertEquals("0", doc.frontmatter.toMap()["durationMs"])
     }
 
     @Test
