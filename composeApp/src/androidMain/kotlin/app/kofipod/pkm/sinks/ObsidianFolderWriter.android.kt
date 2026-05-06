@@ -7,17 +7,13 @@ import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-actual open class ObsidianFolderWriter {
-    actual open suspend fun write(
+actual class ObsidianFolderWriterImpl(private val context: Context) : ObsidianFolderWriter {
+    actual override suspend fun write(
         treeUri: String,
         filename: String,
         body: String,
     ) {
         withContext(Dispatchers.IO) {
-            val contextObj =
-                contextProvider()
-                    ?: error("Context not provided to ObsidianFolderWriter")
-            val context = contextObj as Context
             val tree =
                 DocumentFile.fromTreeUri(context, Uri.parse(treeUri))
                     ?: error("Cannot resolve Obsidian folder; permission may have been revoked")
@@ -29,9 +25,5 @@ actual open class ObsidianFolderWriter {
                 stream.write(body.toByteArray(Charsets.UTF_8))
             } ?: error("Could not open output stream for $filename")
         }
-    }
-
-    companion object {
-        var contextProvider: () -> Any? = { null }
     }
 }

@@ -48,7 +48,7 @@ class ObsidianSinkTest {
         }
 }
 
-private class FakeWriter(val throwOnWrite: Throwable? = null) : ObsidianFolderWriter() {
+private class FakeWriter(val throwOnWrite: Throwable? = null) : ObsidianFolderWriter {
     var lastTreeUri: String? = null
     var lastFilename: String? = null
 
