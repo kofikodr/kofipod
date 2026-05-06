@@ -35,16 +35,20 @@ class WaveformGeneratorTest {
 
     @Test
     fun smoothing_avoids_constant_runs() {
-        // After smoothing, no run of 4+ adjacent identical values for a real
-        // (non-degenerate) seed — proves the smoother isn't producing flat
-        // sections that would render as visual gaps.
-        val w = gen.generate("snip-real", barCount = 64)
-        var run = 1
-        var maxRun = 1
-        for (i in 1 until w.bars.size) {
-            if (w.bars[i] == w.bars[i - 1]) run++ else run = 1
-            if (run > maxRun) maxRun = run
+        // Nudge invariant: no run of 4+ adjacent values are exactly equal,
+        // for any seed. The smoother correlates neighbours; the nudge step
+        // breaks exact ties; together they prevent flat sections that would
+        // render as visual gaps.
+        val seeds = listOf("snip-real", "", "aaaa", "snip-abc123", "snip-def456", "x")
+        for (seed in seeds) {
+            val w = gen.generate(seed, barCount = 64)
+            var run = 1
+            var maxRun = 1
+            for (i in 1 until w.bars.size) {
+                if (w.bars[i] == w.bars[i - 1]) run++ else run = 1
+                if (run > maxRun) maxRun = run
+            }
+            assertTrue(maxRun < 4, "seed='$seed': constant run of $maxRun bars")
         }
-        assertTrue(maxRun < 4, "constant run of $maxRun bars")
     }
 }

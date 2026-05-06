@@ -21,7 +21,10 @@ class WaveformGenerator {
         barCount: Int = DEFAULT_BAR_COUNT,
     ): WaveformSamples {
         require(barCount > 0) { "barCount must be positive" }
-        val rand = Random(seed.hashCode())
+        // 64-bit accumulator avoids the silent collision that
+        // `String.hashCode()`'s 32-bit Int would expose for distinct snippet IDs.
+        val seedLong = seed.fold(0L) { acc, c -> acc * 31L + c.code }
+        val rand = Random(seedLong)
         // Step 1: raw uniform in [0.15, 1.0] — bias away from zero so no bar
         // disappears entirely.
         val raw = FloatArray(barCount) { 0.15f + rand.nextFloat() * 0.85f }
@@ -33,8 +36,12 @@ class WaveformGenerator {
             val r = if (i == barCount - 1) raw[i] else raw[i + 1]
             smoothed[i] = (l + raw[i] + r) / 3f
         }
-        // Step 3: nudge any accidentally-equal adjacent values apart by 1%
-        // so the smoothing-avoids-constant-runs invariant holds for any seed.
+        // Step 3: nudge any accidentally-equal adjacent values apart by 1%.
+        // The pass is intentionally sequential — nudging smoothed[i] moves the
+        // pair-comparison ceiling for the next iteration, which is fine because
+        // the smoothing step already correlated neighbours; the nudge only needs
+        // to break exact ties, not enforce a minimum gap globally. NUDGE is
+        // 20× EPS so a single nudge always pushes the pair safely past EPS.
         for (i in 1 until barCount) {
             if (abs(smoothed[i] - smoothed[i - 1]) < EPS) {
                 smoothed[i] = (smoothed[i] + NUDGE).coerceAtMost(1f)
@@ -46,6 +53,6 @@ class WaveformGenerator {
     private companion object {
         const val DEFAULT_BAR_COUNT = 64
         const val EPS = 0.001f
-        const val NUDGE = 0.02f
+        const val NUDGE = 0.02f // NUDGE >> EPS so one nudge clears the threshold
     }
 }
