@@ -87,20 +87,26 @@ class TranscriptSlicerTest {
 
     @Test
     fun note_block_does_not_falsely_match_embedded_timestamp() {
-        // A NOTE block that contains a timestamp-shaped substring must not be
-        // parsed as a real cue. The regex's line-anchored semantics (via
-        // matchEntire) gate this — if someone "fixes" the regex by switching
-        // to `find`, this test fails.
+        // The NOTE block contains a timestamp-shaped substring at 00:00:10.000.
+        // We query exactly that window. Under correct `matchEntire` regex
+        // semantics (line-anchored), the NOTE line cannot match — the slicer
+        // sees zero cues at 10s and falls back to nearest-to-startMs, which
+        // is the real cue at 90s. If a future refactor switched to `find`,
+        // the embedded timestamps would be parsed as a cue at 10s and the
+        // text following the cue ("Spurious comment line.") would be returned
+        // instead, failing this assertion.
         val vtt =
             """
             WEBVTT
 
-            NOTE see 00:00:10.000 --> 00:00:15.000 in the original draft
+            NOTE
+            See 00:00:10.000 --> 00:00:15.000 in the original draft
+            Spurious comment line.
 
             00:01:30.000 --> 00:01:35.000
             Real cue.
             """.trimIndent()
-        val sliced = TranscriptSlicer.sliceForWindow(vtt, startMs = 90_000L, endMs = 95_000L)
+        val sliced = TranscriptSlicer.sliceForWindow(vtt, startMs = 10_000L, endMs = 15_000L)
         assertEquals("Real cue.", sliced)
     }
 }
