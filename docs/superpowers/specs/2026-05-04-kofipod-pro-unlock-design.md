@@ -19,14 +19,16 @@ Why this shape:
 
 Two non-consumable Google Play Billing v6+ products:
 
-| SKU | Product ID | Price (USD) | Unlocks |
-|---|---|---|---|
-| Kofipod Pro | `kofipod_pro` | **$12.99** | All Pro features for the purchasing Google account |
-| Kofipod Pro Family | `kofipod_pro_family` | **$19.99** | All Pro features for the purchaser's Google Family group (up to 5 accounts) |
+| SKU                    | Product ID               | Price (USD)    | Unlocks |
+|------------------------|--------------------------|----------------|---|
+| Kofipod Pro            | `kofipod_pro`            | **$12.99**     | All Pro features for the purchasing Google account |
+| ~~Kofipod Pro Family~~ | ~~`kofipod_pro_family`~~ | ~~**$19.99**~~ | ~~All Pro features for the purchaser's Google Family group (up to 5 accounts)~~ |
 
 **No subscription. No trial. No ads. No future "Pro 2.0 — buy again."** All v1.0 + v1.1 + future *Pro-tier* features ship as free updates to existing Pro buyers. (A potential later **Cloud** tier — sync, hosted clip pages, hosted AI — would be a separate subscription product, not a re-paywalling of Pro features.)
 
 Restore Purchase happens automatically on app start and via a manual button in Settings. Entitlement is recovered through Play Billing on new devices, not through Auto Backup — this prevents device-clone bypass and removes the ambiguity of "is my purchase tied to my device or my account."
+
+**Note: Family Plan dropped**
 
 ## Build flavors and distribution
 
@@ -379,19 +381,19 @@ Auto Backup rules updated to **include** Bookmark, Snippet, SmartPlaylist, Expor
 
 Authored as guidance for the implementation plan agent. Actual ordering and granularity will be refined there.
 
-| Slice | Scope | Notes |
-|---|---|---|
-| **Pre-0** | Cleanup | Delete `app.kofipod.update` package + UI + DI + tests (see "Removed in this release"). Self-contained commit; emulator gate before Slice 0 starts. |
-| **0** | Pro entitlement plumbing + flavor split | Add `play` / `foss` flavors. `BillingClientPort` expect/actual across `playAndroid` + `fossAndroid` source sets. `ProEntitlementRepository`, Paywall sheet, restore-purchase. Gates a single toy feature for end-to-end validation in both flavors. README update for new distribution policy. |
-| **1** | Bookmarks | Smallest real feature; exercises schema-bump + Pro-gate pattern. |
-| **2** | Library search (FTS5) | Small surface; lights up FTS index for later features. |
-| **3** | Snippets MVP — MP3 only | Editor, render, share. Proves foreground-service pattern without MP4 risk. |
-| **4** | Snippets MP4 (Media3 Transformer) | Highest engineering risk; gets its own slice. Cover bg + waveform overlay + caption overlay. |
-| **5** | PKM exports — Markdown | Universal, zero-auth. Establishes Markdown formatter contract. |
-| **6** | PKM exports — Obsidian + Readwise | SAF folder picker; Readwise OAuth. |
+| Slice        | Scope | Notes |
+|--------------|---|---|
+| **Pre-0**    | Cleanup | Delete `app.kofipod.update` package + UI + DI + tests (see "Removed in this release"). Self-contained commit; emulator gate before Slice 0 starts. |
+| **0**        | Pro entitlement plumbing + flavor split | Add `play` / `foss` flavors. `BillingClientPort` expect/actual across `playAndroid` + `fossAndroid` source sets. `ProEntitlementRepository`, Paywall sheet, restore-purchase. Gates a single toy feature for end-to-end validation in both flavors. README update for new distribution policy. |
+| **1**        | Bookmarks | Smallest real feature; exercises schema-bump + Pro-gate pattern. |
+| **2**        | Library search (FTS5) | Small surface; lights up FTS index for later features. |
+| **3**        | Snippets MVP — MP3 only | Editor, render, share. Proves foreground-service pattern without MP4 risk. |
+| **4**        | Snippets MP4 (Media3 Transformer) | Highest engineering risk; gets its own slice. Cover bg + waveform overlay + caption overlay. |
+| **5**        | PKM exports — Markdown | Universal, zero-auth. Establishes Markdown formatter contract. |
+| **6**        | PKM exports — Obsidian + Readwise | SAF folder picker; Readwise OAuth. |
+| **7**        | Smart Playlists | Predicate model + editor + virtual rows in Library. |
 | **— launch v1.0 —** | | |
-| **7** (v1.1) | Silence Skip | Media3 `AudioProcessor` + per-show override + Stats tile. |
-| **8** (v1.1) | Smart Playlists | Predicate model + editor + virtual rows in Library. |
+| **8** (v1.1) | Silence Skip | Media3 `AudioProcessor` + per-show override + Stats tile. |
 | **9** (v1.1) | PKM — Notion | OAuth + database picker. |
 
 ## Out of scope (v1)
@@ -410,7 +412,7 @@ Authored as guidance for the implementation plan agent. Actual ordering and gran
 - Exact AirPod tap-to-snip mapping on Android: `MediaSession` custom command vs `MediaSession.Callback.onMediaButtonEvent`. Spike in Slice 0.
 - Readwise OAuth: official OAuth vs API token paste. Official OAuth requires a registered redirect URI; API token paste is simpler but slightly worse UX. Decide in Slice 6.
 - Notion database schema: do we let users pick a database, or do we create a "Kofipod Snippets" database on first connect? Decide in Slice 9.
-- Family SKU sharing semantics: confirm Play Billing v6+ Family Sharing actually grants entitlement to family-group accounts on cold start (the v6 docs are ambiguous). Spike in Slice 0.
+- ~~Family SKU sharing semantics: confirm Play Billing v6+ Family Sharing actually grants entitlement to family-group accounts on cold start (the v6 docs are ambiguous). Spike in Slice 0~~.
 
 ## Decision log
 
