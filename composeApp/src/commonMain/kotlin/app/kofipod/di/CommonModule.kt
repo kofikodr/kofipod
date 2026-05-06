@@ -270,6 +270,55 @@ val commonDataModule =
         // in the Android Koin module.
         single { app.kofipod.snippets.SnippetSourceResolver(get()) }
         single { app.kofipod.snippets.SnippetRepository(get()) }
+        // Snippet Slice 4 — caption / waveform / format-routing collaborators.
+        // CaptionDeps is a seam so SnippetCaptionRepository stays unit-testable
+        // without MockK. The production adapter delegates to the four concrete
+        // classes listed below; Task 16 may extract this into its own binding
+        // if the DI module grows too wide.
+        single<app.kofipod.snippets.CaptionDeps> {
+            val downloads: DownloadRepository = get()
+            val episodes: EpisodesRepository = get()
+            val coordinator: AudioUploadCoordinator = get()
+            val gemini: GeminiClient = get()
+            val config: AiConfigRepository = get()
+            object : app.kofipod.snippets.CaptionDeps {
+                override suspend fun isAudioReadyFor(episodeId: String): Boolean = !downloads.localPathFor(episodeId).isNullOrBlank()
+
+                override suspend fun currentGeminiKey(): String? = config.currentKey()
+
+                override suspend fun transcribeForCaption(
+                    episodeId: String,
+                    prompt: String,
+                ): Result<String> =
+                    runCatching {
+                        val key = config.currentKey() ?: error("no Gemini key")
+                        val episode = episodes.episodeNow(episodeId) ?: error("no episode")
+                        val download = downloads.rowFor(episodeId) ?: error("no download row")
+                        val acquired = coordinator.acquire(key, episode, download).getOrThrow()
+                        // generateFromAudio returns Result<AiSummaryJson>; we need the
+                        // raw prose so extract it from the structured response.
+                        gemini
+                            .generateFromAudio(
+                                apiKey = key,
+                                model = app.kofipod.ai.GeminiModel.Flash,
+                                fileUri = acquired.fileUri,
+                                mimeType = acquired.mimeType,
+                                prompt = prompt,
+                            ).getOrThrow()
+                            .summary
+                    }
+            }
+        }
+        single { app.kofipod.snippets.SnippetCaptionPicker() }
+        single { app.kofipod.snippets.WaveformGenerator() }
+        single {
+            app.kofipod.snippets.SnippetCaptionRepository(
+                get<app.kofipod.data.repo.EpisodeSource>(),
+                get<app.kofipod.ai.TranscriptFetcher>(),
+                get<app.kofipod.snippets.CaptionDeps>(),
+                get<app.kofipod.snippets.SnippetCaptionPicker>(),
+            )
+        }
         single { app.kofipod.search.LibrarySearchRepository(driver = get()) }
         single {
             app.kofipod.diagnostics.DiagnosticsBootstrapper(
