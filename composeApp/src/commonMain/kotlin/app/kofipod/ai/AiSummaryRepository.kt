@@ -440,6 +440,16 @@ class AiSummaryRepository(
                 return
             }
         setStage(episodeId, GenerationStage.Formatting, sizeBytes = null)
+        // Persist transcript text opportunistically for FTS-backed Library search.
+        // The text is already in memory from step 3; writing it here costs only
+        // the disk write. We cache BEFORE the disconnect guard because transcript
+        // content is publisher data — it remains useful for search even if the
+        // user's Gemini key has since been revoked.
+        db.transcriptCacheQueries.upsert(
+            episodeId = episodeId,
+            text = transcriptText,
+            fetchedAtMs = clock.now().toEpochMilliseconds(),
+        )
 
         if (aiConfig.currentKey().isNullOrBlank()) {
             // Defence in depth: if the user disconnected during the network

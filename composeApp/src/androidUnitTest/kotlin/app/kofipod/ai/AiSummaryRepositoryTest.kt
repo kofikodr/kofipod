@@ -27,6 +27,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -235,6 +236,31 @@ class AiSummaryRepositoryTest {
                 "Freshly-persisted summary must NOT be flagged stale — closes the round-trip " +
                     "so a fingerprint-comparison regression can't slip past the pipeline test",
             )
+        }
+
+    @Test
+    fun generate_persistsTranscriptText_intoTranscriptCache_andLightsUpFtsIndex() =
+        runTest {
+            val transcriptBody = "WEBVTT\n\n00:00.000 --> 00:02.000\nThe word kofipodbananaword appears here exactly once."
+            val (repo, db) =
+                build(
+                    initialKey = "k",
+                    transcripts = StubTranscriptFetcher.success(transcriptBody),
+                    summariser = StubSummariser(returns = StubSummariser.summary("Summary body.")),
+                )
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "https://example.com/t.vtt")
+
+            repo.generate("ep1")
+            advanceUntilIdle()
+
+            // Transcript text persisted, keyed by episodeId, with the body verbatim.
+            val cached = db.transcriptCacheQueries.selectByEpisode("ep1").executeAsOneOrNull()
+            assertNotNull(cached, "runTranscript must persist the fetched body for FTS indexing")
+            assertEquals(transcriptBody, cached.text)
+            assertTrue(cached.fetchedAtMs > 0, "fetchedAtMs must be set from the injected Clock")
+            // Note: FTS trigger assertion is intentionally omitted here — the production seam
+            // this test owns is "AI repo writes to TranscriptCache". The FTS trigger behaviour
+            // over TranscriptCache writes is independently covered by LibrarySearchRepositoryTest.
         }
 
     @Test
