@@ -15,12 +15,12 @@ class MarkdownExporter(
     private val clipboard: ClipboardPort,
     private val tempFile: MarkdownTempFilePort,
     private val sharer: Sharer,
-) {
-    fun exportToClipboard(document: MarkdownDocument) {
+) : MarkdownSink {
+    override fun exportToClipboard(document: MarkdownDocument) {
         clipboard.copyText(label = "Kofipod Markdown", text = document.render())
     }
 
-    suspend fun exportAsFile(
+    override suspend fun exportAsFile(
         document: MarkdownDocument,
         shareTitle: String,
     ) {
