@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -61,6 +62,7 @@ fun AiSummaryPanel(
     audioMinutes: Int,
     onOpenAiSetup: () -> Unit,
     modifier: Modifier = Modifier,
+    onExportSummary: () -> Unit = {},
     viewModel: AiSummaryViewModel = koinViewModel(parameters = { parametersOf(episodeId) }),
 ) {
     val state by viewModel.state.collectAsState()
@@ -70,6 +72,7 @@ fun AiSummaryPanel(
         onGenerate = viewModel::onGenerate,
         onCancel = viewModel::onCancel,
         onOpenAiSetup = onOpenAiSetup,
+        onExportSummary = onExportSummary,
         modifier = modifier,
     )
 }
@@ -87,6 +90,7 @@ internal fun AiSummaryPanelContent(
     onCancel: () -> Unit,
     onOpenAiSetup: () -> Unit,
     modifier: Modifier = Modifier,
+    onExportSummary: () -> Unit = {},
     // Injectable so Paparazzi snapshots can pin the "X ago" footer to a stable
     // bucket. Production keeps the default — the relative caption updates on
     // every recomposition, which is what the user expects on a long-lived screen.
@@ -96,7 +100,8 @@ internal fun AiSummaryPanelContent(
         AiSummaryUiState.Hidden -> Unit
         is AiSummaryUiState.Idle -> IdleCard(state, audioMinutes, onGenerate, modifier)
         is AiSummaryUiState.Generating -> GeneratingCard(state, onCancel, modifier)
-        is AiSummaryUiState.Ready -> ReadyCard(state.summary, state.stale, onGenerate, nowMs, modifier)
+        is AiSummaryUiState.Ready ->
+            ReadyCard(state.summary, state.stale, onGenerate, onExportSummary, nowMs, modifier)
         is AiSummaryUiState.Error -> ErrorCard(state.error, onGenerate, onOpenAiSetup, modifier)
     }
 }
@@ -385,6 +390,7 @@ private fun ReadyCard(
     summary: AiSummary,
     stale: Boolean,
     onRegenerate: () -> Unit,
+    onExportSummary: () -> Unit,
     nowMs: Long,
     modifier: Modifier,
 ) {
@@ -414,6 +420,17 @@ private fun ReadyCard(
             lineHeight = 22.sp,
             modifier = Modifier.testTag("aiPanelReadySummary"),
         )
+        Spacer(Modifier.height(8.dp))
+        // Pro-gated affordance. The VM (`onAiSummaryExportRequested`) routes
+        // Free / Unknown taps to the paywall, so we render the button
+        // unconditionally on Ready and let the VM enforce entitlement —
+        // mirrors the bookmark/snippet long-press export pattern.
+        TextButton(
+            onClick = onExportSummary,
+            modifier = Modifier.testTag("aiPanelReadyExportButton"),
+        ) {
+            Text("Export as Markdown")
+        }
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(

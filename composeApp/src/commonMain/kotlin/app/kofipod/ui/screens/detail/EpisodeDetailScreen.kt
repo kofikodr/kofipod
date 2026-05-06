@@ -91,6 +91,7 @@ fun EpisodeDetailScreen(
         onSnippetTap = onOpenSnippetEditor,
         onBookmarkLongPress = { bm -> viewModel.onBookmarkExportRequested(bm.id) },
         onSnippetLongPress = { sn -> viewModel.onSnippetExportRequested(sn.id) },
+        onAiSummaryExport = viewModel::onAiSummaryExportRequested,
         onOpenAiSetup = onOpenAiSetup,
         onOpenAskGemini = onOpenAskGemini,
     )
@@ -121,6 +122,7 @@ internal fun EpisodeDetailContent(
     onSnippetTap: (String) -> Unit = {},
     onBookmarkLongPress: (Bookmark) -> Unit = {},
     onSnippetLongPress: (Snippet) -> Unit = {},
+    onAiSummaryExport: () -> Unit = {},
 ) {
     val c = LocalKofipodColors.current
 
@@ -165,6 +167,7 @@ internal fun EpisodeDetailContent(
                     onSnippetTap = onSnippetTap,
                     onBookmarkLongPress = onBookmarkLongPress,
                     onSnippetLongPress = onSnippetLongPress,
+                    onAiSummaryExport = onAiSummaryExport,
                 )
             }
         }
@@ -223,6 +226,7 @@ private fun EpisodeBody(
     onSnippetTap: (String) -> Unit,
     onBookmarkLongPress: (Bookmark) -> Unit,
     onSnippetLongPress: (Snippet) -> Unit,
+    onAiSummaryExport: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Spacer(Modifier.height(8.dp))
@@ -317,6 +321,7 @@ private fun EpisodeBody(
                     episodeId = episode.id,
                     audioMinutes = (episode.durationSec / 60).toInt(),
                     onOpenAiSetup = onOpenAiSetup,
+                    onExportSummary = onAiSummaryExport,
                 )
             EpisodeDetailTab.Mentioned -> MentionedTabPanel(episodeId = episode.id)
             EpisodeDetailTab.Discuss ->
