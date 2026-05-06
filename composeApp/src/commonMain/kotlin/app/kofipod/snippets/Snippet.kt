@@ -9,6 +9,14 @@ package app.kofipod.snippets
  */
 enum class SnippetFormat(val wire: String, val mimeType: String, val fileExtension: String) {
     /**
+     * Video export. Cover-art bg + generated waveform card overlay + caption
+     * text overlay. Composition graph lives in [SnippetExporter.exportMp4]
+     * (Android = Media3 Transformer). Default for new snippets in the editor —
+     * the design positions MP4 as the headline format.
+     */
+    MP4(wire = "mp4", mimeType = "video/mp4", fileExtension = "mp4"),
+
+    /**
      * Audio-only export. Despite the enum name `MP3` (chosen for user-facing
      * familiarity and forward compatibility with a future libmp3lame muxer),
      * the actual container is M4A (AAC-in-MP4) — that's what Media3
