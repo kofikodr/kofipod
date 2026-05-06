@@ -9,7 +9,7 @@ import kotlinx.coroutines.withContext
 
 private const val PREFS_FILE = "kofipod_secure"
 
-actual class OAuthTokenVault(private val context: Context) {
+actual class OAuthTokenVaultImpl(private val context: Context) : OAuthTokenVault {
     private val prefs by lazy {
         val masterKey =
             MasterKey.Builder(context)
@@ -24,7 +24,7 @@ actual class OAuthTokenVault(private val context: Context) {
         )
     }
 
-    actual suspend fun put(
+    actual override suspend fun put(
         key: String,
         token: String,
     ) = withContext(Dispatchers.IO) {
@@ -32,12 +32,12 @@ actual class OAuthTokenVault(private val context: Context) {
         Unit
     }
 
-    actual suspend fun get(key: String): String? =
+    actual override suspend fun get(key: String): String? =
         withContext(Dispatchers.IO) {
             prefs.getString(key, null)?.takeIf { it.isNotBlank() }
         }
 
-    actual suspend fun clear(key: String) =
+    actual override suspend fun clear(key: String) =
         withContext(Dispatchers.IO) {
             prefs.edit().remove(key).commit()
             Unit
