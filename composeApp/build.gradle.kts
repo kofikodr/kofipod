@@ -234,6 +234,10 @@ sqldelight {
     databases {
         create("KofipodDatabase") {
             packageName.set("app.kofipod.db")
+            // SQLite 3.24 dialect enables ON CONFLICT DO UPDATE (UPSERT syntax),
+            // required for FTS5-compatible upserts in TranscriptCache and
+            // EpisodeAiSummary. The default 3.18 dialect rejects this syntax.
+            dialect("app.cash.sqldelight:sqlite-3-24-dialect:2.0.2")
         }
     }
 }

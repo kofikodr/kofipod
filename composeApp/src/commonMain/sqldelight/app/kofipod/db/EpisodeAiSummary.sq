@@ -29,9 +29,18 @@ selectByEpisodeFlow:
 SELECT * FROM EpisodeAiSummary WHERE episodeId = ?;
 
 upsert:
-INSERT OR REPLACE INTO EpisodeAiSummary
+INSERT INTO EpisodeAiSummary
     (episodeId, generatedAtMs, modelId, sourceKind, sourceFingerprint, summary, peopleJson, thingsJson, linksJson)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(episodeId) DO UPDATE SET
+    generatedAtMs = excluded.generatedAtMs,
+    modelId = excluded.modelId,
+    sourceKind = excluded.sourceKind,
+    sourceFingerprint = excluded.sourceFingerprint,
+    summary = excluded.summary,
+    peopleJson = excluded.peopleJson,
+    thingsJson = excluded.thingsJson,
+    linksJson = excluded.linksJson;
 
 deleteByEpisode:
 DELETE FROM EpisodeAiSummary WHERE episodeId = ?;

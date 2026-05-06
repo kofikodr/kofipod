@@ -15,8 +15,11 @@ CREATE TABLE TranscriptCache (
 );
 
 upsert:
-INSERT OR REPLACE INTO TranscriptCache (episodeId, text, fetchedAtMs)
-VALUES (?, ?, ?);
+INSERT INTO TranscriptCache (episodeId, text, fetchedAtMs)
+VALUES (?, ?, ?)
+ON CONFLICT(episodeId) DO UPDATE SET
+    text = excluded.text,
+    fetchedAtMs = excluded.fetchedAtMs;
 
 selectByEpisode:
 SELECT * FROM TranscriptCache WHERE episodeId = ?;
