@@ -802,19 +802,24 @@ Expected: FAIL with "Unresolved reference: LibrarySearchRepository".
 
 - [ ] **Step 2: Implement the repository**
 
+> **IMPORTANT — Task 3 fallback in effect.** The SQLDelight 2.0.2 default SQLite 3.18 dialect rejected `ORDER BY rank` and `snippet(...)`, so the two named SELECT queries are NOT in `LibrarySearchIndex.sq` (the SQL is preserved as comments at the bottom of that file). The repository must execute raw SQL via `db.driver.executeQuery(...)`. We pay the price of manual row mapping; in exchange we keep typed Kotlin types at the call site.
+>
+> `Flow` reactivity comes from `db.driver.notifyListeners(...)` — but for the search use-case we don't need it: queries change as the user types, and we don't expect the underlying tables to mutate while the user is reading results. So `search()` returns a one-shot `flow { emit(execute()) }` rather than reactive. If a future feature needs reactivity, we can introduce `db.driver.addListener(["LibrarySearchIndex"]) { ... }` then.
+
 `composeApp/src/commonMain/kotlin/app/kofipod/search/LibrarySearchRepository.kt`:
 
 ```kotlin
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.search
 
-import app.cash.sqldelight.coroutines.asFlow
-import app.cash.sqldelight.coroutines.mapToList
+import app.cash.sqldelight.db.QueryResult
+import app.cash.sqldelight.db.SqlCursor
 import app.kofipod.db.KofipodDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
 
 class LibrarySearchRepository(
     private val db: KofipodDatabase,
@@ -827,57 +832,123 @@ class LibrarySearchRepository(
      *
      * [kind] limits results to one bucket (used by chip-filter UI). `null`
      * returns mixed-kind results.
+     *
+     * Implementation note: the SELECT goes through `db.driver.executeQuery`
+     * with a hand-written cursor mapper because SQLDelight 2.0.2 cannot parse
+     * FTS5 `ORDER BY rank` + `snippet(...)`. See LibrarySearchIndex.sq's
+     * comment block for the canonical SQL.
      */
     fun search(
         rawQuery: String,
         kind: LibrarySearchKind? = null,
     ): Flow<List<LibrarySearchResult>> {
         val expression = LibrarySearchQuery.toFtsExpression(rawQuery) ?: return flowOf(emptyList())
-        val source = if (kind == null) {
-            db.librarySearchIndexQueries.search(expression)
-        } else {
-            db.librarySearchIndexQueries.searchByKind(expression, kind.wire)
-        }
-        return source.asFlow().mapToList(Dispatchers.Default).map { rows ->
-            rows.mapNotNull(::toResult)
-        }
+        return flow { emit(executeSearch(expression, kind)) }.flowOn(Dispatchers.Default)
     }
 
-    private fun toResult(row: app.kofipod.db.Search): LibrarySearchResult? {
-        val typed = LibrarySearchKind.fromWire(row.kind) ?: return null
-        return when (typed) {
-            LibrarySearchKind.Bookmark -> LibrarySearchResult.BookmarkMatch(
-                bookmarkId = row.itemId,
-                timestampMs = row.timestampMs,
-                episodeId = row.episodeId,
-                episodeTitle = row.episodeTitle,
-                podcastId = row.podcastId,
-                podcastTitle = row.podcastTitle,
-                artworkUrl = row.artworkUrl,
-                excerpt = row.excerpt,
-            )
-            LibrarySearchKind.Summary -> LibrarySearchResult.SummaryMatch(
-                episodeId = row.episodeId,
-                episodeTitle = row.episodeTitle,
-                podcastId = row.podcastId,
-                podcastTitle = row.podcastTitle,
-                artworkUrl = row.artworkUrl,
-                excerpt = row.excerpt,
-            )
-            LibrarySearchKind.Transcript -> LibrarySearchResult.TranscriptMatch(
-                episodeId = row.episodeId,
-                episodeTitle = row.episodeTitle,
-                podcastId = row.podcastId,
-                podcastTitle = row.podcastTitle,
-                artworkUrl = row.artworkUrl,
-                excerpt = row.excerpt,
-            )
-        }
+    private fun executeSearch(expression: String, kind: LibrarySearchKind?): List<LibrarySearchResult> {
+        val sql = if (kind == null) SQL_SEARCH else SQL_SEARCH_BY_KIND
+        val parameterCount = if (kind == null) 1 else 2
+        val rows = mutableListOf<LibrarySearchResult>()
+        // QueryResult.AsyncValue has `await`; QueryResult.Value is sync. Use the
+        // `Value` form by passing identifier=null + cache=false. The driver returns
+        // QueryResult<R> where R is whatever the mapper returns.
+        db.driver.executeQuery(
+            identifier = null,
+            sql = sql,
+            mapper = { cursor: SqlCursor ->
+                while (cursor.next().value) {
+                    val typed = LibrarySearchKind.fromWire(cursor.getString(0)!!) ?: continue
+                    val itemId = cursor.getString(1)!!
+                    val episodeId = cursor.getString(2)!!
+                    val timestampMs = cursor.getLong(3)!!
+                    val excerpt = cursor.getString(4)!!
+                    val episodeTitle = cursor.getString(5)!!
+                    val podcastId = cursor.getString(6)!!
+                    val podcastTitle = cursor.getString(7)!!
+                    val artworkUrl = cursor.getString(8)!!
+                    rows += when (typed) {
+                        LibrarySearchKind.Bookmark -> LibrarySearchResult.BookmarkMatch(
+                            bookmarkId = itemId,
+                            timestampMs = timestampMs,
+                            episodeId = episodeId,
+                            episodeTitle = episodeTitle,
+                            podcastId = podcastId,
+                            podcastTitle = podcastTitle,
+                            artworkUrl = artworkUrl,
+                            excerpt = excerpt,
+                        )
+                        LibrarySearchKind.Summary -> LibrarySearchResult.SummaryMatch(
+                            episodeId = episodeId,
+                            episodeTitle = episodeTitle,
+                            podcastId = podcastId,
+                            podcastTitle = podcastTitle,
+                            artworkUrl = artworkUrl,
+                            excerpt = excerpt,
+                        )
+                        LibrarySearchKind.Transcript -> LibrarySearchResult.TranscriptMatch(
+                            episodeId = episodeId,
+                            episodeTitle = episodeTitle,
+                            podcastId = podcastId,
+                            podcastTitle = podcastTitle,
+                            artworkUrl = artworkUrl,
+                            excerpt = excerpt,
+                        )
+                    }
+                }
+                QueryResult.Value(rows.toList())
+            },
+            parameters = parameterCount,
+            binders = {
+                bindString(0, expression)
+                if (kind != null) bindString(1, kind.wire)
+            },
+        ).value
+        return rows
+    }
+
+    private companion object {
+        private const val SQL_SEARCH = """
+            SELECT fts.kind, fts.itemId, fts.episodeId, fts.timestampMs,
+                   snippet(LibrarySearchIndex, 4, '<<', '>>', '…', 12) AS excerpt,
+                   e.title AS episodeTitle, p.id AS podcastId,
+                   p.title AS podcastTitle, p.artworkUrl AS artworkUrl
+            FROM LibrarySearchIndex fts
+            INNER JOIN Episode e ON e.id = fts.episodeId
+            INNER JOIN Podcast p ON p.id = e.podcastId
+            WHERE LibrarySearchIndex MATCH ?
+            ORDER BY rank
+            LIMIT 100
+        """
+
+        private const val SQL_SEARCH_BY_KIND = """
+            SELECT fts.kind, fts.itemId, fts.episodeId, fts.timestampMs,
+                   snippet(LibrarySearchIndex, 4, '<<', '>>', '…', 12) AS excerpt,
+                   e.title AS episodeTitle, p.id AS podcastId,
+                   p.title AS podcastTitle, p.artworkUrl AS artworkUrl
+            FROM LibrarySearchIndex fts
+            INNER JOIN Episode e ON e.id = fts.episodeId
+            INNER JOIN Podcast p ON p.id = e.podcastId
+            WHERE LibrarySearchIndex MATCH ?
+              AND fts.kind = ?
+            ORDER BY rank
+            LIMIT 100
+        """
     }
 }
 ```
 
-Note: SQLDelight names the generated row class after the named query (`search` → `Search`). If code-gen emits a different class name (e.g. when both `search` and `searchByKind` are present, SQLDelight may generate two row classes — `Search` and `SearchByKind`), adjust the `toResult` parameter type to whichever shared row shape the generator produces. Both queries return identical column shapes, so SQLDelight will typically emit a single shared row class; if it doesn't, write two `toResult` overloads.
+> Note: the exact `db.driver.executeQuery` signature in SQLDelight 2.0.2 is:
+> ```kotlin
+> fun <R> executeQuery(
+>     identifier: Int?,
+>     sql: String,
+>     mapper: (SqlCursor) -> QueryResult<R>,
+>     parameters: Int,
+>     binders: (SqlPreparedStatement.() -> Unit)? = null,
+> ): QueryResult<R>
+> ```
+> If the implementer hits a signature mismatch, consult `app.cash.sqldelight.db.SqlDriver` directly. The mapper above uses `cursor.next().value` (Boolean unwrap from `QueryResult.Value`) and `cursor.getString(idx)` / `cursor.getLong(idx)` — the standard SQLDelight cursor API.
 
 - [ ] **Step 3: Run the tests until they pass**
 
@@ -933,21 +1004,25 @@ fun generate_persistsTranscriptText_intoTranscriptCache_andLightsUpFtsIndex() =
         assertTrue(cached.fetchedAtMs > 0, "fetchedAtMs must be set from the injected Clock")
 
         // 2) FTS trigger fired — the transcript-side index row exists with kind='transcript'.
-        // Use the raw FTS query directly rather than going through LibrarySearchRepository
-        // (this test owns one production seam, not a full search round-trip — the search
-        // round-trip is covered by LibrarySearchRepositoryTest).
-        val hits = db.librarySearchIndexQueries
-            .search("\"kofipodbananaword\"*")
-            .executeAsList()
+        // Goes through LibrarySearchRepository because SQLDelight 2.0.2 doesn't expose
+        // typed FTS queries (see LibrarySearchIndex.sq's documented fallback). This test
+        // owns one production seam — that the AI repo writes to TranscriptCache so the
+        // trigger fires — and the cleanest assertion path lives via the repo.
+        val searchRepo = LibrarySearchRepository(db)
+        val hits = searchRepo.search("kofipodbananaword").first()
         assertEquals(1, hits.size, "FTS row should be visible immediately via the AFTER INSERT trigger")
-        assertEquals("transcript", hits.single().kind)
-        assertEquals("ep1", hits.single().episodeId)
+        val hit = hits.single()
+        assertTrue(hit is LibrarySearchResult.TranscriptMatch)
+        assertEquals("ep1", hit.episodeId)
     }
 ```
 
 Required new imports at the top of the file (only add the ones not already present):
 
 ```kotlin
+import app.kofipod.search.LibrarySearchRepository
+import app.kofipod.search.LibrarySearchResult
+import kotlinx.coroutines.flow.first
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 ```

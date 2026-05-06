@@ -99,7 +99,10 @@ private fun kindLabel(result: LibrarySearchResult): String =
 // (e.g. amber for Bookmarks, teal for Transcripts). The `result` parameter is
 // intentionally unused until then.
 @Suppress("UnusedParameter")
-private fun kindAccent(result: LibrarySearchResult, fallback: Color): Color = fallback
+private fun kindAccent(
+    result: LibrarySearchResult,
+    fallback: Color,
+): Color = fallback
 
 private fun renderExcerpt(excerpt: String) =
     buildAnnotatedString {

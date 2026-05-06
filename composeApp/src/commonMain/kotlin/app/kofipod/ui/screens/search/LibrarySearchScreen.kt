@@ -59,18 +59,19 @@ fun LibrarySearchScreen(
         when {
             state.query.isBlank() -> EmptyHint("Search bookmarks, summaries, transcripts")
             state.results.isEmpty() -> EmptyHint("No matches for \"${state.query}\"")
-            else -> ResultsList(
-                results = state.results,
-                onTap = { result ->
-                    when (result) {
-                        is LibrarySearchResult.BookmarkMatch ->
-                            onSeekBookmark(result.episodeId, result.timestampMs)
-                        is LibrarySearchResult.SummaryMatch,
-                        is LibrarySearchResult.TranscriptMatch,
-                        -> onOpenEpisode(result.episodeId)
-                    }
-                },
-            )
+            else ->
+                ResultsList(
+                    results = state.results,
+                    onTap = { result ->
+                        when (result) {
+                            is LibrarySearchResult.BookmarkMatch ->
+                                onSeekBookmark(result.episodeId, result.timestampMs)
+                            is LibrarySearchResult.SummaryMatch,
+                            is LibrarySearchResult.TranscriptMatch,
+                            -> onOpenEpisode(result.episodeId)
+                        }
+                    },
+                )
         }
     }
 }
