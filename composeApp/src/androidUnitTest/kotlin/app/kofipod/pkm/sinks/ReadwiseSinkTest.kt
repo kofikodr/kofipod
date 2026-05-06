@@ -39,6 +39,18 @@ class ReadwiseSinkTest {
             assertEquals("42", result.externalId)
             assertEquals(1, client.createCalls)
             assertEquals(0, client.updateCalls)
+
+            // Verify payload structure
+            val createRequest = client.lastCreateRequest
+            assertIs<ReadwiseCreateRequest>(createRequest)
+            assertEquals(1, createRequest.highlights.size)
+            val highlight = createRequest.highlights[0]
+            assertEquals("Quote text", highlight.text)
+            assertEquals("Episode 1", highlight.title)
+            assertEquals("Show", highlight.author)
+            assertEquals("https://pod.link/abc", highlight.sourceUrl)
+            assertEquals("kofipodId:bookmark-b1", highlight.note)
+            assertEquals("podcast", highlight.sourceType)
         }
 
     @Test fun reExportPatchesByExternalId() =
@@ -65,6 +77,12 @@ class ReadwiseSinkTest {
             assertEquals(0, client.createCalls)
             assertEquals(1, client.updateCalls)
             assertEquals(42L, client.lastUpdateId)
+
+            // Verify update payload
+            val updateRequest = client.lastUpdateRequest
+            assertIs<ReadwiseUpdateRequest>(updateRequest)
+            assertEquals("Updated quote", updateRequest.text)
+            assertEquals("kofipodId:bookmark-b1", updateRequest.note)
         }
 
     @Test fun missingTokenReturnsPermanentFailure() =
@@ -114,6 +132,8 @@ private class FakeReadwiseClient(
     var createCalls = 0
     var updateCalls = 0
     var lastUpdateId: Long? = null
+    var lastCreateRequest: ReadwiseCreateRequest? = null
+    var lastUpdateRequest: ReadwiseUpdateRequest? = null
 
     override suspend fun verify(token: String) = true
 
@@ -122,6 +142,7 @@ private class FakeReadwiseClient(
         request: ReadwiseCreateRequest,
     ): Result<Long> {
         createCalls++
+        lastCreateRequest = request
         return createReturns
     }
 
@@ -132,6 +153,7 @@ private class FakeReadwiseClient(
     ): Result<Unit> {
         updateCalls++
         lastUpdateId = id
+        lastUpdateRequest = request
         return Result.success(Unit)
     }
 }
