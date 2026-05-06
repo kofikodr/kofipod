@@ -8,7 +8,14 @@ package app.kofipod.snippets
  * later — Slice 4 will simply add `MP4` and start emitting it.
  */
 enum class SnippetFormat(val wire: String, val mimeType: String, val fileExtension: String) {
-    MP3(wire = "mp3", mimeType = "audio/mpeg", fileExtension = "mp3"),
+    /**
+     * Audio-only export. Despite the enum name `MP3` (chosen for user-facing
+     * familiarity and forward compatibility with a future libmp3lame muxer),
+     * the actual container is M4A (AAC-in-MP4) — that's what Media3
+     * Transformer's bundled muxer produces reliably. The MIME `audio/mp4`
+     * matches the bytes; share targets handle it correctly.
+     */
+    MP3(wire = "mp3", mimeType = "audio/mp4", fileExtension = "m4a"),
     ;
 
     companion object {

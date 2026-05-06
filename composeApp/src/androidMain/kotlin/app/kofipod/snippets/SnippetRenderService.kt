@@ -25,12 +25,15 @@ import java.io.File
 
 /**
  * One-shot foreground service that renders a single Snippet to disk and
- * triggers the system share sheet via the in-app Sharer when done. Multiple
- * concurrent enqueues stack up via START_REDELIVER_INTENT — the service runs
- * one render at a time to avoid Transformer concurrency surprises.
+ * triggers the system share sheet via the in-app Sharer when done.
  *
- * FG type is `mediaProcessing` on API 34+ (matches the AndroidManifest entry);
- * older targets fall through to `dataSync` (already permitted).
+ * Single-render-at-a-time. A new enqueue cancels the in-flight render before
+ * starting the new one. Multiple back-to-back enqueues will see the earlier
+ * render cancelled — the user's most recent trim/save wins.
+ *
+ * FG type is `mediaProcessing` on API 35+ (matches the AndroidManifest entry);
+ * API 29-34 falls back to `dataSync` (also declared in the manifest); pre-Q
+ * uses the untyped `startForeground` overload.
  */
 class SnippetRenderService : Service() {
     private val repo: SnippetRepository by inject()
@@ -58,6 +61,9 @@ class SnippetRenderService : Service() {
                 }
 
         startForegroundCompat()
+        // Cancel any in-flight render before queuing the new one. New requests
+        // win — the user just trimmed/saved this snippet, they want THIS render.
+        currentJob?.cancel()
         currentJob =
             scope.launch {
                 try {
@@ -140,11 +146,20 @@ class SnippetRenderService : Service() {
         }
 
         val notif = buildProgressNotification(progress = 0f).build()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
             startForeground(
                 NOTIF_ID,
                 notif,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING,
+            )
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Android 10+ requires a declared type; the manifest declares
+            // mediaProcessing|dataSync, so dataSync is the valid fallback for
+            // API 29-34 (FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING is API 35+).
+            startForeground(
+                NOTIF_ID,
+                notif,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
             )
         } else {
             startForeground(NOTIF_ID, notif)
