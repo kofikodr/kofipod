@@ -94,6 +94,7 @@ kotlin {
                 implementation(libs.androidx.media3.session)
                 implementation(libs.androidx.media3.datasource)
                 implementation(libs.androidx.media3.database)
+                implementation(libs.androidx.media3.transformer)
                 implementation(libs.androidx.work.runtime)
                 implementation(libs.androidx.palette)
                 implementation(libs.androidx.security.crypto)
