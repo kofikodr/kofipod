@@ -36,6 +36,31 @@ class LibrarySearchQueryTest {
     }
 
     @Test
+    fun `embedded quote escaping holds across multiple tokens`() {
+        // Forces the escape path and the AND-join path to execute together.
+        // Guards against a regression where escaping moves to after the join,
+        // or where the separator logic accidentally touches quoted content.
+        assertEquals(
+            "\"it\"\"s\"* \"say\"*",
+            LibrarySearchQuery.toFtsExpression("it\"s say"),
+        )
+    }
+
+    @Test
+    fun `tab and newline separators split into multi-token expression`() {
+        // The internal-whitespace-collapse test only uses spaces; this one pins
+        // the \\s+ regex to also handle tabs and newlines in the splitting path.
+        assertEquals(
+            "\"foo\"* \"bar\"*",
+            LibrarySearchQuery.toFtsExpression("foo\tbar"),
+        )
+        assertEquals(
+            "\"foo\"* \"bar\"*",
+            LibrarySearchQuery.toFtsExpression("foo\nbar"),
+        )
+    }
+
+    @Test
     fun `apostrophes and dashes survive without breaking the parser`() {
         // We don't strip — we let FTS5 tokenize them. Quoting is enough.
         assertEquals(
