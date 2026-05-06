@@ -397,7 +397,13 @@ val commonDataModule =
                 paywallRouter = get(),
                 bookmarks = get(),
                 snippets = get(),
-                snippetLauncher = get(),
+            )
+        }
+        viewModel { (snippetId: String) ->
+            app.kofipod.ui.screens.snippet.SnippetEditorViewModel(
+                snippetId = snippetId,
+                snippets = get(),
+                launcher = get(),
             )
         }
         viewModel { StatsViewModel(get()) }

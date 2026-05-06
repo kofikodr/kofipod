@@ -33,4 +33,6 @@ sealed interface Route {
     @Serializable data object Bookmarks : Route
 
     @Serializable data object LibrarySearch : Route
+
+    @Serializable data class SnippetEditor(val snippetId: String) : Route
 }

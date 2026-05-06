@@ -16,7 +16,6 @@ import app.kofipod.pro.PaywallRouter
 import app.kofipod.pro.ProEntitlement
 import app.kofipod.pro.ProEntitlementRepository
 import app.kofipod.share.Sharer
-import app.kofipod.snippets.SnippetRenderLauncher
 import app.kofipod.snippets.SnippetRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -53,11 +52,6 @@ class PlayerViewModel(
     private val paywallRouter: PaywallRouter,
     private val bookmarks: BookmarkComposer,
     private val snippets: SnippetRepository,
-    // Held for Task 9 (`SnippetEditorViewModel` triggers render via the
-    // launcher; the Player VM doesn't render directly). Wired through DI now
-    // so the editor VM factory in `CommonModule` can pick it up unchanged.
-    @Suppress("unused", "UnusedPrivateProperty")
-    private val snippetLauncher: SnippetRenderLauncher,
 ) : ViewModel() {
     private val toast = MutableStateFlow<String?>(null)
 

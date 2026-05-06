@@ -26,6 +26,7 @@ import app.kofipod.ui.screens.search.LibrarySearchScreen
 import app.kofipod.ui.screens.search.SearchScreen
 import app.kofipod.ui.screens.settings.SettingsScreen
 import app.kofipod.ui.screens.settings.ai.AiSetupScreen
+import app.kofipod.ui.screens.snippet.SnippetEditorScreen
 import app.kofipod.ui.screens.stats.StatsScreen
 
 @Composable
@@ -172,11 +173,16 @@ fun KofipodNavHost(navController: NavHostController) {
                     navController.popBackStack()
                     navController.navigate(Route.PodcastDetail(id))
                 },
-                // TODO(slice3-task9): navigate to Route.SnippetEditor(id) once
-                // the editor screen + route ship. The draft has already been
-                // persisted by SnippetRepository.createDraftFromPlayer; the
-                // user can resume it from Episode Detail's Saved section.
-                onOpenSnippetEditor = { /* no-op until Task 9 lands */ },
+                onOpenSnippetEditor = { id ->
+                    navController.navigate(Route.SnippetEditor(snippetId = id))
+                },
+            )
+        }
+        composable<Route.SnippetEditor> { entry ->
+            val args = entry.toRoute<Route.SnippetEditor>()
+            SnippetEditorScreen(
+                snippetId = args.snippetId,
+                onBack = { navController.popBackStack() },
             )
         }
     }
