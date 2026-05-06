@@ -26,9 +26,11 @@ import kotlinx.coroutines.launch
  * wiring is a one-line adapter in `CommonModule.kt` that delegates to the
  * five concrete repositories — see [PkmExportDeps] kdoc for the mapping.
  *
- * The [results] [MutableSharedFlow] retains a `replay = 1` slot so a snackbar
- * host that subscribes after a result fires (e.g. after a configuration
- * change in the middle of the export) still surfaces the toast.
+ * The [results] flow is one-shot (`replay = 0`) so a snackbar host that
+ * re-subscribes after a config change does not re-toast a stale result. The
+ * trade-off is that a result fired while no subscriber is collecting is lost;
+ * in practice, the AppShell snackbar host subscribes for the process lifetime,
+ * so this never happens.
  */
 class PkmExportCoordinator(
     private val deps: PkmExportDeps,
@@ -41,7 +43,7 @@ class PkmExportCoordinator(
 
     private val _results =
         MutableSharedFlow<PkmExportResult>(
-            replay = 1,
+            replay = 0,
             extraBufferCapacity = 4,
         )
     val results: SharedFlow<PkmExportResult> = _results
@@ -72,17 +74,17 @@ class PkmExportCoordinator(
             try {
                 val document = buildDocument(request)
                 if (document == null) {
-                    _results.tryEmit(PkmExportResult.Failed("Item not found"))
+                    _results.emit(PkmExportResult.Failed("Item not found"))
                     return@launch
                 }
                 when (sinkChoice) {
                     PkmExportSink.Clipboard -> {
                         sink.exportToClipboard(document)
-                        _results.tryEmit(PkmExportResult.Copied)
+                        _results.emit(PkmExportResult.Copied)
                     }
                     PkmExportSink.File -> {
                         sink.exportAsFile(document, shareTitle = "Share Markdown")
-                        _results.tryEmit(PkmExportResult.Shared)
+                        _results.emit(PkmExportResult.Shared)
                     }
                 }
             } catch (t: Throwable) {
@@ -90,7 +92,7 @@ class PkmExportCoordinator(
                 // platform code (clipboard managers, share sheet) that can
                 // raise platform-specific runtime errors. We collapse them all
                 // into a Failed result so the UI never shows a crash dialog.
-                _results.tryEmit(PkmExportResult.Failed(t.message ?: "Export failed"))
+                _results.emit(PkmExportResult.Failed(t.message ?: "Export failed"))
             } finally {
                 _pendingRequest.value = null
             }

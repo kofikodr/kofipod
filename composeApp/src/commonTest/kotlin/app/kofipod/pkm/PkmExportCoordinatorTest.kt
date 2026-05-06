@@ -9,9 +9,12 @@ import app.kofipod.db.Podcast
 import app.kofipod.snippets.Snippet
 import app.kofipod.snippets.SnippetFormat
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -30,9 +33,14 @@ import kotlin.test.assertTrue
  * runs `appScope.launch { ... }` bodies inline on the calling thread, which
  * collapses the launch+await ceremony into deterministic sequential code while
  * still keeping the test under the [TestScope] umbrella (no real-thread
- * sleeps). The coordinator's [PkmExportCoordinator.results] SharedFlow is
- * configured with `replay = 1` so the most recent emission is still readable
- * via `replayCache` after the launch returns.
+ * sleeps).
+ *
+ * Result observation: the coordinator's [PkmExportCoordinator.results] is now
+ * `replay = 0` (so a re-subscribed snackbar host doesn't re-toast a stale
+ * result). Tests therefore start a [TestScope.backgroundScope] collector
+ * before calling `execute(...)` and assert against the captured list. Using
+ * `backgroundScope` is the recommended pattern for collecting hot flows under
+ * `runTest` because it auto-cancels at the end of the test.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class PkmExportCoordinatorTest {
@@ -50,16 +58,20 @@ class PkmExportCoordinatorTest {
                         ),
                     sink = sink,
                 )
+            val received = mutableListOf<PkmExportResult>()
+            val collector = collect(coord, received)
 
             coord.show(PkmExportRequest.Snippet("snip-1"))
             assertEquals(PkmExportRequest.Snippet("snip-1"), coord.pendingRequest.value)
 
             coord.execute(PkmExportRequest.Snippet("snip-1"), PkmExportSink.Clipboard)
+            advanceUntilIdle()
+            collector.cancel()
 
             assertEquals(1, sink.clipboardCalls)
             assertEquals(0, sink.fileCalls)
             assertNull(coord.pendingRequest.value)
-            assertEquals(PkmExportResult.Copied, coord.results.replayCache.firstOrNull())
+            assertEquals(listOf(PkmExportResult.Copied), received.toList())
         }
 
     @Test
@@ -76,15 +88,19 @@ class PkmExportCoordinatorTest {
                         ),
                     sink = sink,
                 )
+            val received = mutableListOf<PkmExportResult>()
+            val collector = collect(coord, received)
 
             coord.show(PkmExportRequest.Bookmark("bm-1"))
             coord.execute(PkmExportRequest.Bookmark("bm-1"), PkmExportSink.File)
+            advanceUntilIdle()
+            collector.cancel()
 
             assertEquals(0, sink.clipboardCalls)
             assertEquals(1, sink.fileCalls)
             assertEquals("Share Markdown", sink.lastShareTitle)
             assertNull(coord.pendingRequest.value)
-            assertEquals(PkmExportResult.Shared, coord.results.replayCache.firstOrNull())
+            assertEquals(listOf(PkmExportResult.Shared), received.toList())
         }
 
     @Test
@@ -101,14 +117,18 @@ class PkmExportCoordinatorTest {
                         ),
                     sink = sink,
                 )
+            val received = mutableListOf<PkmExportResult>()
+            val collector = collect(coord, received)
 
             coord.show(PkmExportRequest.AiSummary("e1"))
             coord.execute(PkmExportRequest.AiSummary("e1"), PkmExportSink.Clipboard)
+            advanceUntilIdle()
+            collector.cancel()
 
             assertEquals(1, sink.clipboardCalls)
             assertEquals(0, sink.fileCalls)
             assertNull(coord.pendingRequest.value)
-            assertEquals(PkmExportResult.Copied, coord.results.replayCache.firstOrNull())
+            assertEquals(listOf(PkmExportResult.Copied), received.toList())
         }
 
     @Test
@@ -121,17 +141,18 @@ class PkmExportCoordinatorTest {
                     deps = FakeDeps(snippet = null, episode = sampleEpisode(), podcast = samplePodcast()),
                     sink = sink,
                 )
+            val received = mutableListOf<PkmExportResult>()
+            val collector = collect(coord, received)
 
             coord.show(PkmExportRequest.Snippet("missing"))
             coord.execute(PkmExportRequest.Snippet("missing"), PkmExportSink.Clipboard)
+            advanceUntilIdle()
+            collector.cancel()
 
             assertEquals(0, sink.clipboardCalls)
             assertEquals(0, sink.fileCalls)
             assertNull(coord.pendingRequest.value)
-            assertEquals(
-                PkmExportResult.Failed("Item not found"),
-                coord.results.replayCache.firstOrNull(),
-            )
+            assertEquals(listOf(PkmExportResult.Failed("Item not found")), received.toList())
         }
 
     @Test
@@ -144,16 +165,17 @@ class PkmExportCoordinatorTest {
                     deps = FakeDeps(snippet = sampleSnippet(), episode = null, podcast = samplePodcast()),
                     sink = sink,
                 )
+            val received = mutableListOf<PkmExportResult>()
+            val collector = collect(coord, received)
 
             coord.show(PkmExportRequest.Snippet("snip-1"))
             coord.execute(PkmExportRequest.Snippet("snip-1"), PkmExportSink.Clipboard)
+            advanceUntilIdle()
+            collector.cancel()
 
             assertEquals(0, sink.clipboardCalls)
             assertNull(coord.pendingRequest.value)
-            assertEquals(
-                PkmExportResult.Failed("Item not found"),
-                coord.results.replayCache.firstOrNull(),
-            )
+            assertEquals(listOf(PkmExportResult.Failed("Item not found")), received.toList())
         }
 
     @Test
@@ -166,16 +188,90 @@ class PkmExportCoordinatorTest {
                     deps = FakeDeps(snippet = sampleSnippet(), episode = sampleEpisode(), podcast = null),
                     sink = sink,
                 )
+            val received = mutableListOf<PkmExportResult>()
+            val collector = collect(coord, received)
 
             coord.show(PkmExportRequest.Snippet("snip-1"))
             coord.execute(PkmExportRequest.Snippet("snip-1"), PkmExportSink.Clipboard)
+            advanceUntilIdle()
+            collector.cancel()
 
             assertEquals(0, sink.clipboardCalls)
             assertNull(coord.pendingRequest.value)
-            assertEquals(
-                PkmExportResult.Failed("Item not found"),
-                coord.results.replayCache.firstOrNull(),
-            )
+            assertEquals(listOf(PkmExportResult.Failed("Item not found")), received.toList())
+        }
+
+    @Test
+    fun aiSummaryNotFoundEmitsFailed() =
+        runTest {
+            // summary = null -> summaryFor returns null -> buildDocument short-circuits
+            // on the AiSummary branch before any episode/podcast lookup.
+            val sink = FakeSink()
+            val coord =
+                newCoordinator(
+                    deps = FakeDeps(summary = null, episode = sampleEpisode(), podcast = samplePodcast()),
+                    sink = sink,
+                )
+            val received = mutableListOf<PkmExportResult>()
+            val collector = collect(coord, received)
+
+            coord.show(PkmExportRequest.AiSummary("e1"))
+            coord.execute(PkmExportRequest.AiSummary("e1"), PkmExportSink.Clipboard)
+            advanceUntilIdle()
+            collector.cancel()
+
+            assertEquals(0, sink.clipboardCalls)
+            assertEquals(0, sink.fileCalls)
+            assertNull(coord.pendingRequest.value)
+            assertEquals(listOf(PkmExportResult.Failed("Item not found")), received.toList())
+        }
+
+    @Test
+    fun aiSummaryEpisodeMissingEmitsFailed() =
+        runTest {
+            // Summary resolves but the referenced episode row is gone.
+            val sink = FakeSink()
+            val coord =
+                newCoordinator(
+                    deps = FakeDeps(summary = sampleSummary(), episode = null, podcast = samplePodcast()),
+                    sink = sink,
+                )
+            val received = mutableListOf<PkmExportResult>()
+            val collector = collect(coord, received)
+
+            coord.show(PkmExportRequest.AiSummary("e1"))
+            coord.execute(PkmExportRequest.AiSummary("e1"), PkmExportSink.Clipboard)
+            advanceUntilIdle()
+            collector.cancel()
+
+            assertEquals(0, sink.clipboardCalls)
+            assertEquals(0, sink.fileCalls)
+            assertNull(coord.pendingRequest.value)
+            assertEquals(listOf(PkmExportResult.Failed("Item not found")), received.toList())
+        }
+
+    @Test
+    fun aiSummaryPodcastMissingEmitsFailed() =
+        runTest {
+            // Summary + episode resolve but the podcast row is gone.
+            val sink = FakeSink()
+            val coord =
+                newCoordinator(
+                    deps = FakeDeps(summary = sampleSummary(), episode = sampleEpisode(), podcast = null),
+                    sink = sink,
+                )
+            val received = mutableListOf<PkmExportResult>()
+            val collector = collect(coord, received)
+
+            coord.show(PkmExportRequest.AiSummary("e1"))
+            coord.execute(PkmExportRequest.AiSummary("e1"), PkmExportSink.Clipboard)
+            advanceUntilIdle()
+            collector.cancel()
+
+            assertEquals(0, sink.clipboardCalls)
+            assertEquals(0, sink.fileCalls)
+            assertNull(coord.pendingRequest.value)
+            assertEquals(listOf(PkmExportResult.Failed("Item not found")), received.toList())
         }
 
     @Test
@@ -195,16 +291,21 @@ class PkmExportCoordinatorTest {
                         ),
                     sink = sink,
                 )
+            val received = mutableListOf<PkmExportResult>()
+            val collector = collect(coord, received)
 
             coord.show(PkmExportRequest.Snippet("snip-1"))
             coord.execute(PkmExportRequest.Snippet("snip-1"), PkmExportSink.Clipboard)
+            advanceUntilIdle()
+            collector.cancel()
 
             // The sink was reached (so the path entered the dispatch arm),
             // but the thrown exception is collapsed into a Failed result, the
             // sheet is cleared, and the message surfaces what the exception
             // said.
             assertNull(coord.pendingRequest.value)
-            val result = coord.results.replayCache.firstOrNull()
+            assertEquals(1, received.size)
+            val result = received.single()
             assertTrue(result is PkmExportResult.Failed, "expected Failed but was $result")
             assertEquals("clipboard exploded", result.message)
         }
@@ -223,15 +324,19 @@ class PkmExportCoordinatorTest {
                         ),
                     sink = sink,
                 )
+            val received = mutableListOf<PkmExportResult>()
+            val collector = collect(coord, received)
 
             coord.show(PkmExportRequest.Snippet("snip-1"))
             coord.dismiss()
+            advanceUntilIdle()
+            collector.cancel()
 
             assertEquals(0, sink.clipboardCalls)
             assertEquals(0, sink.fileCalls)
             assertNull(coord.pendingRequest.value)
             // dismiss MUST be a pure UI clear -- no toast / snackbar / error.
-            assertNull(coord.results.replayCache.firstOrNull())
+            assertTrue(received.isEmpty(), "dismiss must not emit a result, but got $received")
         }
 
     // -------------------------------------------------------------------------
@@ -257,6 +362,24 @@ class PkmExportCoordinatorTest {
             sink = sink,
             appScope = CoroutineScope(dispatcher),
         )
+    }
+
+    /**
+     * Subscribes to [coord] `results` on the [TestScope.backgroundScope] using
+     * an [UnconfinedTestDispatcher] tied to the same [TestScope.testScheduler]
+     * as the coordinator's appScope. `CoroutineStart.UNDISPATCHED` ensures the
+     * collector runs up to its first suspension (the `collect` await) before
+     * this helper returns, so subsequent `execute(...)` emits are delivered.
+     * Sharing the scheduler keeps emit + collect on the same virtual time.
+     */
+    private fun TestScope.collect(
+        coord: PkmExportCoordinator,
+        sink: MutableList<PkmExportResult>,
+    ) = backgroundScope.launch(
+        context = UnconfinedTestDispatcher(testScheduler),
+        start = CoroutineStart.UNDISPATCHED,
+    ) {
+        coord.results.collect { result -> sink += result }
     }
 
     // -------------------------------------------------------------------------
