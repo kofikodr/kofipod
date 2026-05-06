@@ -89,6 +89,7 @@ kotlin {
                 implementation(libs.androidx.activity.compose)
                 implementation(libs.ktor.client.okhttp)
                 implementation(libs.sqldelight.android.driver)
+                implementation(libs.requery.sqlite.android)
                 implementation(libs.androidx.media3.exoplayer)
                 implementation(libs.androidx.media3.session)
                 implementation(libs.androidx.media3.datasource)

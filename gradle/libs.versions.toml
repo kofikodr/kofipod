@@ -27,6 +27,7 @@ junit = "4.13.2"
 podcastindex = "0.4.0"
 ktlintGradle = "12.1.2"
 detekt = "1.23.8"
+requery-sqlite = "3.49.0"
 sentryKmp = "0.15.0"
 sentryAndroidGradle = "6.6.0"
 aptabase = "0.0.8"
@@ -72,6 +73,7 @@ koin-compose-viewmodel = { module = "io.insert-koin:koin-compose-viewmodel", ver
 podcastindex-sdk = { module = "io.github.mr3y-the-programmer:podcastindex-sdk-ktor3", version.ref = "podcastindex" }
 sentry-kmp = { module = "io.sentry:sentry-kotlin-multiplatform", version.ref = "sentryKmp" }
 aptabase = { module = "com.github.aptabase:aptabase-kotlin", version.ref = "aptabase" }
+requery-sqlite-android = { module = "com.github.requery:sqlite-android", version.ref = "requery-sqlite" }
 junit = { module = "junit:junit", version.ref = "junit" }
 
 [plugins]
