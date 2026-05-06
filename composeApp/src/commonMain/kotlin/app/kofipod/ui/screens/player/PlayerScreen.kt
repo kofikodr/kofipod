@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -34,11 +35,16 @@ import kotlin.math.roundToInt
 fun PlayerScreen(
     onBack: () -> Unit,
     onOpenPodcast: (String) -> Unit,
+    onOpenSnippetEditor: (String) -> Unit,
     viewModel: PlayerViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
     val c = LocalKofipodColors.current
     val p = state.player
+
+    LaunchedEffect(viewModel) {
+        viewModel.snippetEditorRoute.collect { id -> onOpenSnippetEditor(id) }
+    }
 
     val scope = rememberCoroutineScope()
     val dragOffset = remember { Animatable(0f) }
@@ -101,6 +107,7 @@ fun PlayerScreen(
             },
             onMarkPlayed = viewModel::markAsPlayed,
             onBookmark = viewModel::onBookmarkTapped,
+            onSnip = viewModel::onSnipTapped,
         )
         Spacer(Modifier.height(16.dp))
         PlayerArtworkCard(

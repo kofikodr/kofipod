@@ -265,6 +265,11 @@ val commonDataModule =
         single { PaywallRouter() }
         single { app.kofipod.bookmarks.BookmarkRepository(db = get()) }
         single { app.kofipod.bookmarks.BookmarkComposer() }
+        // Snippets (Slice 3) — common-side bindings. Android-context-bound
+        // siblings (FileChecker, SnippetExporter, SnippetRenderLauncher) live
+        // in the Android Koin module.
+        single { app.kofipod.snippets.SnippetSourceResolver(get()) }
+        single { app.kofipod.snippets.SnippetRepository(get()) }
         single { app.kofipod.search.LibrarySearchRepository(driver = get()) }
         single {
             app.kofipod.diagnostics.DiagnosticsBootstrapper(
@@ -391,6 +396,8 @@ val commonDataModule =
                 pro = get(),
                 paywallRouter = get(),
                 bookmarks = get(),
+                snippets = get(),
+                snippetLauncher = get(),
             )
         }
         viewModel { StatsViewModel(get()) }

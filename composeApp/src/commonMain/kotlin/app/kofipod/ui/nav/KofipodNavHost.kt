@@ -172,6 +172,11 @@ fun KofipodNavHost(navController: NavHostController) {
                     navController.popBackStack()
                     navController.navigate(Route.PodcastDetail(id))
                 },
+                // TODO(slice3-task9): navigate to Route.SnippetEditor(id) once
+                // the editor screen + route ship. The draft has already been
+                // persisted by SnippetRepository.createDraftFromPlayer; the
+                // user can resume it from Episode Detail's Saved section.
+                onOpenSnippetEditor = { /* no-op until Task 9 lands */ },
             )
         }
     }

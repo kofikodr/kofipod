@@ -64,6 +64,13 @@ enum class KPIconName {
      * to indicate "this position is bookmarked".
      */
     Bookmark,
+
+    /**
+     * Outline scissors glyph used by the Player's Pro-gated Snip action.
+     * Two finger-loop circles plus crossing blades. TODO(slice4): replace
+     * with the waveform-trim glyph once Claude Design ships it.
+     */
+    Scissors,
 }
 
 @Composable
@@ -445,6 +452,20 @@ private fun buildKPIconPath(
                 lineTo(12f * scale, 16f * scale)
                 lineTo(6f * scale, 20f * scale)
                 close()
+            }
+        KPIconName.Scissors ->
+            Path().apply {
+                // Two finger-loop circles at the bottom-left and bottom-right,
+                // and two crossing blades meeting at the top. Stroke-only (the
+                // loops read as rings when rendered with the round-join stroke).
+                addOval(Rect(3f * scale, 14f * scale, 9f * scale, 20f * scale))
+                addOval(Rect(15f * scale, 14f * scale, 21f * scale, 20f * scale))
+                // Left blade: from the right edge of the left loop up to the tip,
+                // then continue down to the right loop's centre area.
+                moveTo(8f * scale, 15f * scale)
+                lineTo(20f * scale, 4f * scale)
+                moveTo(16f * scale, 15f * scale)
+                lineTo(4f * scale, 4f * scale)
             }
         KPIconName.Sparkle ->
             Path().apply {

@@ -34,6 +34,9 @@ import app.kofipod.playback.PlaybackCache
 import app.kofipod.pro.AndroidEntitlementCache
 import app.kofipod.pro.EntitlementCache
 import app.kofipod.share.Sharer
+import app.kofipod.snippets.FileChecker
+import app.kofipod.snippets.SnippetExporter
+import app.kofipod.snippets.SnippetRenderLauncher
 import app.kofipod.ui.ActivityHolder
 import app.kofipod.ui.palette.AndroidPalettePort
 import app.kofipod.ui.palette.PalettePort
@@ -67,6 +70,12 @@ val androidPlatformModule =
         single<AiSummaryScheduler> { AndroidAiSummaryScheduler(androidContext()) }
         single { Notifier(androidContext()) }
         single { Sharer(androidContext()) }
+        // Snippets (Slice 3) — Context-bound bindings live alongside Sharer because
+        // they need an Android Context for FileProvider, MediaCodec, and the
+        // foreground service launcher.
+        single { FileChecker() }
+        single { SnippetExporter(androidContext()) }
+        single { SnippetRenderLauncher(androidContext()) }
         single { ThemeSystem(androidContext()) }
         single<PalettePort> { AndroidPalettePort(androidContext()) }
         single<LocalApkPathStore> { AndroidLocalApkPathStore(androidContext()) }
