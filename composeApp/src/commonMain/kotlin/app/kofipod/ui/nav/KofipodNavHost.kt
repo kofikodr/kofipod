@@ -22,6 +22,7 @@ import app.kofipod.ui.screens.library.LibraryScreen
 import app.kofipod.ui.screens.library.StarterPackScreen
 import app.kofipod.ui.screens.player.PlayerScreen
 import app.kofipod.ui.screens.scheduler.SchedulerInfoScreen
+import app.kofipod.ui.screens.search.LibrarySearchScreen
 import app.kofipod.ui.screens.search.SearchScreen
 import app.kofipod.ui.screens.settings.SettingsScreen
 import app.kofipod.ui.screens.settings.ai.AiSetupScreen
@@ -51,6 +52,23 @@ fun KofipodNavHost(navController: NavHostController) {
                         Route.Player,
                         NavOptions.Builder().setLaunchSingleTop(true).build(),
                     )
+                },
+            )
+        }
+        composable<Route.LibrarySearch> {
+            LibrarySearchScreen(
+                onBack = { navController.popBackStack() },
+                onOpenEpisode = { episodeId ->
+                    navController.navigate(Route.EpisodeDetail(episodeId))
+                },
+                onSeekBookmark = { episodeId, _ ->
+                    // Mirror BookmarksScreen's tap-to-seek wiring: navigate to the
+                    // episode detail. The actual seek-on-resume is handled by
+                    // the existing BookmarksViewModel.openAt path; for search,
+                    // we route through episode detail because the search result
+                    // doesn't carry the same VM context. If a follow-up slice
+                    // adds shared seek-and-play helpers, prefer those.
+                    navController.navigate(Route.EpisodeDetail(episodeId))
                 },
             )
         }

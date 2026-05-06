@@ -31,4 +31,6 @@ sealed interface Route {
     @Serializable data class AskGemini(val episodeId: String) : Route
 
     @Serializable data object Bookmarks : Route
+
+    @Serializable data object LibrarySearch : Route
 }
