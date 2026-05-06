@@ -47,7 +47,7 @@ class LibrarySearchRepository(
                     val typed = LibrarySearchKind.fromWire(cursor.getString(0)!!) ?: continue
                     val itemId = cursor.getString(1)!!
                     val episodeId = cursor.getString(2)!!
-                    val timestampMs = cursor.getLong(3)!!
+                    val timestampMs = cursor.getLong(3) ?: 0L
                     val excerpt = cursor.getString(4) ?: ""
                     val episodeTitle = cursor.getString(5)!!
                     val podcastId = cursor.getString(6)!!
@@ -118,6 +118,11 @@ class LibrarySearchRepository(
 
         /**
          * Same as [SQL_SEARCH] but restricted to a single [LibrarySearchKind] bucket.
+         *
+         * At very large data volumes (>100 mixed-kind FTS hits before kind filter), this can
+         * truncate kind-filtered results because FTS applies LIMIT before the AND fts.kind
+         * post-filter. Acceptable for slice 2's expected data volume; if it bites in
+         * production, make `kind` INDEXED and push it into the MATCH expression.
          */
         private const val SQL_SEARCH_BY_KIND = """
             SELECT fts.kind, fts.itemId, fts.episodeId, fts.timestampMs,

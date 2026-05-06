@@ -329,6 +329,11 @@ class AiSummaryRepository(
         jobs.joinAll()
         withContext(ioContext) {
             db.episodeAiSummaryQueries.deleteAll()
+            // Transcripts only land in the cache because the AI pipeline fetched
+            // them; on Disconnect they're part of the AI footprint and must go too.
+            // The AFTER DELETE trigger on TranscriptCache wipes the FTS index rows
+            // automatically — no separate FTS delete needed here.
+            db.transcriptCacheQueries.deleteAll()
             // Disconnect must also wipe pending markers; otherwise the
             // worker would resume a request the user has explicitly opted
             // out of, against a vault that no longer holds a key. We delete
