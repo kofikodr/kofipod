@@ -134,9 +134,11 @@ class EpisodeDetailViewModel(
             bookmarkRepo.observeForEpisode(episodeId),
             snippetRepo.observeForEpisode(episodeId),
         ) { bms, sns ->
-            // fileSizer.sizeOf calls File.length() — a single syscall against
-            // internal app storage (filesDir), which completes in < 1 ms. Running
-            // on the Default dispatcher here is acceptable; no IO dispatcher needed.
+            // fileSizer.sizeOf calls File.length() — a single inode lookup against
+            // the snippet's path under cacheDir/snippets/ (a few microseconds on
+            // internal SSD storage). The combine transform already runs on the
+            // upstream's emission dispatcher (typically IO from the SQLDelight
+            // flows), so no extra dispatcher switching is needed.
             val snippetItems =
                 sns.map { snippet ->
                     val sizeBytes =
