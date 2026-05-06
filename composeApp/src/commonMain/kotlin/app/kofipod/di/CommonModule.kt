@@ -394,6 +394,9 @@ val commonDataModule =
                 player = get(),
                 episodes = get<EpisodeSource>(),
                 downloads = get(),
+                pkmExport = get(),
+                paywallRouter = get(),
+                pro = get(),
             )
         }
         viewModel { app.kofipod.ui.screens.search.LibrarySearchViewModel(get()) }

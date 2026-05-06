@@ -7,8 +7,13 @@ import app.kofipod.bookmarks.BookmarkRepository
 import app.kofipod.bookmarks.BookmarkWithContext
 import app.kofipod.data.repo.DownloadRepository
 import app.kofipod.data.repo.EpisodeSource
+import app.kofipod.pkm.PkmExportCoordinator
+import app.kofipod.pkm.PkmExportRequest
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.playback.PlayableEpisode
+import app.kofipod.pro.PaywallRouter
+import app.kofipod.pro.ProEntitlement
+import app.kofipod.pro.ProEntitlementRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +41,9 @@ class BookmarksViewModel(
     private val player: KofipodPlayer,
     private val episodes: EpisodeSource,
     private val downloads: DownloadRepository,
+    private val pkmExport: PkmExportCoordinator,
+    private val paywallRouter: PaywallRouter,
+    private val pro: ProEntitlementRepository,
 ) : ViewModel() {
     private val query = MutableStateFlow("")
 
@@ -52,6 +60,21 @@ class BookmarksViewModel(
     }
 
     fun delete(id: String) = bookmarks.deleteById(id)
+
+    /**
+     * Pro-gated. On Pro: open the markdown export sheet for [bookmarkId].
+     * On Free / Unknown: open the paywall sheet via [PaywallRouter].
+     *
+     * Mirrors `PlayerViewModel.onBookmarkTapped` gate semantics.
+     */
+    fun onExportRequested(bookmarkId: String) {
+        when (pro.state.value) {
+            is ProEntitlement.Pro -> pkmExport.show(PkmExportRequest.Bookmark(bookmarkId))
+            ProEntitlement.Free,
+            ProEntitlement.Unknown,
+            -> paywallRouter.requestPaywall("paywall_pkm_export_bookmark")
+        }
+    }
 
     fun openAt(row: BookmarkWithContext) {
         viewModelScope.launch {

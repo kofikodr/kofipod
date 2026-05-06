@@ -73,6 +73,7 @@ fun BookmarksScreen(
                         onOpenPlayer()
                     },
                     onLongPress = { viewModel.delete(row.bookmark.id) },
+                    onExportClicked = { viewModel.onExportRequested(row.bookmark.id) },
                 )
             }
         }
@@ -139,50 +140,67 @@ private fun BookmarkRow(
     row: BookmarkWithContext,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
+    onExportClicked: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
-    Column(
+    Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(c.surface)
-            .border(1.dp, c.border, RoundedCornerShape(12.dp))
-            .combinedClickable(onClick = onTap, onLongClick = onLongPress)
-            .padding(14.dp),
+            .border(1.dp, c.border, RoundedCornerShape(12.dp)),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            row.podcastTitle,
-            color = c.textMute,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            row.episodeTitle,
-            color = c.text,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            formatBookmarkTimestamp(row.bookmark.timestampMs),
-            color = c.purple,
-            fontWeight = FontWeight.Bold,
-            fontSize = 13.sp,
-        )
-        if (!row.bookmark.note.isNullOrBlank()) {
-            Spacer(Modifier.height(4.dp))
+        Column(
+            Modifier
+                .weight(1f)
+                .combinedClickable(onClick = onTap, onLongClick = onLongPress)
+                .padding(14.dp),
+        ) {
             Text(
-                row.bookmark.note,
+                row.podcastTitle,
+                color = c.textMute,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                row.episodeTitle,
                 color = c.text,
-                fontSize = 13.sp,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                formatBookmarkTimestamp(row.bookmark.timestampMs),
+                color = c.purple,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+            )
+            if (!row.bookmark.note.isNullOrBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    row.bookmark.note,
+                    color = c.text,
+                    fontSize = 13.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Box(
+            Modifier
+                .padding(end = 8.dp)
+                .size(40.dp)
+                .clip(CircleShape)
+                .clickable(onClick = onExportClicked),
+            contentAlignment = Alignment.Center,
+        ) {
+            KPIcon(name = KPIconName.Share, color = c.text, size = 20.dp, strokeWidth = 1.6f)
         }
     }
 }
