@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import java.io.File
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * One-shot foreground service that renders a single Snippet to disk and
@@ -55,10 +56,11 @@ class SnippetRenderService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var currentJob: Job? = null
 
-    // Tracks the snippet currently being rendered. Used to detect displacement
-    // (a second enqueue for a different snippet) so we can publish Failed for
-    // the displaced snippet before cancelling it.
-    @Volatile private var currentSnippetId: String? = null
+    // Tracks the snippet currently being rendered. AtomicReference makes the
+    // read-modify-write in onStartCommand atomic (getAndSet) and the clear in
+    // renderOne's finally block TOCTOU-safe (compareAndSet). @Volatile alone
+    // only guarantees visibility, not atomicity on compound operations.
+    private val currentSnippetId = AtomicReference<String?>(null)
 
     // Tracks the format of the in-progress render for notification copy.
     // Defaults to MP4 (the design's headline format) until the first render
@@ -81,16 +83,16 @@ class SnippetRenderService : Service() {
 
         startForegroundCompat()
 
-        // If there is a different snippet currently rendering, publish Failed
-        // for the displaced snippet so any observer (e.g. the editor screen)
+        // Atomic read-and-replace: prev is the previous value; the new value
+        // is now in place. If there was a different snippet rendering, publish
+        // Failed for the displaced one so any observer (e.g. the editor screen)
         // doesn't stay stuck in "Rendering…" forever.
-        val prev = currentSnippetId
+        val prev = currentSnippetId.getAndSet(snippetId)
         if (prev != null && prev != snippetId) {
             SnippetRenderProgressBus.publish(
                 RenderProgress.Failed(prev, "Replaced by newer render"),
             )
         }
-        currentSnippetId = snippetId
 
         // Cancel any in-flight render before queuing the new one. New requests
         // win — the user just trimmed/saved this snippet, they want THIS render.
@@ -107,106 +109,112 @@ class SnippetRenderService : Service() {
     }
 
     private suspend fun renderOne(snippetId: String) {
-        val snippet =
-            repo.selectById(snippetId) ?: run {
-                SnippetRenderProgressBus.publish(RenderProgress.Failed(snippetId, "Snippet not found"))
-                return
-            }
-        // EpisodeSource exposes only flow-based episode lookup on the interface;
-        // grab the current emission and move on.
-        val episode =
-            episodes.episodeFlow(snippet.episodeId).firstOrNull() ?: run {
-                SnippetRenderProgressBus.publish(RenderProgress.Failed(snippetId, "Episode not found"))
-                return
-            }
-
-        // DownloadRepository.localPathFor() is the synchronous one-shot we want —
-        // we don't need to subscribe to download progress, we just need the current
-        // local path (if any) for resolver to decide local vs remote.
-        val localPath = downloads.localPathFor(snippet.episodeId)
-        val source =
-            resolver.resolve(
-                localPath = localPath,
-                enclosureUrl = episode.enclosureUrl,
-            )
-        val sourceUriOrPath =
-            when (source) {
-                is SnippetSource.Local -> source.path
-                is SnippetSource.Remote -> source.url
-                SnippetSource.None -> {
-                    SnippetRenderProgressBus.publish(RenderProgress.Failed(snippetId, "Audio unavailable"))
+        try {
+            val snippet =
+                repo.selectById(snippetId) ?: run {
+                    SnippetRenderProgressBus.publish(RenderProgress.Failed(snippetId, "Snippet not found"))
                     return
                 }
-            }
-
-        // For the first render of a fresh snippet lastExportFormat is null,
-        // so we default to MP4 (the design's headline format). When Task 12
-        // lands markFormatPending, the editor will pre-persist the chosen format
-        // and this default becomes a fallback only.
-        val format = snippet.lastExportFormat ?: SnippetFormat.MP4
-        currentFormat = format
-
-        val outputDir = File(cacheDir, "snippets").apply { mkdirs() }
-        val outputFile = File(outputDir, "${snippet.id}.${format.fileExtension}")
-
-        SnippetRenderProgressBus.publish(RenderProgress.InFlight(snippetId, fraction = 0f))
-
-        val result =
-            when (format) {
-                SnippetFormat.MP3 ->
-                    exporter.exportMp3(
-                        snippet = snippet,
-                        sourceUriOrPath = sourceUriOrPath,
-                        outputPath = outputFile.absolutePath,
-                        onProgress = { f ->
-                            SnippetRenderProgressBus.publish(RenderProgress.InFlight(snippetId, f))
-                            updateProgressNotification(f, format)
-                        },
-                    )
-
-                SnippetFormat.MP4 -> {
-                    // Resolve caption: honour any author override first, then fall
-                    // back to the caption repository (transcript or Gemini path).
-                    val captionText =
-                        snippet.captionOverride
-                            ?: when (val r = captions.resolveFor(snippet)) {
-                                is CaptionResolution.FromTranscript -> r.text
-                                is CaptionResolution.FromGemini -> r.text
-                                is CaptionResolution.None -> null
-                            }
-                    // Cover art comes from the subscribed podcast row — always
-                    // present for subscribed podcasts; null-safe if somehow absent.
-                    val coverArtUrl = library.podcastNow(snippet.podcastId)?.artworkUrl
-                    // Waveform is deterministic on snippet.id so editor preview
-                    // and final render always agree on the bar shape.
-                    val waveform = waveforms.generate(seed = snippet.id)
-                    exporter.exportMp4(
-                        snippet = snippet,
-                        sourceUriOrPath = sourceUriOrPath,
-                        outputPath = outputFile.absolutePath,
-                        coverArtUriOrPath = coverArtUrl,
-                        captionText = captionText,
-                        waveformSamples = waveform,
-                        onProgress = { f ->
-                            SnippetRenderProgressBus.publish(RenderProgress.InFlight(snippetId, f))
-                            updateProgressNotification(f, format)
-                        },
-                    )
+            // EpisodeSource exposes only flow-based episode lookup on the interface;
+            // grab the current emission and move on.
+            val episode =
+                episodes.episodeFlow(snippet.episodeId).firstOrNull() ?: run {
+                    SnippetRenderProgressBus.publish(RenderProgress.Failed(snippetId, "Episode not found"))
+                    return
                 }
-            }
 
-        result.fold(
-            onSuccess = { path ->
-                repo.setRendered(snippet.id, format, path)
-                SnippetRenderProgressBus.publish(RenderProgress.Complete(snippetId, path, format))
-                triggerShare(snippet, path, format)
-            },
-            onFailure = { t ->
-                SnippetRenderProgressBus.publish(
-                    RenderProgress.Failed(snippetId, t.message ?: "Render failed"),
+            // DownloadRepository.localPathFor() is the synchronous one-shot we want —
+            // we don't need to subscribe to download progress, we just need the current
+            // local path (if any) for resolver to decide local vs remote.
+            val localPath = downloads.localPathFor(snippet.episodeId)
+            val source =
+                resolver.resolve(
+                    localPath = localPath,
+                    enclosureUrl = episode.enclosureUrl,
                 )
-            },
-        )
+            val sourceUriOrPath =
+                when (source) {
+                    is SnippetSource.Local -> source.path
+                    is SnippetSource.Remote -> source.url
+                    SnippetSource.None -> {
+                        SnippetRenderProgressBus.publish(RenderProgress.Failed(snippetId, "Audio unavailable"))
+                        return
+                    }
+                }
+
+            // For the first render of a fresh snippet lastExportFormat is null,
+            // so we default to MP4 (the design's headline format). When Task 12
+            // lands markFormatPending, the editor will pre-persist the chosen format
+            // and this default becomes a fallback only.
+            val format = snippet.lastExportFormat ?: SnippetFormat.MP4
+            currentFormat = format
+
+            val outputDir = File(cacheDir, "snippets").apply { mkdirs() }
+            val outputFile = File(outputDir, "${snippet.id}.${format.fileExtension}")
+
+            SnippetRenderProgressBus.publish(RenderProgress.InFlight(snippetId, fraction = 0f))
+
+            val result =
+                when (format) {
+                    SnippetFormat.MP3 ->
+                        exporter.exportMp3(
+                            snippet = snippet,
+                            sourceUriOrPath = sourceUriOrPath,
+                            outputPath = outputFile.absolutePath,
+                            onProgress = { f ->
+                                SnippetRenderProgressBus.publish(RenderProgress.InFlight(snippetId, f))
+                                updateProgressNotification(f, format)
+                            },
+                        )
+
+                    SnippetFormat.MP4 -> {
+                        // Resolve caption: honour any author override first, then fall
+                        // back to the caption repository (transcript or Gemini path).
+                        val captionText =
+                            snippet.captionOverride
+                                ?: when (val r = captions.resolveFor(snippet)) {
+                                    is CaptionResolution.FromTranscript -> r.text
+                                    is CaptionResolution.FromGemini -> r.text
+                                    is CaptionResolution.None -> null
+                                }
+                        // Cover art comes from the subscribed podcast row — always
+                        // present for subscribed podcasts; null-safe if somehow absent.
+                        val coverArtUrl = library.podcastNow(snippet.podcastId)?.artworkUrl
+                        // Waveform is deterministic on snippet.id so editor preview
+                        // and final render always agree on the bar shape.
+                        val waveform = waveforms.generate(seed = snippet.id)
+                        exporter.exportMp4(
+                            snippet = snippet,
+                            sourceUriOrPath = sourceUriOrPath,
+                            outputPath = outputFile.absolutePath,
+                            coverArtUriOrPath = coverArtUrl,
+                            captionText = captionText,
+                            waveformSamples = waveform,
+                            onProgress = { f ->
+                                SnippetRenderProgressBus.publish(RenderProgress.InFlight(snippetId, f))
+                                updateProgressNotification(f, format)
+                            },
+                        )
+                    }
+                }
+
+            result.fold(
+                onSuccess = { path ->
+                    repo.setRendered(snippet.id, format, path)
+                    SnippetRenderProgressBus.publish(RenderProgress.Complete(snippetId, path, format))
+                    triggerShare(snippet, path, format)
+                },
+                onFailure = { t ->
+                    SnippetRenderProgressBus.publish(
+                        RenderProgress.Failed(snippetId, t.message ?: "Render failed"),
+                    )
+                },
+            )
+        } finally {
+            // Clear only if no newer enqueue has already taken over the slot —
+            // compareAndSet is a no-op when another snippetId has swapped in.
+            currentSnippetId.compareAndSet(snippetId, null)
+        }
     }
 
     private fun triggerShare(
@@ -286,7 +294,7 @@ class SnippetRenderService : Service() {
     }
 
     override fun onDestroy() {
-        currentSnippetId = null
+        currentSnippetId.set(null)
         currentJob?.cancel()
         scope.cancel()
         super.onDestroy()

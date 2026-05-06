@@ -295,17 +295,14 @@ val commonDataModule =
                         val episode = episodes.episodeNow(episodeId) ?: error("no episode")
                         val download = downloads.rowFor(episodeId) ?: error("no download row")
                         val acquired = coordinator.acquire(key, episode, download).getOrThrow()
-                        // generateFromAudio returns Result<AiSummaryJson>; we need the
-                        // raw prose so extract it from the structured response.
                         gemini
-                            .generateFromAudio(
+                            .transcribeFromAudio(
                                 apiKey = key,
                                 model = app.kofipod.ai.GeminiModel.Flash,
                                 fileUri = acquired.fileUri,
                                 mimeType = acquired.mimeType,
                                 prompt = prompt,
                             ).getOrThrow()
-                            .summary
                     }
             }
         }
