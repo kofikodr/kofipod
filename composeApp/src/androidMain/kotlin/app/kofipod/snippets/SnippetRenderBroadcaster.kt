@@ -12,10 +12,14 @@ import androidx.core.content.ContextCompat
  * launcher (and any future internal caller) can stay declarative.
  */
 object SnippetRenderBroadcaster {
-    fun enqueue(context: Context, snippetId: String) {
-        val intent = Intent(context, SnippetRenderService::class.java).apply {
-            putExtra(SnippetRenderService.EXTRA_SNIPPET_ID, snippetId)
-        }
+    fun enqueue(
+        context: Context,
+        snippetId: String,
+    ) {
+        val intent =
+            Intent(context, SnippetRenderService::class.java).apply {
+                putExtra(SnippetRenderService.EXTRA_SNIPPET_ID, snippetId)
+            }
         ContextCompat.startForegroundService(context, intent)
     }
 }

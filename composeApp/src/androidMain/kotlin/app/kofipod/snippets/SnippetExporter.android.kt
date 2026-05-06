@@ -22,83 +22,92 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 actual class SnippetExporter(private val context: Context) {
-
     @OptIn(DelicateCoroutinesApi::class)
     actual suspend fun exportMp3(
         snippet: Snippet,
         sourceUriOrPath: String,
         outputPath: String,
         onProgress: (Float) -> Unit,
-    ): Result<String> = withContext(Dispatchers.Main) {
-        // Transformer is built on the main thread (Android requirement).
-        val outputFile = File(outputPath)
-        outputFile.parentFile?.mkdirs()
-        if (outputFile.exists()) outputFile.delete()
+    ): Result<String> =
+        withContext(Dispatchers.Main) {
+            // Transformer is built on the main thread (Android requirement).
+            val outputFile = File(outputPath)
+            outputFile.parentFile?.mkdirs()
+            if (outputFile.exists()) outputFile.delete()
 
-        val mediaItem = MediaItem.Builder()
-            .setUri(toUri(sourceUriOrPath))
-            .setClippingConfiguration(
-                MediaItem.ClippingConfiguration.Builder()
-                    .setStartPositionMs(snippet.startMs)
-                    .setEndPositionMs(snippet.endMs)
-                    .build(),
-            )
-            .build()
+            val mediaItem =
+                MediaItem.Builder()
+                    .setUri(toUri(sourceUriOrPath))
+                    .setClippingConfiguration(
+                        MediaItem.ClippingConfiguration.Builder()
+                            .setStartPositionMs(snippet.startMs)
+                            .setEndPositionMs(snippet.endMs)
+                            .build(),
+                    )
+                    .build()
 
-        val edited = EditedMediaItem.Builder(mediaItem)
-            .setRemoveVideo(true) // audio-only
-            .build()
+            val edited =
+                EditedMediaItem.Builder(mediaItem)
+                    .setRemoveVideo(true) // audio-only
+                    .build()
 
-        val composition = Composition.Builder(EditedMediaItemSequence(edited)).build()
+            val composition = Composition.Builder(EditedMediaItemSequence(edited)).build()
 
-        val deferred = CompletableDeferred<Result<String>>()
+            val deferred = CompletableDeferred<Result<String>>()
 
-        val transformer = Transformer.Builder(context)
-            .setAudioMimeType(MimeTypes.AUDIO_AAC) // Transformer's MP3 encoder is the muxer's job
-            .addListener(object : Transformer.Listener {
-                override fun onCompleted(c: Composition, exportResult: ExportResult) {
-                    deferred.complete(Result.success(outputFile.absolutePath))
+            val transformer =
+                Transformer.Builder(context)
+                    .setAudioMimeType(MimeTypes.AUDIO_AAC) // Transformer's MP3 encoder is the muxer's job
+                    .addListener(
+                        object : Transformer.Listener {
+                            override fun onCompleted(
+                                c: Composition,
+                                exportResult: ExportResult,
+                            ) {
+                                deferred.complete(Result.success(outputFile.absolutePath))
+                            }
+
+                            override fun onError(
+                                c: Composition,
+                                exportResult: ExportResult,
+                                exportException: ExportException,
+                            ) {
+                                deferred.complete(Result.failure(exportException))
+                            }
+                        },
+                    )
+                    .build()
+
+            // Progress polling — Transformer doesn't push progress; we poll via getProgress.
+            // We don't want to block the calling coroutine on progress, so we just attach a
+            // simple poller that runs while the deferred is pending.
+            val pollerJob =
+                GlobalScope.launch(Dispatchers.Main) {
+                    val holder = ProgressHolder()
+                    while (!deferred.isCompleted) {
+                        val state = transformer.getProgress(holder)
+                        if (state == Transformer.PROGRESS_STATE_AVAILABLE) {
+                            onProgress((holder.progress / 100f).coerceIn(0f, 1f))
+                        }
+                        delay(POLL_INTERVAL_MS)
+                    }
                 }
 
-                override fun onError(
-                    c: Composition,
-                    exportResult: ExportResult,
-                    exportException: ExportException,
-                ) {
-                    deferred.complete(Result.failure(exportException))
-                }
-            })
-            .build()
-
-        // Progress polling — Transformer doesn't push progress; we poll via getProgress.
-        // We don't want to block the calling coroutine on progress, so we just attach a
-        // simple poller that runs while the deferred is pending.
-        val pollerJob = GlobalScope.launch(Dispatchers.Main) {
-            val holder = ProgressHolder()
-            while (!deferred.isCompleted) {
-                val state = transformer.getProgress(holder)
-                if (state == Transformer.PROGRESS_STATE_AVAILABLE) {
-                    onProgress((holder.progress / 100f).coerceIn(0f, 1f))
-                }
-                delay(POLL_INTERVAL_MS)
-            }
-        }
-
-        try {
-            transformer.start(composition, outputPath)
-            val result = deferred.await()
-            pollerJob.cancel()
-            result
-        } catch (t: Throwable) {
-            pollerJob.cancel()
             try {
-                transformer.cancel()
-            } catch (_: Throwable) {
-                // Best-effort cancel; the original failure is what we surface.
+                transformer.start(composition, outputPath)
+                val result = deferred.await()
+                pollerJob.cancel()
+                result
+            } catch (t: Throwable) {
+                pollerJob.cancel()
+                try {
+                    transformer.cancel()
+                } catch (_: Throwable) {
+                    // Best-effort cancel; the original failure is what we surface.
+                }
+                Result.failure(t)
             }
-            Result.failure(t)
         }
-    }
 
     private fun toUri(sourceUriOrPath: String): Uri =
         if (sourceUriOrPath.startsWith("http://") || sourceUriOrPath.startsWith("https://")) {

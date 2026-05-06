@@ -5,7 +5,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class SnippetWindowTest {
-
     @Test
     fun `last 60s window from mid episode returns previous 60 seconds`() {
         val w = SnippetWindow.computeLast60sWindow(positionMs = 120_000L, durationMs = 600_000L)

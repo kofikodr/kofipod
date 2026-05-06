@@ -12,7 +12,10 @@ object SnippetWindow {
      * `[currentPosition − 60_000ms, currentPosition]`. Clamps start to zero
      * for early-position episodes; never overruns duration.
      */
-    fun computeLast60sWindow(positionMs: Long, durationMs: Long): Window {
+    fun computeLast60sWindow(
+        positionMs: Long,
+        durationMs: Long,
+    ): Window {
         val end = positionMs.coerceIn(0L, durationMs.coerceAtLeast(0L))
         val start = (end - LAST_WINDOW_MS).coerceAtLeast(0L)
         return Window(start, end)
@@ -24,11 +27,19 @@ object SnippetWindow {
      * satisfy the min-span; falls back to pulling start back if end is
      * already at duration.
      */
-    fun clampWindow(startMs: Long, endMs: Long, durationMs: Long): Window {
+    fun clampWindow(
+        startMs: Long,
+        endMs: Long,
+        durationMs: Long,
+    ): Window {
         val cap = durationMs.coerceAtLeast(0L)
         var s = startMs.coerceIn(0L, cap)
         var e = endMs.coerceIn(0L, cap)
-        if (e < s) { val t = s; s = e; e = t }
+        if (e < s) {
+            val t = s
+            s = e
+            e = t
+        }
         if (e - s < MIN_SPAN_MS) {
             val needed = MIN_SPAN_MS - (e - s)
             val canExtendEnd = (cap - e).coerceAtLeast(0L)
@@ -45,7 +56,7 @@ object SnippetWindow {
     /** mm:ss.s formatting (one decimal). For UI display only — not for storage. */
     fun formatTimestampDeci(ms: Long): String {
         val safe = ms.coerceAtLeast(0L)
-        val totalDeci = (safe + 50L) / 100L  // round to nearest 0.1s
+        val totalDeci = (safe + 50L) / 100L // round to nearest 0.1s
         val deci = (totalDeci % 10L).toInt()
         val totalSec = totalDeci / 10L
         val mm = (totalSec / 60L).toInt()

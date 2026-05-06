@@ -4,6 +4,5 @@ package app.kofipod.snippets
 import java.io.File
 
 actual class FileChecker actual constructor() : FileCheckerApi {
-    override fun exists(path: String): Boolean =
-        path.isNotBlank() && File(path).exists()
+    override fun exists(path: String): Boolean = path.isNotBlank() && File(path).exists()
 }

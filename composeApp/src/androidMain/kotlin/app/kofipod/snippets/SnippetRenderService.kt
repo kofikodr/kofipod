@@ -33,7 +33,6 @@ import java.io.File
  * older targets fall through to `dataSync` (already permitted).
  */
 class SnippetRenderService : Service() {
-
     private val repo: SnippetRepository by inject()
     private val episodes: EpisodeSource by inject()
     private val downloads: DownloadRepository by inject()
@@ -46,21 +45,27 @@ class SnippetRenderService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val snippetId = intent?.getStringExtra(EXTRA_SNIPPET_ID)
-            ?: run {
-                stopSelf(startId)
-                return START_NOT_STICKY
-            }
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int,
+    ): Int {
+        val snippetId =
+            intent?.getStringExtra(EXTRA_SNIPPET_ID)
+                ?: run {
+                    stopSelf(startId)
+                    return START_NOT_STICKY
+                }
 
         startForegroundCompat()
-        currentJob = scope.launch {
-            try {
-                renderOne(snippetId)
-            } finally {
-                stopSelf(startId)
+        currentJob =
+            scope.launch {
+                try {
+                    renderOne(snippetId)
+                } finally {
+                    stopSelf(startId)
+                }
             }
-        }
         return START_REDELIVER_INTENT
     }
 
@@ -74,25 +79,28 @@ class SnippetRenderService : Service() {
         // we don't need to subscribe to download progress, we just need the current
         // local path (if any) for resolver to decide local vs remote.
         val localPath = downloads.localPathFor(snippet.episodeId)
-        val source = resolver.resolve(
-            localPath = localPath,
-            enclosureUrl = episode.enclosureUrl,
-        )
-        val sourceUriOrPath = when (source) {
-            is SnippetSource.Local -> source.path
-            is SnippetSource.Remote -> source.url
-            SnippetSource.None -> return
-        }
+        val source =
+            resolver.resolve(
+                localPath = localPath,
+                enclosureUrl = episode.enclosureUrl,
+            )
+        val sourceUriOrPath =
+            when (source) {
+                is SnippetSource.Local -> source.path
+                is SnippetSource.Remote -> source.url
+                SnippetSource.None -> return
+            }
 
         val outputDir = File(cacheDir, "snippets").apply { mkdirs() }
         val outputFile = File(outputDir, "${snippet.id}.${SnippetFormat.MP3.fileExtension}")
 
-        val result = exporter.exportMp3(
-            snippet = snippet,
-            sourceUriOrPath = sourceUriOrPath,
-            outputPath = outputFile.absolutePath,
-            onProgress = { p -> updateProgressNotification(p) },
-        )
+        val result =
+            exporter.exportMp3(
+                snippet = snippet,
+                sourceUriOrPath = sourceUriOrPath,
+                outputPath = outputFile.absolutePath,
+                onProgress = { p -> updateProgressNotification(p) },
+            )
 
         result.fold(
             onSuccess = { path ->
@@ -105,7 +113,10 @@ class SnippetRenderService : Service() {
         )
     }
 
-    private fun triggerShare(snippet: Snippet, path: String) {
+    private fun triggerShare(
+        snippet: Snippet,
+        path: String,
+    ) {
         val episodeUrl =
             "https://podcastindex.org/podcast/${snippet.podcastId}?episode=${snippet.episodeId}"
         sharer.shareFile(
@@ -151,7 +162,7 @@ class SnippetRenderService : Service() {
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Rendering snippet")
             .setContentText("$pct%")
-            .setProgress(100, pct, /* indeterminate = */ progress <= 0f)
+            .setProgress(100, pct, progress <= 0f)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
     }

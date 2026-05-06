@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.map
 import kotlin.random.Random
 
 class SnippetRepository(private val db: KofipodDatabase) {
-
     /**
      * Create a "snip last 60s" draft from current player state. Returns the
      * generated id. Title defaults to `"<episode title> — <mm:ss.s start>"`
@@ -53,23 +52,39 @@ class SnippetRepository(private val db: KofipodDatabase) {
      * editor calls this overload. The unclamped overload is for tests and
      * for callers that have already validated the pair.
      */
-    fun updateTrim(id: String, startMs: Long, endMs: Long, durationMs: Long) {
+    fun updateTrim(
+        id: String,
+        startMs: Long,
+        endMs: Long,
+        durationMs: Long,
+    ) {
         val w = SnippetWindow.clampWindow(startMs, endMs, durationMs)
         db.snippetQueries.updateTrim(w.startMs, w.endMs, id)
     }
 
-    fun updateTrim(id: String, startMs: Long, endMs: Long) {
+    fun updateTrim(
+        id: String,
+        startMs: Long,
+        endMs: Long,
+    ) {
         db.snippetQueries.updateTrim(startMs, endMs, id)
     }
 
-    fun updateTitle(id: String, title: String?) =
-        db.snippetQueries.updateTitle(title?.takeIf { it.isNotBlank() }, id)
+    fun updateTitle(
+        id: String,
+        title: String?,
+    ) = db.snippetQueries.updateTitle(title?.takeIf { it.isNotBlank() }, id)
 
-    fun updateCaptionOverride(id: String, captionOverride: String?) =
-        db.snippetQueries.updateCaptionOverride(captionOverride?.takeIf { it.isNotBlank() }, id)
+    fun updateCaptionOverride(
+        id: String,
+        captionOverride: String?,
+    ) = db.snippetQueries.updateCaptionOverride(captionOverride?.takeIf { it.isNotBlank() }, id)
 
-    fun setRendered(id: String, format: SnippetFormat, path: String) =
-        db.snippetQueries.setRendered(format.wire, path, id)
+    fun setRendered(
+        id: String,
+        format: SnippetFormat,
+        path: String,
+    ) = db.snippetQueries.setRendered(format.wire, path, id)
 
     fun deleteById(id: String) = db.snippetQueries.deleteById(id)
 
@@ -89,18 +104,19 @@ class SnippetRepository(private val db: KofipodDatabase) {
             .map { rows ->
                 rows.map { row ->
                     SnippetWithContext(
-                        snippet = Snippet(
-                            id = row.id,
-                            episodeId = row.episodeId,
-                            podcastId = row.podcastId,
-                            startMs = row.startMs,
-                            endMs = row.endMs,
-                            title = row.title,
-                            captionOverride = row.captionOverride,
-                            createdAtMs = row.createdAtMs,
-                            lastExportFormat = SnippetFormat.fromWire(row.lastExportFormat),
-                            lastExportPath = row.lastExportPath,
-                        ),
+                        snippet =
+                            Snippet(
+                                id = row.id,
+                                episodeId = row.episodeId,
+                                podcastId = row.podcastId,
+                                startMs = row.startMs,
+                                endMs = row.endMs,
+                                title = row.title,
+                                captionOverride = row.captionOverride,
+                                createdAtMs = row.createdAtMs,
+                                lastExportFormat = SnippetFormat.fromWire(row.lastExportFormat),
+                                lastExportPath = row.lastExportPath,
+                            ),
                         episodeTitle = row.episodeTitle,
                         podcastTitle = row.podcastTitle,
                         artworkUrl = row.artworkUrl,
@@ -109,18 +125,19 @@ class SnippetRepository(private val db: KofipodDatabase) {
             }
             .flowOn(Dispatchers.Default)
 
-    private fun toDomain(row: app.kofipod.db.Snippet): Snippet = Snippet(
-        id = row.id,
-        episodeId = row.episodeId,
-        podcastId = row.podcastId,
-        startMs = row.startMs,
-        endMs = row.endMs,
-        title = row.title,
-        captionOverride = row.captionOverride,
-        createdAtMs = row.createdAtMs,
-        lastExportFormat = SnippetFormat.fromWire(row.lastExportFormat),
-        lastExportPath = row.lastExportPath,
-    )
+    private fun toDomain(row: app.kofipod.db.Snippet): Snippet =
+        Snippet(
+            id = row.id,
+            episodeId = row.episodeId,
+            podcastId = row.podcastId,
+            startMs = row.startMs,
+            endMs = row.endMs,
+            title = row.title,
+            captionOverride = row.captionOverride,
+            createdAtMs = row.createdAtMs,
+            lastExportFormat = SnippetFormat.fromWire(row.lastExportFormat),
+            lastExportPath = row.lastExportPath,
+        )
 
     private fun generateId(nowMs: Long): String {
         val rand = Random.nextLong(0L, Long.MAX_VALUE)
