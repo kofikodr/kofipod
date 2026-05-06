@@ -60,6 +60,7 @@ class LibrarySearchRepositoryTest {
             assertEquals("b1", hit.bookmarkId)
             assertEquals(5_000L, hit.timestampMs)
             assertTrue(hit.excerpt.contains("learning", ignoreCase = true))
+            assertTrue(hit.excerpt.contains("<<"), "snippet() should wrap matches in '<<' markers; an empty/raw excerpt suggests the column index argument is wrong")
         }
 
     @Test
@@ -149,6 +150,50 @@ class LibrarySearchRepositoryTest {
             assertEquals(0, repo.search("").first().size)
             assertEquals(0, repo.search("   ").first().size)
         }
+
+    @Test
+    fun summary_upsert_replacesOldText() = runTest {
+        db.episodeAiSummaryQueries.upsert(
+            episodeId = "e1", generatedAtMs = 0, modelId = "m",
+            sourceKind = "transcript", sourceFingerprint = "fp",
+            summary = "discussion of bananaword in detail",
+            peopleJson = "[]", thingsJson = "[]", linksJson = "[]",
+        )
+        assertEquals(1, repo.search("bananaword").first().size, "AFTER INSERT trigger should make first upsert visible")
+
+        db.episodeAiSummaryQueries.upsert(
+            episodeId = "e1", generatedAtMs = 1, modelId = "m",
+            sourceKind = "transcript", sourceFingerprint = "fp",
+            summary = "discussion of cherryword in detail",
+            peopleJson = "[]", thingsJson = "[]", linksJson = "[]",
+        )
+        assertEquals(0, repo.search("bananaword").first().size, "AFTER UPDATE trigger's DELETE step must purge the stale FTS row")
+        assertEquals(1, repo.search("cherryword").first().size, "AFTER UPDATE trigger's INSERT step must add the new FTS row")
+    }
+
+    @Test
+    fun summary_directDelete_removesIndexRow() = runTest {
+        db.episodeAiSummaryQueries.upsert(
+            episodeId = "e1", generatedAtMs = 0, modelId = "m",
+            sourceKind = "transcript", sourceFingerprint = "fp",
+            summary = "uniquesummaryphrase",
+            peopleJson = "[]", thingsJson = "[]", linksJson = "[]",
+        )
+        assertEquals(1, repo.search("uniquesummaryphrase").first().size)
+
+        // Direct delete (not via FK cascade) — proves summary_fts_ad uses the right predicate.
+        db.episodeAiSummaryQueries.deleteByEpisode("e1")
+        assertEquals(0, repo.search("uniquesummaryphrase").first().size)
+    }
+
+    @Test
+    fun transcript_directDelete_removesIndexRow() = runTest {
+        db.transcriptCacheQueries.upsert(episodeId = "e1", text = "uniquetranscriptphrase", fetchedAtMs = 0)
+        assertEquals(1, repo.search("uniquetranscriptphrase").first().size)
+
+        db.transcriptCacheQueries.deleteByEpisode("e1")
+        assertEquals(0, repo.search("uniquetranscriptphrase").first().size)
+    }
 
     @Test
     fun kindFilter_narrowsToSingleBucket() =
