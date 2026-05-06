@@ -57,6 +57,30 @@ class MarkdownDocumentTest {
     }
 
     @Test
+    fun renderEscapesControlCharsInValues() {
+        // Podcast Index titles can contain literal newlines/tabs from the
+        // upstream feed. Without escaping, the YAML scalar would span
+        // physical lines and downstream parsers (Obsidian, Readwise) would
+        // reject the document.
+        val doc =
+            MarkdownDocument(
+                frontmatter = listOf("title" to "line one\nline two\twith tab\rcr"),
+                body = "x",
+                filename = "x.md",
+            )
+        val expected =
+            """
+            ---
+            title: "line one\nline two\twith tab\rcr"
+            ---
+
+            x
+
+            """.trimIndent()
+        assertEquals(expected, doc.render())
+    }
+
+    @Test
     fun renderHandlesEmptyFrontmatter() {
         val doc =
             MarkdownDocument(
