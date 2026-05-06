@@ -22,6 +22,8 @@ class SnippetCaptionRepository(
     private val picker: SnippetCaptionPicker = SnippetCaptionPicker(),
 ) {
     suspend fun resolveFor(snippet: Snippet): CaptionResolution {
+        // NoTranscript is used as a proxy for "episode not found" — NoneReason has no
+        // dedicated NoEpisode variant yet. Reason is diagnostics-only (no UI surface in v1.0).
         val episode =
             episodes.episodeFlow(snippet.episodeId).firstOrNull()
                 ?: return CaptionResolution.None(CaptionResolution.NoneReason.NoTranscript)

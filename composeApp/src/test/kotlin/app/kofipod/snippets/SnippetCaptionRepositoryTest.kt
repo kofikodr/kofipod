@@ -114,6 +114,16 @@ class SnippetCaptionRepositoryTest {
             assertEquals(CaptionResolution.NoneReason.GeminiFailed, r.reason)
         }
 
+    @Test
+    fun episode_not_found_returns_None() =
+        runTest {
+            // Simulates a deleted or orphaned snippet whose episode no longer exists.
+            val repo =
+                makeRepoWith(transcriptUrl = null, transcriptBody = "", audioDownloaded = false, geminiKey = null, episodeExists = false)
+            val r = repo.resolveFor(snippet())
+            assertTrue(r is CaptionResolution.None)
+        }
+
     // Helpers -------------------------------------------------------------
     private fun snippet(
         startMs: Long = 0L,
@@ -126,7 +136,8 @@ class SnippetCaptionRepositoryTest {
 
     /**
      * Builds a `SnippetCaptionRepository` with three small fakes:
-     * - A fake `EpisodeSource` that emits a single Episode with the given transcriptUrl.
+     * - A fake `EpisodeSource` that emits a single Episode with the given transcriptUrl,
+     *   or null when [episodeExists] is false (simulates a deleted/orphaned episode).
      * - A fake `TranscriptFetcher` (`fun interface`) that returns `transcriptBody` if non-blank.
      * - A fake `CaptionDeps` parameterised by audioDownloaded / geminiKey / geminiResponse.
      */
@@ -136,6 +147,7 @@ class SnippetCaptionRepositoryTest {
         audioDownloaded: Boolean,
         geminiKey: String?,
         geminiResponse: String? = "ok",
+        episodeExists: Boolean = true,
     ): SnippetCaptionRepository {
         val episode =
             Episode(
@@ -160,7 +172,7 @@ class SnippetCaptionRepositoryTest {
             object : EpisodeSource {
                 override fun episodesFlow(podcastId: String): Flow<List<Episode>> = flowOf(listOf(episode))
 
-                override fun episodeFlow(episodeId: String): Flow<Episode?> = flowOf(episode)
+                override fun episodeFlow(episodeId: String): Flow<Episode?> = if (episodeExists) flowOf(episode) else flowOf(null)
 
                 override fun newEpisodeCountsFlow(): Flow<Map<String, Int>> = flowOf(emptyMap())
 
