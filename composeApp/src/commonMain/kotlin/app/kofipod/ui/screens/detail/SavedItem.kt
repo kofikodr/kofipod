@@ -18,7 +18,7 @@ sealed interface SavedItem {
         override val createdAtMs: Long get() = bookmark.createdAtMs
     }
 
-    data class SnippetItem(val snippet: Snippet) : SavedItem {
+    data class SnippetItem(val snippet: Snippet, val sizeBytes: Long) : SavedItem {
         override val createdAtMs: Long get() = snippet.createdAtMs
     }
 }

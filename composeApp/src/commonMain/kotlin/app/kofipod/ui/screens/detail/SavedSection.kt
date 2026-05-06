@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import app.kofipod.bookmarks.Bookmark
 import app.kofipod.bookmarks.formatBookmarkTimestamp
 import app.kofipod.snippets.Snippet
+import app.kofipod.snippets.SnippetSizeEstimator
 import app.kofipod.snippets.SnippetWindow
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
@@ -63,6 +64,7 @@ internal fun SavedSection(
                 is SavedItem.SnippetItem ->
                     SnippetRow(
                         snippet = item.snippet,
+                        sizeBytes = item.sizeBytes,
                         onTap = onSnippetTap,
                     )
             }
@@ -118,6 +120,7 @@ private fun BookmarkRow(
 @Composable
 private fun SnippetRow(
     snippet: Snippet,
+    sizeBytes: Long,
     onTap: (String) -> Unit,
 ) {
     val c = LocalKofipodColors.current
@@ -158,15 +161,19 @@ private fun SnippetRow(
                 fontFamily = FontFamily.Monospace,
             )
         }
-        if (snippet.isRendered) {
+        val format = snippet.lastExportFormat
+        if (format != null && sizeBytes > 0L) {
             Spacer(Modifier.size(8.dp))
-            Mp3Chip()
+            FormatSizeChip(formatName = format.name, sizeBytes = sizeBytes)
         }
     }
 }
 
 @Composable
-private fun Mp3Chip() {
+private fun FormatSizeChip(
+    formatName: String,
+    sizeBytes: Long,
+) {
     val c = LocalKofipodColors.current
     Row(
         modifier =
@@ -177,9 +184,9 @@ private fun Mp3Chip() {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            "MP3",
+            "$formatName · ${SnippetSizeEstimator.formatBytes(sizeBytes)}",
             color = c.pink,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.SemiBold,
             fontSize = 10.sp,
             fontFamily = FontFamily.Monospace,
         )

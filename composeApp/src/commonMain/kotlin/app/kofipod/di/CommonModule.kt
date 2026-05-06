@@ -270,6 +270,7 @@ val commonDataModule =
         // in the Android Koin module.
         single { app.kofipod.snippets.SnippetSourceResolver(get()) }
         single { app.kofipod.snippets.SnippetRepository(get()) }
+        single { app.kofipod.snippets.FileSizer() }
         // Snippet Slice 4 — caption / waveform / format-routing collaborators.
         // CaptionDeps is a seam so SnippetCaptionRepository stays unit-testable
         // without MockK. The production adapter delegates to the four concrete
@@ -430,6 +431,7 @@ val commonDataModule =
                 aiConfig = get(),
                 bookmarkRepo = get(),
                 snippetRepo = get(),
+                fileSizer = get(),
             )
         }
         viewModel {

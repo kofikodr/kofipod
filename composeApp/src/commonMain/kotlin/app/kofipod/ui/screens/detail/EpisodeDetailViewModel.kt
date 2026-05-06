@@ -20,6 +20,7 @@ import app.kofipod.downloads.downloadFileName
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.playback.PlayableEpisode
 import app.kofipod.share.Sharer
+import app.kofipod.snippets.FileSizer
 import app.kofipod.snippets.SnippetRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,6 +64,7 @@ class EpisodeDetailViewModel(
     aiConfig: AiConfigRepository,
     private val bookmarkRepo: BookmarkRepository,
     snippetRepo: SnippetRepository,
+    private val fileSizer: FileSizer,
 ) : ViewModel() {
     private val error = MutableStateFlow<String?>(null)
 
@@ -132,7 +134,19 @@ class EpisodeDetailViewModel(
             bookmarkRepo.observeForEpisode(episodeId),
             snippetRepo.observeForEpisode(episodeId),
         ) { bms, sns ->
-            (bms.map(SavedItem::BookmarkItem) + sns.map(SavedItem::SnippetItem))
+            // fileSizer.sizeOf calls File.length() — a single syscall against
+            // internal app storage (filesDir), which completes in < 1 ms. Running
+            // on the Default dispatcher here is acceptable; no IO dispatcher needed.
+            val snippetItems =
+                sns.map { snippet ->
+                    val sizeBytes =
+                        snippet.lastExportPath
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { fileSizer.sizeOf(it) }
+                            ?: 0L
+                    SavedItem.SnippetItem(snippet, sizeBytes)
+                }
+            (bms.map(SavedItem::BookmarkItem) + snippetItems)
                 .sortedByDescending { it.createdAtMs }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
