@@ -35,9 +35,14 @@ object TranscriptSlicer {
 
     private data class Cue(val startMs: Long, val endMs: Long, val text: String)
 
+    // Trailing `\s*.*` accepts WebVTT positioning flags
+    // (e.g. "line:50% position:50%") and any other tail-of-line content while
+    // keeping `matchEntire`'s line-anchored semantics — a NOTE block containing
+    // a timestamp substring won't match because the regex must consume the
+    // whole line and the regex doesn't start with arbitrary characters.
     private val CUE_LINE =
         Regex(
-            """(\d{2}):(\d{2}):(\d{2})[.,](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[.,](\d{3})""",
+            """(\d{2}):(\d{2}):(\d{2})[.,](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[.,](\d{3})\s*.*""",
         )
 
     private fun parseCues(transcript: String): List<Cue> {

@@ -65,4 +65,42 @@ class TranscriptSlicerTest {
         val sliced = TranscriptSlicer.sliceForWindow(vtt, startMs = 60_000L, endMs = 70_000L)
         assertEquals("Only cue.", sliced)
     }
+
+    @Test
+    fun webvtt_with_positioning_flags_still_parses() {
+        // YouTube auto-captions and some podcast hosts emit cue headers like
+        // "00:01:30.000 --> 00:01:35.000 line:50% position:50%". The slicer
+        // must accept these or every such file regresses to plain-text mode.
+        val vtt =
+            """
+            WEBVTT
+
+            00:00:10.000 --> 00:00:15.000 line:50% position:50%
+            Cue with positioning flags.
+
+            00:01:30.000 --> 00:01:35.000 align:start
+            Bazel inflection point.
+            """.trimIndent()
+        val sliced = TranscriptSlicer.sliceForWindow(vtt, startMs = 90_000L, endMs = 95_000L)
+        assertEquals("Bazel inflection point.", sliced)
+    }
+
+    @Test
+    fun note_block_does_not_falsely_match_embedded_timestamp() {
+        // A NOTE block that contains a timestamp-shaped substring must not be
+        // parsed as a real cue. The regex's line-anchored semantics (via
+        // matchEntire) gate this — if someone "fixes" the regex by switching
+        // to `find`, this test fails.
+        val vtt =
+            """
+            WEBVTT
+
+            NOTE see 00:00:10.000 --> 00:00:15.000 in the original draft
+
+            00:01:30.000 --> 00:01:35.000
+            Real cue.
+            """.trimIndent()
+        val sliced = TranscriptSlicer.sliceForWindow(vtt, startMs = 90_000L, endMs = 95_000L)
+        assertEquals("Real cue.", sliced)
+    }
 }
