@@ -13,8 +13,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 
-class ReadwiseClient(private val client: HttpClient) {
-    suspend fun verify(token: String): Boolean {
+open class ReadwiseClient(private val client: HttpClient) {
+    open suspend fun verify(token: String): Boolean {
         val resp: HttpResponse =
             client.get("https://readwise.io/api/v2/auth/") {
                 header("Authorization", "Token $token")
@@ -22,7 +22,7 @@ class ReadwiseClient(private val client: HttpClient) {
         return resp.status == HttpStatusCode.NoContent || resp.status == HttpStatusCode.OK
     }
 
-    suspend fun createHighlight(
+    open suspend fun createHighlight(
         token: String,
         request: ReadwiseCreateRequest,
     ): Result<Long> =
@@ -40,7 +40,7 @@ class ReadwiseClient(private val client: HttpClient) {
             body.firstOrNull()?.id ?: error("Readwise returned empty body")
         }
 
-    suspend fun updateHighlight(
+    open suspend fun updateHighlight(
         token: String,
         id: Long,
         request: ReadwiseUpdateRequest,
