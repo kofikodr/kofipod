@@ -29,9 +29,9 @@ import org.koin.compose.koinInject
  * [PkmExportCoordinator.pendingRequest] — when null, the function returns
  * before composing the sheet.
  *
- * The coordinator clears `pendingRequest` in its `finally` block, so the sheet
- * hides itself once the user picks a sink (no manual dismiss call needed on
- * the success path).
+ * The coordinator clears `pendingRequest` after the export coroutine returns,
+ * so the sheet hides itself once the user picks a destination (no manual
+ * dismiss call needed on the success path).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,6 +57,7 @@ fun MarkdownExportSheet() {
             )
             Spacer(Modifier.height(12.dp))
 
+            // TODO(slice6-task14): replaced by ExportActionSheet which adds Obsidian/Readwise rows.
             SinkRow(
                 title = "Copy to clipboard",
                 subtitle = "Plain Markdown text",

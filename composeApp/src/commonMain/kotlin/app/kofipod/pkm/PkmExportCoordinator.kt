@@ -130,6 +130,8 @@ class PkmExportCoordinator(
 
             val sinkResult = sink.export(document, request, priorExternalId)
             recordResult(request, destination, kindForLog, sinkResult)
+        } catch (t: kotlinx.coroutines.CancellationException) {
+            throw t
         } catch (t: Throwable) {
             // Catching Throwable is deliberate: the sink delegates to platform code
             // (clipboard managers, share sheet, SAF, HTTP) that can raise
