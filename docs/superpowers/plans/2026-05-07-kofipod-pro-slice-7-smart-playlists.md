@@ -1189,3 +1189,30 @@ git commit -m "slice7(playlists): close out — Smart Playlists verified on Pixe
 - `Dispatchers.IO` is JVM-only — use `Dispatchers.Default` in commonMain.
 - ViewModels that load via Koin's `viewModel { }` factory must extend `: ViewModel()`.
 - Add new platform-specific constructor params via `interface X` + `expect class XImpl : X`, never `expect open class X`.
+
+---
+
+## Captured design tiles
+
+Captured from `docs/kofipod-pro-ui-design.html` on 2026-05-07. Files live under `/tmp/kofipod-design-slice7/`.
+
+**Task 9 — Smart Playlist editor (full-screen):**
+
+- `/tmp/kofipod-design-slice7/7-smart-playlist-editor-v1-1.png` — `7 · Smart Playlist editor · v1.1` (the only Slice-7 specific tile in the design doc). Shows the canonical layout: top bar with `Smart Playlist` title + `v1.1 · BETA` subtitle and a `PRO` badge; close (`X`) dismiss; a single `NAME` field with the inline icon swatch + caret-bearing text input ("Morning commute"); a `MATCH ALL OF` group of stacked predicate rows where each row is a left-aligned coloured chip token (`State`, `Duration`, `Podcast`, `Released`, `Already played` — the last shown in a pink "negative" colour with `exclude` operator) followed by an inline operator (`is`, `under`, `in`, `within`, `exclude`) and a value chip (`Unplayed`, `35 min`, `Tech (8)`, `Last 14 days`, etc.); a second-line podcast-set row showing additional podcast-name chips (`Signal & Noise`, `Hard Fork`, `Plain English`); each row has a trailing `×` remove affordance; an `+ Add condition` dashed/ghost button below; a `SORT BY` dropdown defaulted to `Newest first`; a partially-visible `PREVIEW / LIVE MATCH` band at the bottom (the live "matches X episodes" preview the plan calls out); and a sticky bottom bar with `Cancel` + a magenta primary `Save smart playlist` CTA.
+
+**Task 10 — Smart Playlist detail + Library tile:**
+
+> No dedicated Smart-Playlist Library tile or playlist-detail tile exists in the design doc. The "Your lists" grid in the captured Library tiles below shows only folders/lists; the design doc has not been updated with a Smart-Playlist tile variant. Downstream task should derive treatment from these existing patterns rather than waiting for a missing reference.
+
+- `/tmp/kofipod-design-slice7/04-library-folders.png` — `04 · Library (folders)` (light theme). Reference for the existing folder-tile shape Slice 7 must mirror: 2-column grid under a `YOUR LISTS` heading, each tile is a rounded rectangle with a folder-icon top-left, name in heading weight, and an `N PODCASTS` subtitle (small caps). Last cell is a dashed `+ New list` ghost tile. Below the grid: a `RECENTLY OPENED` flat list. The Smart-Playlist tile shape should mirror this folder tile but use `KPIconName.Sparkles` (or `Filter` fallback) for the top-left icon and an `N EPISODES` subtitle, per spec lock-in.
+- `/tmp/kofipod-design-slice7/04-library.png` — `04 · Library` (dark theme variant of the above). Same content composition; useful for verifying the new Smart-Playlist tile renders correctly in dark mode.
+- `/tmp/kofipod-design-slice7/00-library-first-run.png` — `00 · Library — first run` (empty-state). Shows the Library when the user has no lists yet — useful as the empty-state precedent for "no smart playlists yet" treatment if/when we add a zero-playlists empty band (out of scope for v1.0; v1.0 just shows the Library without a `YOUR PLAYLISTS` section header until the first playlist exists).
+- `/tmp/kofipod-design-slice7/10-library-w-stats-cue.png` — `10 · Library w/ stats cue` (Free-tier variant with stats cue). Reference for how Library composes additional surfaces above/below the folder grid; informs where the Smart-Playlist row sits in the vertical stack relative to lists, recently-opened, and any cue cards.
+
+**Tile labels searched but not present in the design doc:**
+
+- `Smart Playlists` (plural, e.g. as a Library section header tile) — *not found.* Use the spec's `YOUR PLAYLISTS` section header per Task 10.
+- `Predicate` (any standalone tile) — *not found.* The predicate UI is encoded entirely inside the editor tile above (chip rows + add-condition + sort dropdown + live preview).
+- `Editor` variants beyond the single `v1.1 · BETA` state (e.g. `Smart Playlist editor · empty`, `· error`, `· saving`) — *not found.* Editor empty/error/saving states must be derived from in-app conventions (Snippet editor states `2 · Snippet editor · idle / rendering / complete / error` are the closest parallel — see Slice 3 for that treatment).
+- `Smart Playlist detail` or `Smart Playlist matched episodes` — *not found.* Detail screen layout must be derived from existing episode-list surfaces (e.g. the podcast-detail episode list and the bookmarks `loaded` state captured in Slice 3 design tiles).
+- Any `Library` tile variant that already shows playlist tiles (Library w/ playlists, Library + Smart Playlists row) — *not found.* Mirror the existing folder-tile shape in `04 · Library (folders)` and insert the Smart-Playlist row immediately below `YOUR LISTS`, before `RECENTLY OPENED`, per the spec's "playlists surface as virtual rows in Library alongside existing folders/lists" lock-in.
