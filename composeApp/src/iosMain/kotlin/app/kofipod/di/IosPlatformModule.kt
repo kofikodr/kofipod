@@ -54,6 +54,13 @@ val iosPlatformModule =
         single<EntitlementCache> { IosEntitlementCache() }
         single<AiSummaryScheduler> { IosAiSummaryScheduler() }
         single<PkmExportScheduler> { IosPkmExportScheduler() }
+        // PKM (Slice 6) — iOS stubs to keep the Koin graph parity with Android.
+        // Obsidian / OAuth vault are non-functional on iOS in v1.0; the actuals
+        // throw / use an in-memory map respectively.
+        single<app.kofipod.pkm.connections.OAuthTokenVault> {
+            app.kofipod.pkm.connections.OAuthTokenVaultImpl()
+        }
+        single { app.kofipod.pkm.sinks.ObsidianFolderWriterImpl() }
         single { BackupScheduler() }
         single<OpmlFilePort> { IosOpmlFilePort() }
         single<BackupFilePort> { IosBackupFilePort() }
