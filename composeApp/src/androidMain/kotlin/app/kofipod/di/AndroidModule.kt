@@ -5,8 +5,10 @@ import app.kofipod.ai.AndroidKeyVault
 import app.kofipod.ai.KeyVault
 import app.kofipod.background.AiSummaryScheduler
 import app.kofipod.background.AndroidAiSummaryScheduler
+import app.kofipod.background.AndroidPkmExportScheduler
 import app.kofipod.background.BackupScheduler
 import app.kofipod.background.Notifier
+import app.kofipod.background.PkmExportScheduler
 import app.kofipod.background.Scheduler
 import app.kofipod.backup.AndroidBackupFilePort
 import app.kofipod.backup.AndroidBackupFolderStore
@@ -68,6 +70,7 @@ val androidPlatformModule =
         single { Scheduler(androidContext()) }
         single { BackupScheduler(androidContext()) }
         single<AiSummaryScheduler> { AndroidAiSummaryScheduler(androidContext()) }
+        single<PkmExportScheduler> { AndroidPkmExportScheduler(androidContext()) }
         single { Notifier(androidContext()) }
         single { Sharer(androidContext()) }
         // Snippets (Slice 3) — Context-bound bindings live alongside Sharer because

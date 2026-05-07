@@ -2,18 +2,24 @@
 package app.kofipod.background
 
 /**
- * Schedules an out-of-process retry of any queued [app.kofipod.pkm.connections.ExportLogEntry]
- * rows in the database. Triggered by [app.kofipod.pkm.PkmExportCoordinator] on every
- * transient failure so a process death or transient network error can be recovered
- * without user intervention.
+ * Schedules an out-of-process retry of any queued
+ * [app.kofipod.pkm.connections.ExportLogEntry] rows in the database. Triggered
+ * by [app.kofipod.pkm.PkmExportCoordinator] on every transient failure so a
+ * process death or transient network error can be recovered without user
+ * intervention.
  *
  * Production implementations:
- *  - Android: [PkmExportSchedulerImpl] enqueues a unique OneTimeWorkRequest (Task 12).
- *  - iOS: [PkmExportSchedulerImpl] is a no-op (iOS is secondary target; recovery is user-driven).
+ *  - Android: `AndroidPkmExportScheduler` enqueues a unique
+ *    [androidx.work.OneTimeWorkRequest] backed by `PkmExportWorker`, with
+ *    `NetworkType.CONNECTED` and `BackoffPolicy.EXPONENTIAL`.
+ *  - iOS: `IosPkmExportScheduler` is a no-op. Slice 6 ships Android-first;
+ *    iOS retry is intentionally user-driven (re-tap Export).
  *
- * Kept as a plain interface (not a fun interface) so Task 12 can supply a
- * Context-bearing Android actual via the established "interface + expect class Impl"
- * pattern — see [ObsidianFolderWriter] and [OAuthTokenVault] for prior art.
+ * Modeled as a plain interface (not a `fun interface`) so unit tests can
+ * supply a recording fake without subclassing the platform actual — the
+ * Android actual carries a [android.content.Context] in its primary
+ * constructor, which would force tests through `expect class Impl` ceremony
+ * for no benefit.
  */
 interface PkmExportScheduler {
     fun enqueue()

@@ -369,13 +369,8 @@ val commonDataModule =
             app.kofipod.pkm.connections.ExportLogRepositoryImpl(get())
         }
 
-        // PkmExportScheduler — stub for Task 11; Task 12 replaces with PkmExportSchedulerImpl.
-        // TODO(slice6-task12): replace with PkmExportSchedulerImpl (Android WorkManager actual).
-        single<app.kofipod.background.PkmExportScheduler> {
-            object : app.kofipod.background.PkmExportScheduler {
-                override fun enqueue() = Unit
-            }
-        }
+        // PkmExportScheduler — bound by the platform module: AndroidPkmExportScheduler
+        // (WorkManager) on Android, IosPkmExportScheduler (no-op) on iOS.
 
         // PkmConnectionRepository — Slice 6 wiring; required by ObsidianSink and ReadwiseSink loaders.
         single { app.kofipod.pkm.connections.PkmConnectionRepository(db = get(), vault = get()) }

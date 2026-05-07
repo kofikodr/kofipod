@@ -6,6 +6,8 @@ import app.kofipod.ai.KeyVault
 import app.kofipod.background.AiSummaryScheduler
 import app.kofipod.background.BackupScheduler
 import app.kofipod.background.IosAiSummaryScheduler
+import app.kofipod.background.IosPkmExportScheduler
+import app.kofipod.background.PkmExportScheduler
 import app.kofipod.backup.BackupFilePort
 import app.kofipod.backup.BackupFolderStore
 import app.kofipod.backup.DbFileBytes
@@ -51,6 +53,7 @@ val iosPlatformModule =
         single<BillingClientPort> { IosBillingClientPort() }
         single<EntitlementCache> { IosEntitlementCache() }
         single<AiSummaryScheduler> { IosAiSummaryScheduler() }
+        single<PkmExportScheduler> { IosPkmExportScheduler() }
         single { BackupScheduler() }
         single<OpmlFilePort> { IosOpmlFilePort() }
         single<BackupFilePort> { IosBackupFilePort() }
