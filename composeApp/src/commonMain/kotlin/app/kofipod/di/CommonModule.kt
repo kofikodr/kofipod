@@ -53,6 +53,12 @@ import app.kofipod.domain.toSummary
 import app.kofipod.opml.OpmlController
 import app.kofipod.opml.OpmlRepository
 import app.kofipod.opml.PodcastFeedLookup
+import app.kofipod.playlists.EpisodeFactsRepository
+import app.kofipod.playlists.EpisodeFactsRepositoryImpl
+import app.kofipod.playlists.PredicateEvaluator
+import app.kofipod.playlists.SmartPlaylistRepository
+import app.kofipod.playlists.SmartPlaylistRepositoryImpl
+import app.kofipod.playlists.SmartPlaylistResolver
 import app.kofipod.pro.BillingClientPort
 import app.kofipod.pro.EntitlementCache
 import app.kofipod.pro.PaywallRouter
@@ -408,6 +414,18 @@ val commonDataModule =
                 shareFileSink = get<app.kofipod.pkm.sinks.ShareFileSink>(),
             )
         }
+        // ────────────────────────────────────────────────────────────────────
+        // Smart Playlists (Slice 7) — episode-facts read model + predicate
+        // evaluator + repository + resolver. Bound interface-first so test
+        // fakes can substitute via Koin override (see Slice 6 patterns).
+        // SmartPlaylistResolver.clock defaults to Clock.System; positional
+        // get()s fill in the non-defaulted facts/evaluator deps only.
+        // ────────────────────────────────────────────────────────────────────
+        single<EpisodeFactsRepository> { EpisodeFactsRepositoryImpl(get()) }
+        single { PredicateEvaluator() }
+        single<SmartPlaylistRepository> { SmartPlaylistRepositoryImpl(get()) }
+        single { SmartPlaylistResolver(facts = get(), evaluator = get()) }
+
         single { app.kofipod.search.LibrarySearchRepository(driver = get()) }
         single {
             app.kofipod.diagnostics.DiagnosticsBootstrapper(

@@ -37,4 +37,8 @@ sealed interface Route {
     @Serializable data class SnippetEditor(val snippetId: String) : Route
 
     @Serializable data object Connections : Route
+
+    @Serializable data class SmartPlaylistEditor(val playlistId: String? = null) : Route
+
+    @Serializable data class SmartPlaylistDetail(val playlistId: String) : Route
 }
