@@ -555,4 +555,11 @@ val commonDataModule =
             )
         }
         viewModel { StatsViewModel(get()) }
+        viewModel {
+            app.kofipod.ui.screens.connections.ConnectionsViewModel(
+                connections = app.kofipod.ui.screens.connections.PkmConnectionsSource(get()),
+                readwiseClient = get(),
+                appScope = get(org.koin.core.qualifier.named("appScope")),
+            )
+        }
     }

@@ -14,6 +14,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
 import app.kofipod.ui.screens.askgemini.AskGeminiScreen
 import app.kofipod.ui.screens.bookmarks.BookmarksScreen
+import app.kofipod.ui.screens.connections.ConnectionsScreen
 import app.kofipod.ui.screens.detail.EpisodeDetailScreen
 import app.kofipod.ui.screens.detail.PodcastDetailScreen
 import app.kofipod.ui.screens.downloads.DownloadsScreen
@@ -187,6 +188,9 @@ fun KofipodNavHost(navController: NavHostController) {
                 snippetId = args.snippetId,
                 onBack = { navController.popBackStack() },
             )
+        }
+        composable<Route.Connections> {
+            ConnectionsScreen(onBack = { navController.popBackStack() })
         }
     }
 }
