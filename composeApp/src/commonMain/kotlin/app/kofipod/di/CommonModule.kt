@@ -456,7 +456,11 @@ val commonDataModule =
                 telemetry = get(),
             )
         }
-        viewModel { LibraryViewModel(get(), get(), get(), get(), get(), get()) }
+        // 8 positional deps (slice 7 task 10): repo, episodes, stats, opml, pro,
+        // paywallRouter, smartPlaylistRepo, smartPlaylistResolver. Bump in lockstep
+        // with the LibraryViewModel ctor declaration order — Koin throws at runtime
+        // if these drift.
+        viewModel { LibraryViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
         viewModel {
             app.kofipod.ui.screens.bookmarks.BookmarksViewModel(
                 bookmarks = get(),
@@ -590,6 +594,15 @@ val commonDataModule =
                 resolver = get(),
                 library = get(),
                 playlistId = params.getOrNull<String>(),
+            )
+        }
+        // Slice 7 Task 10 — Smart Playlist detail. Required `playlistId` is passed via
+        // `parametersOf(playlistId)` from the screen's `koinViewModel { ... }` block.
+        viewModel { params ->
+            app.kofipod.ui.screens.playlists.SmartPlaylistDetailViewModel(
+                playlists = get(),
+                resolver = get(),
+                playlistId = params.get<String>(),
             )
         }
     }
