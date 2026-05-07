@@ -183,4 +183,59 @@ class PredicateEvaluatorTest {
         val result = evaluator.evaluate(SmartPlaylistPredicate.EMPTY, facts, nowMs)
         assertEquals(listOf("newest", "middle", "oldest"), result.map { it.episodeId })
     }
+
+    @Test fun maxAgeDaysBoundaryEqualPasses() {
+        val sevenDaysMs = 7L * 24 * 60 * 60 * 1000
+        val facts =
+            listOf(
+                fact("atBoundary", publishedAtMs = nowMs - sevenDaysMs),
+                fact("oneMsOlder", publishedAtMs = nowMs - sevenDaysMs - 1),
+            )
+        val result = evaluator.evaluate(SmartPlaylistPredicate(maxAgeDays = 7), facts, nowMs)
+        // Operator is >=, so an episode at exactly the cutoff is included.
+        assertEquals(listOf("atBoundary"), result.map { it.episodeId })
+    }
+
+    @Test fun maxAgeDaysZeroAdmitsOnlyAtOrAfterNow() {
+        // Edge case: 0-day window. cutoff == nowMs; >= nowMs admits "now" but nothing earlier.
+        // Treat this as an explicit semantic — if a future requirement needs different behaviour,
+        // it's a behaviour change with a corresponding test update, not a silent regression.
+        val facts =
+            listOf(
+                fact("now", publishedAtMs = nowMs),
+                fact("oneMsAgo", publishedAtMs = nowMs - 1),
+            )
+        val result = evaluator.evaluate(SmartPlaylistPredicate(maxAgeDays = 0), facts, nowMs)
+        assertEquals(listOf("now"), result.map { it.episodeId })
+    }
+
+    @Test fun durationRangeBoundaryEqualPasses() {
+        val facts =
+            listOf(
+                fact("atMin", durationSec = 600),
+                fact("atMax", durationSec = 3600),
+                fact("justUnderMin", durationSec = 599),
+                fact("justOverMax", durationSec = 3601),
+            )
+        val result =
+            evaluator.evaluate(
+                SmartPlaylistPredicate(durationRange = DurationRange(minSec = 600, maxSec = 3600)),
+                facts,
+                nowMs,
+            )
+        assertEquals(setOf("atMin", "atMax"), result.map { it.episodeId }.toSet())
+    }
+
+    @Test fun sortIsStableForEqualPublishedAt() {
+        // sortedByDescending uses TimSort on both JVM and Native — stable. Pin that behaviour
+        // so a future refactor to an unstable sort would be caught.
+        val facts =
+            listOf(
+                fact("a", publishedAtMs = 200L),
+                fact("b", publishedAtMs = 200L),
+                fact("c", publishedAtMs = 100L),
+            )
+        val result = evaluator.evaluate(SmartPlaylistPredicate.EMPTY, facts, nowMs)
+        assertEquals(listOf("a", "b", "c"), result.map { it.episodeId })
+    }
 }
