@@ -22,6 +22,7 @@ import app.kofipod.ui.screens.library.LibraryDetailScreen
 import app.kofipod.ui.screens.library.LibraryScreen
 import app.kofipod.ui.screens.library.StarterPackScreen
 import app.kofipod.ui.screens.player.PlayerScreen
+import app.kofipod.ui.screens.playlists.SmartPlaylistEditorScreen
 import app.kofipod.ui.screens.scheduler.SchedulerInfoScreen
 import app.kofipod.ui.screens.search.LibrarySearchScreen
 import app.kofipod.ui.screens.search.SearchScreen
@@ -192,6 +193,13 @@ fun KofipodNavHost(navController: NavHostController) {
         }
         composable<Route.Connections> {
             ConnectionsScreen(onBack = { navController.popBackStack() })
+        }
+        composable<Route.SmartPlaylistEditor> { entry ->
+            val args = entry.toRoute<Route.SmartPlaylistEditor>()
+            SmartPlaylistEditorScreen(
+                playlistId = args.playlistId,
+                onBack = { navController.popBackStack() },
+            )
         }
     }
 }

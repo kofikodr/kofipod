@@ -580,4 +580,16 @@ val commonDataModule =
                 appScope = get(org.koin.core.qualifier.named("appScope")),
             )
         }
+        // Slice 7 Task 9 — Smart Playlist editor. `params.getOrNull<String>()` lets
+        // create-mode (no parametersOf arg) resolve to null and edit-mode (passing the
+        // id via parametersOf) resolve to a String. Mirrors the LibraryDetailViewModel
+        // factory pattern above.
+        viewModel { params ->
+            app.kofipod.ui.screens.playlists.SmartPlaylistEditorViewModel(
+                playlists = get(),
+                resolver = get(),
+                library = get(),
+                playlistId = params.getOrNull<String>(),
+            )
+        }
     }
