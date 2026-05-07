@@ -262,6 +262,6 @@ class PkmExportCoordinator(
     private companion object {
         const val ITEM_KIND_SNIPPET = "snippet"
         const val ITEM_KIND_BOOKMARK = "bookmark"
-        const val ITEM_KIND_AI_SUMMARY = "ai_summary"
+        const val ITEM_KIND_AI_SUMMARY = "summary"
     }
 }

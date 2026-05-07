@@ -57,8 +57,8 @@ class PkmExportCoordinatorSlice6Test {
             checkNotNull(entry) { "ExportLog entry not written for b1/Readwise" }
             assertEquals("success", entry.status)
             assertEquals("ext-1", entry.externalId)
-            // result emitted
-            assertEquals(1, received.size)
+            // pin down connection-bound success emits Exported, not Shared
+            assertEquals<List<PkmExportResult>>(listOf(PkmExportResult.Exported), received)
         }
 
     // ─── 2. re-export passes prior externalId to sink ─────────────────────────
@@ -73,10 +73,16 @@ class PkmExportCoordinatorSlice6Test {
             val sinks = SinkRegistry(mapOf(ConnectionKind.Readwise to sink))
             val coord = newCoordinator(log = log, sinks = sinks)
 
+            val received = mutableListOf<PkmExportResult>()
+            val collector = collectResults(coord, received)
+
             coord.execute(PkmExportRequest.Bookmark("b1"), PkmDestination.Readwise)
             advanceUntilIdle()
+            collector.cancel()
 
             assertEquals("prior-ext-9", sink.lastPriorExternalId)
+            // connection-bound re-export also emits Exported
+            assertEquals<List<PkmExportResult>>(listOf(PkmExportResult.Exported), received)
         }
 
     // ─── 3. transient failure → queued log + scheduler enqueued ──────────────
@@ -103,6 +109,8 @@ class PkmExportCoordinatorSlice6Test {
             checkNotNull(entry) { "ExportLog entry not written" }
             assertEquals("queued", entry.status)
             assertEquals(1, scheduler.enqueued)
+            // transient failure surfaces as Failed with the sink's message
+            assertEquals<List<PkmExportResult>>(listOf(PkmExportResult.Failed("network")), received)
         }
 
     // ─── 4. permanent failure → failed log, no scheduler ─────────────────────
@@ -118,13 +126,19 @@ class PkmExportCoordinatorSlice6Test {
             val scheduler = FakeScheduler()
             val coord = newCoordinator(log = log, sinks = sinks, scheduler = scheduler)
 
+            val received = mutableListOf<PkmExportResult>()
+            val collector = collectResults(coord, received)
+
             coord.execute(PkmExportRequest.Bookmark("b1"), PkmDestination.Readwise)
             advanceUntilIdle()
+            collector.cancel()
 
             val entry = log.entries.firstOrNull()
             checkNotNull(entry) { "ExportLog entry not written" }
             assertEquals("failed", entry.status)
             assertEquals(0, scheduler.enqueued)
+            // permanent failure surfaces as Failed with the sink's message, no retry
+            assertEquals<List<PkmExportResult>>(listOf(PkmExportResult.Failed("not connected")), received)
         }
 
     // ─── helpers ──────────────────────────────────────────────────────────────

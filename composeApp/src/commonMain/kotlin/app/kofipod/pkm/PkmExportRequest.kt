@@ -16,7 +16,7 @@ sealed interface PkmExportResult {
 
     data object Shared : PkmExportResult
 
-    /** Emitted for connection-bound destinations (Obsidian, Readwise) on success. */
+    /** Connection-bound destination wrote the item (Obsidian / Readwise / Notion). UI surfaces a confirmation snackbar. */
     data object Exported : PkmExportResult
 
     data class Failed(val message: String) : PkmExportResult
