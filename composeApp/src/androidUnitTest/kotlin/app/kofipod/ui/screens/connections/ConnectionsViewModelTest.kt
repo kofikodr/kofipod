@@ -10,6 +10,7 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
@@ -61,11 +62,37 @@ class ConnectionsViewModelTest {
             assertEquals("good", connect.tokenValue)
         }
 
+    @Test
+    fun closeReadwiseDialogCancelsInflightValidate() =
+        runTest {
+            val source = FakeConnectionsSource()
+            val vm = buildVm(source = source, verifyResult = null)
+
+            vm.openReadwiseDialog()
+            vm.onReadwiseTokenChange("token")
+            vm.connectReadwise()
+            advanceUntilIdle()
+            // mid-validate: validating == true, dialog open
+            assertEquals(true, vm.uiState.value.readwiseValidating)
+
+            vm.closeReadwiseDialog()
+            advanceUntilIdle()
+            // After close: dialog closed, validating cleared, no connect was recorded
+            assertEquals(false, vm.uiState.value.readwiseDialogOpen)
+            assertEquals(false, vm.uiState.value.readwiseValidating)
+            assertNull(vm.uiState.value.readwiseError)
+            assertEquals(0, source.connects.size)
+
+            // Reopen — fresh state
+            vm.openReadwiseDialog()
+            assertEquals(true, vm.uiState.value.readwiseDialogOpen)
+        }
+
     // ---- fixtures ----
 
     private fun TestScope.buildVm(
         source: FakeConnectionsSource = FakeConnectionsSource(),
-        verifyResult: Boolean,
+        verifyResult: Boolean? = false,
     ): ConnectionsViewModel {
         val testDispatcher = UnconfinedTestDispatcher(testScheduler)
         val appScope = CoroutineScope(testDispatcher)
@@ -77,13 +104,13 @@ class ConnectionsViewModelTest {
         )
     }
 
-    private class FakeReadwiseClient(private val verifyResult: Boolean) :
+    private class FakeReadwiseClient(private val verifyResult: Boolean?) :
         ReadwiseClient(
             HttpClient(MockEngine) {
                 engine { addHandler { respond("", HttpStatusCode.OK) } }
             },
         ) {
-        override suspend fun verify(token: String): Boolean = verifyResult
+        override suspend fun verify(token: String): Boolean = verifyResult ?: awaitCancellation()
     }
 
     data class ConnectCall(

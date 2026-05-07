@@ -6,7 +6,9 @@ import app.kofipod.pkm.connections.ConnectionKind
 import app.kofipod.pkm.connections.PkmConnection
 import app.kofipod.pkm.connections.PkmConnectionRepository
 import app.kofipod.pkm.sinks.ReadwiseClient
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -60,6 +62,8 @@ class ConnectionsViewModel(
     private val _uiState = MutableStateFlow(ConnectionsUiState(rows = buildInitialRows()))
     val uiState: StateFlow<ConnectionsUiState> = _uiState.asStateFlow()
 
+    private var validateJob: Job? = null
+
     init {
         appScope.launch {
             connections.observeAll().collect { liveRows ->
@@ -75,6 +79,8 @@ class ConnectionsViewModel(
     }
 
     fun closeReadwiseDialog() {
+        validateJob?.cancel()
+        validateJob = null
         _uiState.update {
             it.copy(
                 readwiseDialogOpen = false,
@@ -98,33 +104,38 @@ class ConnectionsViewModel(
         if (_uiState.value.readwiseValidating) return
 
         _uiState.update { it.copy(readwiseValidating = true, readwiseError = null) }
-        appScope.launch {
-            val valid = runCatching { readwiseClient.verify(token) }.getOrElse { false }
-            if (valid) {
-                connections.connect(
-                    kind = ConnectionKind.Readwise,
-                    tokenRef = "readwise.token",
-                    tokenValue = token,
-                    folderUri = null,
-                    nowMs = clock.now().toEpochMilliseconds(),
-                )
-                _uiState.update {
-                    it.copy(
-                        readwiseDialogOpen = false,
-                        readwiseTokenInput = "",
-                        readwiseValidating = false,
-                        readwiseError = null,
+        validateJob?.cancel()
+        validateJob =
+            appScope.launch {
+                val valid =
+                    runCatching { readwiseClient.verify(token) }
+                        .onFailure { if (it is CancellationException) throw it }
+                        .getOrElse { false }
+                if (valid) {
+                    connections.connect(
+                        kind = ConnectionKind.Readwise,
+                        tokenRef = "readwise.token",
+                        tokenValue = token,
+                        folderUri = null,
+                        nowMs = clock.now().toEpochMilliseconds(),
                     )
-                }
-            } else {
-                _uiState.update {
-                    it.copy(
-                        readwiseValidating = false,
-                        readwiseError = "Token rejected. Check your token at readwise.io/access_token.",
-                    )
+                    _uiState.update {
+                        it.copy(
+                            readwiseDialogOpen = false,
+                            readwiseTokenInput = "",
+                            readwiseValidating = false,
+                            readwiseError = null,
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            readwiseValidating = false,
+                            readwiseError = "Token rejected. Check your token at readwise.io/access_token.",
+                        )
+                    }
                 }
             }
-        }
     }
 
     fun connectObsidian(treeUri: String) {
@@ -163,7 +174,7 @@ class ConnectionsViewModel(
                 status =
                     if (conn != null) {
                         val detail = conn.folderUri?.substringAfterLast('/')
-                        ConnectionStatus.Connected(detail ?: "Connected")
+                        ConnectionStatus.Connected(detail)
                     } else {
                         ConnectionStatus.Disconnected
                     },
