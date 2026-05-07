@@ -266,6 +266,10 @@ class SettingsViewModel(
 
     fun openPaywall() = paywallRouter.requestPaywall("paywall_settings")
 
+    fun tapConnections(onPro: () -> Unit) {
+        if (pro.state.value is ProEntitlement.Pro) onPro() else paywallRouter.requestPaywall("paywall_connections")
+    }
+
     fun restorePurchase() {
         viewModelScope.launch {
             purchaseRestoreInFlight.value = true

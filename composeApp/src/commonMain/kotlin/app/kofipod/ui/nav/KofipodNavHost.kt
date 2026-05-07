@@ -106,6 +106,7 @@ fun KofipodNavHost(navController: NavHostController) {
             SettingsScreen(
                 onOpenScheduler = { navController.navigate(Route.SchedulerInfo) },
                 onOpenAiSetup = { navController.navigate(Route.AiSetup) },
+                onOpenConnections = { navController.navigate(Route.Connections) },
             )
         }
         composable<Route.SchedulerInfo> {

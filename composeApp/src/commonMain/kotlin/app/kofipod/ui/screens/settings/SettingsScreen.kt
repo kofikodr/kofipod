@@ -71,6 +71,7 @@ private const val MAX_STREAM_CACHE_BYTES: Long = 2L * 1024 * 1024 * 1024
 fun SettingsScreen(
     onOpenScheduler: () -> Unit,
     onOpenAiSetup: () -> Unit,
+    onOpenConnections: () -> Unit,
     viewModel: SettingsViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -150,6 +151,15 @@ fun SettingsScreen(
             onRestore = viewModel::restoreFromBackup,
             onConfirmRestore = viewModel::confirmRestore,
             onCancelRestoreConfirm = viewModel::cancelRestoreConfirm,
+        )
+
+        SectionLabel("Connections", topSpacing = 22.dp)
+        SettingRow(
+            icon = KPIconName.Share,
+            title = "Connections",
+            subtitle = "Manage Obsidian, Readwise, and Markdown exports",
+            onClick = { viewModel.tapConnections(onOpenConnections) },
+            trailing = null,
         )
 
         SectionLabel("Appearance", topSpacing = 22.dp)
