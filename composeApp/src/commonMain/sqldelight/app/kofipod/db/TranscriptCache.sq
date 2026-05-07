@@ -24,6 +24,13 @@ ON CONFLICT(episodeId) DO UPDATE SET
 selectByEpisode:
 SELECT * FROM TranscriptCache WHERE episodeId = ?;
 
+-- Slice 7 (Smart Playlists): Task 5 fact aggregation projects over every cached
+-- transcript row to compute the `hasCachedTranscript` signal feeding the
+-- HasCachedTranscript predicate. Cheap because the row is keyed by episodeId and
+-- only carries an integer timestamp + the transcript text we never read here.
+selectAll:
+SELECT * FROM TranscriptCache;
+
 deleteByEpisode:
 DELETE FROM TranscriptCache WHERE episodeId = ?;
 
