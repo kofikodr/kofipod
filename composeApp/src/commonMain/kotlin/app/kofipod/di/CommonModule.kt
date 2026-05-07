@@ -76,6 +76,7 @@ import app.kofipod.ui.screens.stats.StatsViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 
@@ -318,15 +319,66 @@ val commonDataModule =
             )
         }
         // ────────────────────────────────────────────────────────────────────
-        // PKM (Slice 5) — Markdown export
+        // PKM (Slice 5 + 6) — Markdown export + connection-bound sinks
         // ────────────────────────────────────────────────────────────────────
         single<app.kofipod.pkm.MarkdownFormatter> { app.kofipod.pkm.MarkdownFormatterImpl() }
 
-        // MarkdownExporter is the production MarkdownSink. Both the concrete and the
-        // interface bind to the same instance so callers that depend on either type
-        // resolve the same singleton — same pattern as e.g. AndroidOpmlFilePort.
-        single { app.kofipod.pkm.MarkdownExporter(get(), get(), get()) }
-        single<app.kofipod.pkm.MarkdownSink> { get<app.kofipod.pkm.MarkdownExporter>() }
+        // Zero-auth sinks — bound as their concrete types so the coordinator factory
+        // can resolve them unambiguously without named qualifiers (Defect 4 resolution).
+        single { app.kofipod.pkm.sinks.ClipboardSink(get()) }
+        single { app.kofipod.pkm.sinks.ShareFileSink(get(), get()) }
+
+        // Connection-bound sinks — wired here for the first time (Tasks 8 + 10 created
+        // the classes but deferred DI to Task 11 per the plan).
+        single { app.kofipod.pkm.sinks.ReadwiseClient(get()) }
+
+        // ObsidianSink(writer, connectionLoader): writer = ObsidianFolderWriterImpl (platform actual),
+        // connectionLoader = lambda over PkmConnectionRepository.
+        single {
+            val connRepo = get<app.kofipod.pkm.connections.PkmConnectionRepository>()
+            app.kofipod.pkm.sinks.ObsidianSink(
+                writer = get<app.kofipod.pkm.sinks.ObsidianFolderWriterImpl>(),
+                connectionLoader = {
+                    connRepo.observe(app.kofipod.pkm.connections.ConnectionKind.Obsidian).first()
+                },
+            )
+        }
+        single {
+            val connRepo = get<app.kofipod.pkm.connections.PkmConnectionRepository>()
+            app.kofipod.pkm.sinks.ReadwiseSink(
+                client = get(),
+                vault = get(),
+                connectionLoader = {
+                    connRepo.observe(app.kofipod.pkm.connections.ConnectionKind.Readwise).first()
+                },
+            )
+        }
+
+        // SinkRegistry — maps ConnectionKind → ExportSink for connection-bound destinations.
+        single {
+            app.kofipod.pkm.sinks.SinkRegistry(
+                mapOf(
+                    app.kofipod.pkm.connections.ConnectionKind.Obsidian to get<app.kofipod.pkm.sinks.ObsidianSink>(),
+                    app.kofipod.pkm.connections.ConnectionKind.Readwise to get<app.kofipod.pkm.sinks.ReadwiseSink>(),
+                ),
+            )
+        }
+
+        // ExportLogRepository — interface bound to the SQLDelight-backed impl.
+        single<app.kofipod.pkm.connections.ExportLogRepository> {
+            app.kofipod.pkm.connections.ExportLogRepositoryImpl(get())
+        }
+
+        // PkmExportScheduler — stub for Task 11; Task 12 replaces with PkmExportSchedulerImpl.
+        // TODO(slice6-task12): replace with PkmExportSchedulerImpl (Android WorkManager actual).
+        single<app.kofipod.background.PkmExportScheduler> {
+            object : app.kofipod.background.PkmExportScheduler {
+                override fun enqueue() = Unit
+            }
+        }
+
+        // PkmConnectionRepository — Slice 6 wiring; required by ObsidianSink and ReadwiseSink loaders.
+        single { app.kofipod.pkm.connections.PkmConnectionRepository(db = get(), vault = get()) }
 
         // PkmExportDeps adapter — five-method seam over the production repos. Lives
         // in DI rather than its own file so the only extra surface is one Koin block.
@@ -353,8 +405,12 @@ val commonDataModule =
             app.kofipod.pkm.PkmExportCoordinator(
                 deps = get(),
                 formatter = get(),
-                sink = get(),
+                sinks = get(),
+                exportLog = get(),
+                scheduler = get(),
                 appScope = get(org.koin.core.qualifier.named("appScope")),
+                clipboardSink = get<app.kofipod.pkm.sinks.ClipboardSink>(),
+                shareFileSink = get<app.kofipod.pkm.sinks.ShareFileSink>(),
             )
         }
         single { app.kofipod.search.LibrarySearchRepository(driver = get()) }

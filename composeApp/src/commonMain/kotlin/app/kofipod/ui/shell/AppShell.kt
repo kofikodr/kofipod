@@ -104,6 +104,10 @@ fun AppShell() {
                 PkmExportResult.Shared -> {
                     // No snackbar needed — the system share sheet is its own UI signal.
                 }
+                PkmExportResult.Exported -> {
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                    snackbarHostState.showSnackbar(message = "Exported successfully")
+                }
                 is PkmExportResult.Failed -> {
                     snackbarHostState.currentSnackbarData?.dismiss()
                     snackbarHostState.showSnackbar(message = "Export failed: ${result.message}")

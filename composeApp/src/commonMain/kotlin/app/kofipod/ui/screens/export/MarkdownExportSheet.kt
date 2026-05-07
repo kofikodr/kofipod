@@ -18,8 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.kofipod.pkm.PkmDestination
 import app.kofipod.pkm.PkmExportCoordinator
-import app.kofipod.pkm.PkmExportSink
 import app.kofipod.ui.theme.LocalKofipodColors
 import org.koin.compose.koinInject
 
@@ -60,13 +60,13 @@ fun MarkdownExportSheet() {
             SinkRow(
                 title = "Copy to clipboard",
                 subtitle = "Plain Markdown text",
-                onClick = { coordinator.execute(current, PkmExportSink.Clipboard) },
+                onClick = { coordinator.execute(current, PkmDestination.Clipboard) },
             )
             Spacer(Modifier.height(4.dp))
             SinkRow(
                 title = "Share as file…",
                 subtitle = "Sends a .md file via the system share sheet",
-                onClick = { coordinator.execute(current, PkmExportSink.File) },
+                onClick = { coordinator.execute(current, PkmDestination.ShareFile) },
             )
 
             Spacer(Modifier.height(12.dp))

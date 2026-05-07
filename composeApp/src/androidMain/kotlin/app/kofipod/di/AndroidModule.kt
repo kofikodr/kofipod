@@ -81,11 +81,18 @@ val androidPlatformModule =
         single<app.kofipod.snippets.FileCheckerApi> { get<FileChecker>() }
         single { SnippetExporter(androidContext()) }
         single { SnippetRenderLauncher(androidContext()) }
-        // PKM (Slice 5) — platform ports. ClipboardPort and MarkdownTempFilePort
-        // are concrete-only `actual class`es (no expect class interface), so a
-        // single binding each is sufficient.
+        // PKM (Slice 5 + 6) — platform ports and connection vault.
+        // ClipboardPort and MarkdownTempFilePort are concrete-only `actual class`es
+        // (no expect class interface), so a single binding each is sufficient.
+        // OAuthTokenVaultImpl is the Android actual (EncryptedSharedPreferences); iOS
+        // actual is a no-op in-memory stub. Bound as the interface so commonMain
+        // callers (PkmConnectionRepository) resolve it without platform knowledge.
         single { app.kofipod.pkm.ClipboardPort(androidContext()) }
         single { app.kofipod.pkm.MarkdownTempFilePort(androidContext()) }
+        single<app.kofipod.pkm.connections.OAuthTokenVault> {
+            app.kofipod.pkm.connections.OAuthTokenVaultImpl(androidContext())
+        }
+        single { app.kofipod.pkm.sinks.ObsidianFolderWriterImpl(androidContext()) }
         single { ThemeSystem(androidContext()) }
         single<PalettePort> { AndroidPalettePort(androidContext()) }
         single<LocalApkPathStore> { AndroidLocalApkPathStore(androidContext()) }

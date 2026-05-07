@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.pkm.connections
 
-import app.kofipod.db.KofipodDatabase
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-
 /**
  * Domain projection of an `ExportLog` row. Acts as both an idempotency ledger
  * (one row per `(itemKind, itemId, destinationKind)` triple) and a retry queue
@@ -21,38 +17,28 @@ data class ExportLogEntry(
 )
 
 /**
- * Single source of truth for export-attempt history against the `ExportLog`
- * table. Each row is keyed by composite PK `(itemKind, itemId, destinationKind)`,
- * so re-exporting the same item to the same destination overwrites the prior
- * row rather than appending — the table is a ledger of *current* state, not an
+ * Narrow seam over the `ExportLog` table. Kept as an interface so
+ * [app.kofipod.pkm.PkmExportCoordinator] can be unit-tested without a mocking
+ * framework — tests substitute [ExportLogRepositoryImpl] with an in-memory fake.
+ *
+ * Each row is keyed by composite PK `(itemKind, itemId, destinationKind)`, so
+ * re-exporting the same item to the same destination overwrites the prior row
+ * rather than appending — the table is a ledger of *current* state, not an
  * append-only audit log.
  *
  * Status transitions are caller-driven:
  * - [recordSuccess] writes `status = 'success'` with an optional [externalId].
  * - [markQueued] writes `status = 'queued'` (worker will retry).
  * - [markFailed] writes `status = 'failed'` with a human-readable error.
- *
- * All suspend boundaries hop to [Dispatchers.Default] (never `Dispatchers.IO`,
- * which is JVM-only and breaks iOS compile).
  */
-class ExportLogRepository(db: KofipodDatabase) {
-    private val q = db.exportLogQueries
-
+interface ExportLogRepository {
     suspend fun find(
         itemKind: String,
         itemId: String,
         destinationKind: ConnectionKind,
-    ): ExportLogEntry? =
-        withContext(Dispatchers.Default) {
-            q.selectByKey(itemKind, itemId, destinationKind.wire)
-                .executeAsOneOrNull()
-                ?.let(::toDomain)
-        }
+    ): ExportLogEntry?
 
-    suspend fun selectQueuedOrFailed(): List<ExportLogEntry> =
-        withContext(Dispatchers.Default) {
-            q.selectQueuedOrFailed().executeAsList().mapNotNull(::toDomain)
-        }
+    suspend fun selectQueuedOrFailed(): List<ExportLogEntry>
 
     suspend fun recordSuccess(
         itemKind: String,
@@ -60,14 +46,14 @@ class ExportLogRepository(db: KofipodDatabase) {
         destinationKind: ConnectionKind,
         externalId: String?,
         nowMs: Long,
-    ) = upsert(itemKind, itemId, destinationKind, externalId, STATUS_SUCCESS, null, nowMs)
+    )
 
     suspend fun markQueued(
         itemKind: String,
         itemId: String,
         destinationKind: ConnectionKind,
         nowMs: Long,
-    ) = upsert(itemKind, itemId, destinationKind, null, STATUS_QUEUED, null, nowMs)
+    )
 
     suspend fun markFailed(
         itemKind: String,
@@ -75,13 +61,69 @@ class ExportLogRepository(db: KofipodDatabase) {
         destinationKind: ConnectionKind,
         message: String,
         nowMs: Long,
-    ) = upsert(itemKind, itemId, destinationKind, null, STATUS_FAILED, message, nowMs)
+    )
 
     suspend fun deleteByItem(
         itemKind: String,
         itemId: String,
+    )
+}
+
+/**
+ * SQLDelight-backed implementation of [ExportLogRepository].
+ *
+ * All suspend boundaries hop to [kotlinx.coroutines.Dispatchers.Default] (never
+ * `Dispatchers.IO`, which is JVM-only and breaks iOS compile).
+ */
+class ExportLogRepositoryImpl(db: app.kofipod.db.KofipodDatabase) : ExportLogRepository {
+    private val q = db.exportLogQueries
+
+    override suspend fun find(
+        itemKind: String,
+        itemId: String,
+        destinationKind: ConnectionKind,
+    ): ExportLogEntry? =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            q.selectByKey(itemKind, itemId, destinationKind.wire)
+                .executeAsOneOrNull()
+                ?.let(::toDomain)
+        }
+
+    override suspend fun selectQueuedOrFailed(): List<ExportLogEntry> =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            q.selectQueuedOrFailed().executeAsList().mapNotNull(::toDomain)
+        }
+
+    override suspend fun recordSuccess(
+        itemKind: String,
+        itemId: String,
+        destinationKind: ConnectionKind,
+        externalId: String?,
+        nowMs: Long,
+    ) = upsert(itemKind, itemId, destinationKind, externalId, STATUS_SUCCESS, null, nowMs)
+
+    override suspend fun markQueued(
+        itemKind: String,
+        itemId: String,
+        destinationKind: ConnectionKind,
+        nowMs: Long,
+    ) = upsert(itemKind, itemId, destinationKind, null, STATUS_QUEUED, null, nowMs)
+
+    override suspend fun markFailed(
+        itemKind: String,
+        itemId: String,
+        destinationKind: ConnectionKind,
+        message: String,
+        nowMs: Long,
+    ) = upsert(itemKind, itemId, destinationKind, null, STATUS_FAILED, message, nowMs)
+
+    override suspend fun deleteByItem(
+        itemKind: String,
+        itemId: String,
     ) {
-        withContext(Dispatchers.Default) { q.deleteByItem(itemKind, itemId) }
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            q.deleteByItem(itemKind, itemId)
+        }
     }
 
     private suspend fun upsert(
@@ -93,7 +135,7 @@ class ExportLogRepository(db: KofipodDatabase) {
         errorMessage: String?,
         nowMs: Long,
     ) {
-        withContext(Dispatchers.Default) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
             q.upsert(
                 itemKind = itemKind,
                 itemId = itemId,

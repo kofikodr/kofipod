@@ -14,7 +14,7 @@ class ExportLogRepositoryTest {
 
     @BeforeTest
     fun setup() {
-        repo = ExportLogRepository(inMemoryDatabase())
+        repo = ExportLogRepositoryImpl(inMemoryDatabase())
     }
 
     @Test

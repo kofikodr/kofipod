@@ -10,14 +10,14 @@ sealed interface PkmExportRequest {
     data class AiSummary(val episodeId: String) : PkmExportRequest
 }
 
-/** Selected destination from the export bottom-sheet. */
-enum class PkmExportSink { Clipboard, File }
-
 /** Coordinator → host (snackbar) signal. */
 sealed interface PkmExportResult {
     data object Copied : PkmExportResult
 
     data object Shared : PkmExportResult
+
+    /** Emitted for connection-bound destinations (Obsidian, Readwise) on success. */
+    data object Exported : PkmExportResult
 
     data class Failed(val message: String) : PkmExportResult
 }
