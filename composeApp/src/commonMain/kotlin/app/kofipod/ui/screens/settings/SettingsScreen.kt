@@ -159,7 +159,9 @@ fun SettingsScreen(
             title = "Connections",
             subtitle = "Manage Obsidian, Readwise, and Markdown exports",
             onClick = { viewModel.tapConnections(onOpenConnections) },
-            trailing = null,
+            trailing = {
+                KPIcon(name = KPIconName.ChevronRight, color = c.textMute, size = 18.dp)
+            },
         )
 
         SectionLabel("Appearance", topSpacing = 22.dp)
