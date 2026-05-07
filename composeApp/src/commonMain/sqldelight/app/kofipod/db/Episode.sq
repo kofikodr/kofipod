@@ -58,3 +58,6 @@ GROUP BY e.podcastId;
 
 delete:
 DELETE FROM Episode WHERE id = ?;
+
+selectAll:
+SELECT * FROM Episode;
