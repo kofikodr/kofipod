@@ -51,8 +51,9 @@ internal object WaveformBitmapRenderer {
 
     /**
      * Per-frame transparent overlay containing only the waveform bars in their
-     * lower-third lane. Phase-modulate [samples] via [WaveformGenerator.modulateAt]
-     * before passing in to get VU-meter motion across frames.
+     * lower-third lane. Caller passes the per-frame bars from
+     * [AmplitudeEnvelope.barsAt] so the rendered MP4 visualises real audio
+     * amplitude over time.
      */
     fun renderWaveformBarsOverlay(
         samples: WaveformSamples,
