@@ -37,6 +37,7 @@ import app.kofipod.pro.AndroidEntitlementCache
 import app.kofipod.pro.EntitlementCache
 import app.kofipod.share.Sharer
 import app.kofipod.snippets.FileChecker
+import app.kofipod.snippets.PcmDecoder
 import app.kofipod.snippets.SnippetExporter
 import app.kofipod.snippets.SnippetRenderLauncher
 import app.kofipod.ui.ActivityHolder
@@ -82,6 +83,10 @@ val androidPlatformModule =
         // Without this, SnippetRenderService crashes at first render with
         // NoDefinitionFoundException for FileCheckerApi.
         single<app.kofipod.snippets.FileCheckerApi> { get<FileChecker>() }
+        // PcmDecoder backs the snippet MP4 audio-reactive bars overlay (per-frame
+        // RMS comes from the source audio, not synthetic wiggle). Bound here as
+        // the Android-only actual; iOS gets a NotImplementedError stub.
+        single { PcmDecoder(androidContext()) }
         single { SnippetExporter(androidContext()) }
         single { SnippetRenderLauncher(androidContext()) }
         // PKM (Slice 5 + 6) — platform ports and connection vault.
