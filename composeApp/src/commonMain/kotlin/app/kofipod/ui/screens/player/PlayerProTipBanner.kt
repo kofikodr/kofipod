@@ -26,7 +26,7 @@ import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.theme.LocalKofipodColors
 
 /**
- * Dismissible NEW coachmark banner shown below [PlayerProActionsRow].
+ * Dismissible NEW coachmark banner shown below [PlayerActionStrip].
  *
  * Visible only when the user has not yet dismissed it (i.e. [visible] is true).
  * Dismissal writes the current epoch-ms to [SettingsRepository.proTipDismissedAt] via

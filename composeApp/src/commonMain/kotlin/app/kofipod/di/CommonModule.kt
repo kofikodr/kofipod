@@ -574,6 +574,9 @@ val commonDataModule =
                 launcher = get(),
                 player = get(),
                 waveformGen = get(),
+                episodes = get<EpisodeSource>(),
+                library = get(),
+                downloads = get(),
             )
         }
         viewModel { StatsViewModel(get()) }

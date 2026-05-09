@@ -65,4 +65,23 @@ object SnippetWindow {
         val ssStr = if (ss < 10) "0$ss" else ss.toString()
         return "$mmStr:$ssStr.$deci"
     }
+
+    /** mm:ss formatting (no decimal) — matches the Slice 4 design's chip + axis labels. */
+    fun formatTimestamp(ms: Long): String {
+        val totalSec = (ms.coerceAtLeast(0L) + 500L) / 1_000L
+        val mm = (totalSec / 60L).toInt()
+        val ss = (totalSec % 60L).toInt()
+        val mmStr = if (mm < 10) "0$mm" else mm.toString()
+        val ssStr = if (ss < 10) "0$ss" else ss.toString()
+        return "$mmStr:$ssStr"
+    }
+
+    /** Compact selection-duration formatting: drops the leading zero (`0:42`, `12:05`). */
+    fun formatDuration(ms: Long): String {
+        val totalSec = (ms.coerceAtLeast(0L) + 500L) / 1_000L
+        val mm = (totalSec / 60L).toInt()
+        val ss = (totalSec % 60L).toInt()
+        val ssStr = if (ss < 10) "0$ss" else ss.toString()
+        return "$mm:$ssStr"
+    }
 }

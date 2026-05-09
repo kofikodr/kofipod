@@ -2,9 +2,12 @@
 package app.kofipod.ui.screens.snippet
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -18,51 +21,97 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kofipod.snippets.SnippetWindow
+import app.kofipod.ui.primitives.KPIcon
+import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.theme.LocalKofipodColors
 
+/**
+ * Bottom row of the waveform card. Per the Slice 4 design:
+ *   [IN 18:42]  [OUT 19:24] ········ [▶ Preview]
+ *
+ * IN / OUT are read-only timestamp pills (drag the waveform handles to move
+ * them). Preview is a lavender-tinted action pill that toggles snippet
+ * playback. Pushed to the right edge so the action lives in a predictable
+ * spot regardless of trim values.
+ */
 @Composable
 fun SnippetTrimChips(
     startMs: Long,
     endMs: Long,
+    isPreviewing: Boolean,
+    onPreviewToggle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Pill(label = "IN", value = SnippetWindow.formatTimestampDeci(startMs))
-        Pill(label = "OUT", value = SnippetWindow.formatTimestampDeci(endMs))
-        Pill(label = "", value = SnippetWindow.formatTimestampDeci(endMs - startMs) + " selected", filled = true)
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        TimePill(label = "IN", value = SnippetWindow.formatTimestamp(startMs))
+        TimePill(label = "OUT", value = SnippetWindow.formatTimestamp(endMs))
+        Spacer(Modifier.weight(1f))
+        PreviewPill(isPlaying = isPreviewing, onTap = onPreviewToggle)
     }
 }
 
 @Composable
-private fun Pill(
+private fun TimePill(
     label: String,
     value: String,
-    filled: Boolean = false,
 ) {
     val c = LocalKofipodColors.current
     Row(
         Modifier
             .clip(CircleShape)
-            .background(if (filled) c.pink else c.surface)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .background(c.surfaceAlt)
+            .border(1.dp, c.border, CircleShape)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (label.isNotEmpty()) {
-            Text(
-                label,
-                color = if (filled) c.bg else c.textMute,
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.width(6.dp))
-        }
+        Text(
+            label,
+            color = c.textMute,
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.width(6.dp))
         Text(
             value,
-            color = if (filled) c.bg else c.text,
-            fontSize = 12.sp,
+            color = c.text,
+            fontSize = 13.sp,
             fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun PreviewPill(
+    isPlaying: Boolean,
+    onTap: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Row(
+        Modifier
+            .clip(CircleShape)
+            .background(c.purpleTint)
+            .border(1.dp, c.border, CircleShape)
+            .clickable(onClick = onTap)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        KPIcon(
+            name = if (isPlaying) KPIconName.Pause else KPIconName.Play,
+            color = c.purple,
+            size = 14.dp,
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            if (isPlaying) "Pause" else "Preview",
+            color = c.purple,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
         )
     }
 }

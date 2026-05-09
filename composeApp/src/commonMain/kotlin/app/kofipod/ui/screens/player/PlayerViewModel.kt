@@ -59,7 +59,7 @@ class PlayerViewModel(
 
     /**
      * Current Pro entitlement state delegated from [ProEntitlementRepository]. Collected by
-     * [PlayerProActionsRow] to conditionally render the PRO badge on each chip.
+     * [PlayerActionStrip] to conditionally render the PRO badge on each chip.
      */
     val entitlement: StateFlow<ProEntitlement> = pro.state
 

@@ -22,15 +22,38 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+enum class BookmarkSort { Newest, Oldest }
+
+/** A podcast that has at least one bookmark — appears as a filter chip. */
+data class BookmarkPodcastFilter(
+    val podcastId: String,
+    val title: String,
+    val artworkUrl: String,
+    val seed: Int,
+)
+
 data class BookmarksUiState(
     val rows: List<BookmarkWithContext> = emptyList(),
     val query: String = "",
+    /** Pre-filter totals (informational header). */
+    val totalSaved: Int = 0,
+    val episodeCount: Int = 0,
+    /** Per-podcast filter chips, derived from the unfiltered set. */
+    val podcastFilters: List<BookmarkPodcastFilter> = emptyList(),
+    val selectedPodcastId: String? = null,
+    val sort: BookmarkSort = BookmarkSort.Newest,
 )
 
 /**
- * Drives the global Bookmarks screen. Reads all bookmarks via the repo's
- * context-aware Flow (joins podcast + episode metadata), with an in-memory
- * substring filter over podcast title / episode title / note.
+ * Drives the global Bookmarks screen.
+ *
+ * Reads all bookmarks via the repo's context-aware Flow (which already joins
+ * podcast + episode metadata). On top of that:
+ * - Per-podcast filter chips are computed from the unfiltered set so toggling
+ *   "All" / a specific podcast doesn't make the chip set itself jump.
+ * - Search filters across podcast title / episode title / note as a substring
+ *   match (lowercased).
+ * - Sort flips between Newest and Oldest by `bookmark.timestampMs`.
  *
  * `openAt(...)` resolves the episode through [EpisodeSource] / [DownloadRepository]
  * and starts playback at the bookmark's timestamp — same shape as
@@ -46,12 +69,49 @@ class BookmarksViewModel(
     private val pro: ProEntitlementRepository,
 ) : ViewModel() {
     private val query = MutableStateFlow("")
+    private val selectedPodcastId = MutableStateFlow<String?>(null)
+    private val sort = MutableStateFlow(BookmarkSort.Newest)
 
     val state: StateFlow<BookmarksUiState> =
-        combine(bookmarks.observeAll(), query) { rows, q ->
+        combine(bookmarks.observeAll(), query, selectedPodcastId, sort) { all, q, pickedPodcast, currentSort ->
+            val filters =
+                all
+                    .distinctBy { it.bookmark.podcastId }
+                    .map { row ->
+                        BookmarkPodcastFilter(
+                            podcastId = row.bookmark.podcastId,
+                            title = row.podcastTitle,
+                            artworkUrl = row.artworkUrl,
+                            seed = row.bookmark.podcastId.hashCode(),
+                        )
+                    }
+                    .sortedBy { it.title.lowercase() }
+
+            // Effective filter — if the user picked a podcast that no longer has
+            // bookmarks (e.g. they deleted the last one), fall through to "All"
+            // so the screen never reads as silently empty.
+            val effectivePodcast =
+                pickedPodcast.takeIf { id -> filters.any { it.podcastId == id } }
+
+            val filtered =
+                all.asSequence()
+                    .filter { effectivePodcast == null || it.bookmark.podcastId == effectivePodcast }
+                    .filter { q.isBlank() || it.matches(q) }
+                    .toList()
+            val sorted =
+                when (currentSort) {
+                    BookmarkSort.Newest -> filtered.sortedByDescending { it.bookmark.createdAtMs }
+                    BookmarkSort.Oldest -> filtered.sortedBy { it.bookmark.createdAtMs }
+                }
+
             BookmarksUiState(
-                rows = if (q.isBlank()) rows else rows.filter { it.matches(q) },
+                rows = sorted,
                 query = q,
+                totalSaved = all.size,
+                episodeCount = all.distinctBy { it.bookmark.episodeId }.size,
+                podcastFilters = filters,
+                selectedPodcastId = effectivePodcast,
+                sort = currentSort,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookmarksUiState())
 
@@ -59,7 +119,22 @@ class BookmarksViewModel(
         query.value = q
     }
 
-    fun delete(id: String) = bookmarks.deleteById(id)
+    fun selectPodcast(podcastId: String?) {
+        selectedPodcastId.value = podcastId
+    }
+
+    fun toggleSort() {
+        sort.value =
+            when (sort.value) {
+                BookmarkSort.Newest -> BookmarkSort.Oldest
+                BookmarkSort.Oldest -> BookmarkSort.Newest
+            }
+    }
+
+    fun delete(id: String) {
+        // SQLDelight write — push off the Main dispatcher to avoid jank.
+        viewModelScope.launch { bookmarks.deleteById(id) }
+    }
 
     /**
      * Pro-gated. On Pro: open the markdown export sheet for [bookmarkId].

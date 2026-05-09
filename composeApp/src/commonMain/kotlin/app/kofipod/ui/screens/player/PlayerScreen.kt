@@ -144,24 +144,24 @@ fun PlayerScreen(
             onNext = viewModel::next,
         )
         Spacer(Modifier.height(20.dp))
-        PlayerProActionsRow(
+        PlayerActionStrip(
             entitlement = ent,
+            speed = p.speed,
+            sleepRemainingMs = p.sleepRemainingMs,
             onSnipTapped = viewModel::onSnipTapped,
             onBookmarkTapped = viewModel::onBookmarkTapped,
+            onCycleSpeed = viewModel::cycleSpeed,
+            onSetSleep = viewModel::setSleepTimer,
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
         PlayerProTipBanner(
             visible = !tipDismissed,
             onDismiss = viewModel::dismissProTip,
         )
         Spacer(Modifier.height(20.dp))
-        PlayerBottomBar(
-            speed = p.speed,
+        PlayerVisualizerStrip(
             isPlaying = p.isPlaying,
-            sleepRemainingMs = p.sleepRemainingMs,
             audioLevels = viewModel.audioLevels,
-            onCycleSpeed = viewModel::cycleSpeed,
-            onSetSleep = viewModel::setSleepTimer,
         )
         Spacer(Modifier.height(32.dp))
     }

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.kofipod.snippets
 
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.sin
 import kotlin.random.Random
 
 /**
@@ -50,9 +52,55 @@ class WaveformGenerator {
         return WaveformSamples(smoothed)
     }
 
+    /**
+     * Returns a phase-modulated copy of [samples] for VU-meter-style animation in
+     * the MP4 render. Each bar's amplitude oscillates around its base value
+     * `base[i] * (0.5 + 0.5 * sin(2π * f * t + phase[i]))` where `phase[i]` is a
+     * deterministic per-bar offset seeded from [seed] (so bars don't bounce in
+     * lockstep — they stagger like a real VU). The animation is purely visual:
+     * it isn't tied to actual audio amplitude, but it makes the rendered MP4 look
+     * audio-reactive instead of frozen.
+     *
+     * Pure function: same inputs → same output. Safe to call from any thread.
+     *
+     * @param samples           Base samples produced by [generate].
+     * @param seed              Same string used to seed [generate]; drives per-bar phase.
+     * @param presentationTimeUs Microseconds since the start of the clip (Media3 contract).
+     * @param frequencyHz       Modulation frequency. 6 Hz is the default — fast enough
+     *                          to read as movement, slow enough to avoid strobing.
+     */
+    fun modulateAt(
+        samples: WaveformSamples,
+        seed: String,
+        presentationTimeUs: Long,
+        frequencyHz: Float = DEFAULT_FREQUENCY_HZ,
+    ): WaveformSamples {
+        val barCount = samples.bars.size
+        if (barCount == 0) return samples
+        val phaseSeed = seed.fold(0L) { acc, c -> acc * 31L + c.code } xor PHASE_SEED_SALT
+        val phaseRand = Random(phaseSeed)
+        val tSeconds = presentationTimeUs / 1_000_000.0
+        val out = FloatArray(barCount)
+        for (i in 0 until barCount) {
+            val phase = phaseRand.nextFloat() * 2f * PI.toFloat()
+            val omega = 2f * PI.toFloat() * frequencyHz * tSeconds.toFloat() + phase
+            // 0.5 + 0.5 sin(...) ∈ [0, 1] — multiplying the base amplitude by this
+            // keeps the result in [0, 1] without further clamping.
+            val mod = 0.5f + 0.5f * sin(omega)
+            out[i] = samples.bars[i] * mod
+        }
+        return WaveformSamples(out)
+    }
+
     private companion object {
         const val DEFAULT_BAR_COUNT = 64
         const val EPS = 0.001f
         const val NUDGE = 0.02f // NUDGE >> EPS so one nudge clears the threshold
+        const val DEFAULT_FREQUENCY_HZ = 6f
+
+        // Salt the phase RNG with a non-zero constant so the phase seed differs
+        // from the amplitude seed — otherwise bars would all hit their peaks at
+        // amplitude-correlated moments instead of looking like an independent VU.
+        const val PHASE_SEED_SALT = 0x5F3759DFL
     }
 }
