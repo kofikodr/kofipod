@@ -87,7 +87,7 @@ val androidPlatformModule =
         // RMS comes from the source audio, not synthetic wiggle). Bound here as
         // the Android-only actual; iOS gets a NotImplementedError stub.
         single { PcmDecoder(androidContext()) }
-        single { SnippetExporter(androidContext()) }
+        single { SnippetExporter(androidContext(), get()) }
         single { SnippetRenderLauncher(androidContext()) }
         // PKM (Slice 5 + 6) — platform ports and connection vault.
         // ClipboardPort and MarkdownTempFilePort are concrete-only `actual class`es

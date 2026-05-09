@@ -36,7 +36,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-actual class SnippetExporter(private val context: Context) {
+actual class SnippetExporter(
+    private val context: Context,
+    private val pcmDecoder: PcmDecoder,
+) {
     @OptIn(DelicateCoroutinesApi::class)
     actual suspend fun exportMp3(
         snippet: Snippet,
@@ -128,9 +131,10 @@ actual class SnippetExporter(private val context: Context) {
      * Exports a snippet as an MP4 using a Media3 Transformer Composition graph:
      *  - Image sequence: cover-only background bitmap (cover art on dark bg, no bars)
      *    written once to a temp PNG and looped by Transformer for the clip duration.
-     *  - Bars overlay: a [BitmapOverlay] subclass returns a fresh phase-modulated
-     *    bars-only ARGB bitmap on every `getBitmap(presentationTimeUs)` call so the
-     *    bars animate VU-meter style instead of looking frozen.
+     *  - Bars overlay: a [BitmapOverlay] subclass returns a fresh bars-only ARGB
+     *    bitmap on every `getBitmap(presentationTimeUs)` call. Per-frame bar values
+     *    come from a precomputed [AmplitudeEnvelope] derived from the source audio,
+     *    so the bars dance with the audio like a music-video visualiser.
      *  - Audio sequence: audio source clipped to [snippet.startMs, endMs] with the
      *    video track removed.
      *  - Caption: when [captionText] is non-blank, a [TextOverlay] burns the
@@ -142,8 +146,11 @@ actual class SnippetExporter(private val context: Context) {
      *    this step the renderer silently drops remote URLs and the cover region is
      *    blank.
      *
-     * The temp frame PNG (and any temp cover PNG) are deleted in the finally block
-     * regardless of export success or failure.
+     * Audio precompute: runs on Dispatchers.IO before Transformer.start. Decode
+     * failure is a hard fail (user-locked decision: no fallback to synthetic bars)
+     * — exportMp4 returns Result.failure and no Transformer ever starts. The temp
+     * frame PNG (and any temp cover PNG) are deleted in the finally block regardless
+     * of export success or failure.
      */
     @OptIn(DelicateCoroutinesApi::class)
     actual suspend fun exportMp4(
@@ -158,14 +165,25 @@ actual class SnippetExporter(private val context: Context) {
         // Resolve the cover into a local file path BEFORE switching to the main
         // dispatcher — Coil execute() suspends and we don't want to block the UI thread.
         val (localCoverPath, coverTempFile) = resolveCoverArtPath(coverArtUriOrPath)
-        return try {
-            doExportMp4(
+        try {
+            val envelope =
+                try {
+                    precomputeEnvelope(sourceUriOrPath, snippet, waveformSamples.bars.size)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    // Hard fail per user-locked decision — no fallback to synthetic
+                    // wiggle. Surface the decode error so the user knows the snippet
+                    // did not render.
+                    return Result.failure(e)
+                }
+            return doExportMp4(
                 snippet = snippet,
                 sourceUriOrPath = sourceUriOrPath,
                 outputPath = outputPath,
                 localCoverPath = localCoverPath,
                 captionText = captionText,
-                waveformSamples = waveformSamples,
+                envelope = envelope,
                 onProgress = onProgress,
             )
         } finally {
@@ -175,6 +193,31 @@ actual class SnippetExporter(private val context: Context) {
         }
     }
 
+    /**
+     * Decode the clipped audio range, then build a per-frame, per-bar amplitude
+     * envelope. The envelope drives [AnimatedBarsOverlay]'s per-frame bitmap so
+     * the bars track the source audio amplitude.
+     *
+     * Frame count rounds up so a clip whose duration falls between two video
+     * frames still gets a non-zero envelope. The minimum of 1 frame protects
+     * against edge cases where duration < 33ms (one frame at 30 fps).
+     */
+    private suspend fun precomputeEnvelope(
+        sourceUriOrPath: String,
+        snippet: Snippet,
+        barCount: Int,
+    ): AmplitudeEnvelope {
+        val durationMs = snippet.endMs - snippet.startMs
+        val frameCount = ((durationMs * VIDEO_FRAME_RATE) / 1000L).toInt().coerceAtLeast(1)
+        val pcm = pcmDecoder.decodeMono(sourceUriOrPath, snippet.startMs, snippet.endMs)
+        return AmplitudeEnvelopeBuilder.build(
+            pcm = pcm.samples,
+            sampleRate = pcm.sampleRate,
+            frameCount = frameCount,
+            barCount = barCount,
+        )
+    }
+
     @OptIn(DelicateCoroutinesApi::class)
     private suspend fun doExportMp4(
         snippet: Snippet,
@@ -182,7 +225,7 @@ actual class SnippetExporter(private val context: Context) {
         outputPath: String,
         localCoverPath: String?,
         captionText: String?,
-        waveformSamples: WaveformSamples,
+        envelope: AmplitudeEnvelope,
         onProgress: (Float) -> Unit,
     ): Result<String> =
         withContext(Dispatchers.Main) {
@@ -215,7 +258,7 @@ actual class SnippetExporter(private val context: Context) {
             val durationUs = (snippet.endMs - snippet.startMs) * 1_000L
 
             // 2. Image MediaItem — temp PNG as the static video track.
-            val videoEffects = buildVideoEffects(snippet.id, waveformSamples, captionText)
+            val videoEffects = buildVideoEffects(envelope, captionText)
             val imageItem =
                 EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(frameFile)))
                     .setDurationUs(durationUs)
@@ -369,12 +412,11 @@ actual class SnippetExporter(private val context: Context) {
      *  - When caption is non-blank: a [TextOverlay] burned on top.
      */
     private fun buildVideoEffects(
-        seed: String,
-        baseSamples: WaveformSamples,
+        envelope: AmplitudeEnvelope,
         captionText: String?,
     ): List<Effect> {
         val overlays = mutableListOf<TextureOverlay>()
-        overlays.add(AnimatedBarsOverlay(seed = seed, baseSamples = baseSamples))
+        overlays.add(AnimatedBarsOverlay(envelope = envelope))
         if (!captionText.isNullOrBlank()) {
             overlays.add(TextOverlay.createStaticTextOverlay(SpannableString(captionText)))
         }
@@ -389,26 +431,34 @@ actual class SnippetExporter(private val context: Context) {
         }
 
     /**
-     * [BitmapOverlay] that returns a fresh phase-modulated bars-only bitmap on
-     * each frame. Allocating a new ARGB_8888 bitmap per call is intentional —
-     * Media3's overlay GPU upload path keys on the [Bitmap] reference, so reusing
-     * one would cause it to skip the upload and the bars would freeze.
+     * [BitmapOverlay] that returns a fresh bars-only bitmap on each frame, with
+     * per-bar values pulled from a precomputed [AmplitudeEnvelope] keyed off the
+     * source-audio amplitude. Allocating a new ARGB_8888 bitmap per call is
+     * intentional — Media3's overlay GPU upload path keys on the [Bitmap]
+     * reference, so reusing one would cause it to skip the upload and the bars
+     * would freeze.
+     *
+     * Index clamp: Media3 may invoke [getBitmap] for timestamps slightly past
+     * the clip's last frame (encoder padding); the envelope's own bounds clamp
+     * absorbs that without throwing.
      */
     private class AnimatedBarsOverlay(
-        private val seed: String,
-        private val baseSamples: WaveformSamples,
+        private val envelope: AmplitudeEnvelope,
     ) : BitmapOverlay() {
-        private val generator = WaveformGenerator()
-
         override fun getBitmap(presentationTimeUs: Long): Bitmap {
-            val modulated = generator.modulateAt(baseSamples, seed, presentationTimeUs)
-            return WaveformBitmapRenderer.renderWaveformBarsOverlay(modulated)
+            val frameIdx =
+                ((presentationTimeUs * VIDEO_FRAME_RATE) / MICROS_PER_SECOND)
+                    .toInt()
+                    .coerceIn(0, envelope.frameCount - 1)
+            val bars = envelope.barsAt(frameIdx)
+            return WaveformBitmapRenderer.renderWaveformBarsOverlay(WaveformSamples(bars))
         }
     }
 
     private companion object {
         const val POLL_INTERVAL_MS = 250L
         const val VIDEO_FRAME_RATE = 30
+        const val MICROS_PER_SECOND = 1_000_000L
         const val COVER_TARGET_PX = 1080
     }
 }
