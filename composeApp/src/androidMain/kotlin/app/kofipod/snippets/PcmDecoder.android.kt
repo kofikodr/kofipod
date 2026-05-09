@@ -196,8 +196,19 @@ actual class PcmDecoder(private val context: Context) {
                 .coerceAtLeast(0L)
                 .coerceAtMost(mono.size.toLong())
                 .toInt()
-        if (skip == 0) return mono
-        return mono.copyOfRange(skip, mono.size)
+        // Trim tail too. The extractor seek lands on the previous sync frame,
+        // and the input loop only stops when sampleTime > endUs, so the codec
+        // typically decodes one frame's worth of samples (≈23 ms @ 44.1 kHz)
+        // past endMs. Without this trim, those late samples would feed the
+        // last bars of the envelope, which would visualise audio outside the
+        // requested clip range.
+        val expectedSamples = (endMs - startMs) * sampleRate / MS_PER_SECOND
+        val end =
+            (skip.toLong() + expectedSamples)
+                .coerceAtMost(mono.size.toLong())
+                .toInt()
+        if (skip == 0 && end == mono.size) return mono
+        return mono.copyOfRange(skip, end)
     }
 
     private fun appendDownmixedMono(
@@ -287,6 +298,7 @@ actual class PcmDecoder(private val context: Context) {
     private companion object {
         const val MICROS_PER_MS = 1_000L
         const val MICROS_PER_S = 1_000_000L
+        const val MS_PER_SECOND = 1_000L
         const val DEQUEUE_TIMEOUT_US = 10_000L
         const val MIN_BUFFER_SAMPLES = 8_192
     }

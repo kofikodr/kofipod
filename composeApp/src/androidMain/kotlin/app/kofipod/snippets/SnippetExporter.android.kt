@@ -208,7 +208,14 @@ actual class SnippetExporter(
         barCount: Int,
     ): AmplitudeEnvelope {
         val durationMs = snippet.endMs - snippet.startMs
-        val frameCount = ((durationMs * VIDEO_FRAME_RATE) / 1000L).toInt().coerceAtLeast(1)
+        // Ceiling division: any clip whose duration isn't a multiple of
+        // (1000/fps) ms otherwise produces an envelope one frame short of the
+        // encoder's frame count. The overlay's coerceIn would then freeze the
+        // last encoder frame on bars from ~33 ms earlier.
+        val frameCount =
+            ((durationMs * VIDEO_FRAME_RATE + MS_PER_SECOND - 1) / MS_PER_SECOND)
+                .toInt()
+                .coerceAtLeast(1)
         val pcm = pcmDecoder.decodeMono(sourceUriOrPath, snippet.startMs, snippet.endMs)
         return AmplitudeEnvelopeBuilder.build(
             pcm = pcm.samples,
@@ -459,6 +466,7 @@ actual class SnippetExporter(
         const val POLL_INTERVAL_MS = 250L
         const val VIDEO_FRAME_RATE = 30
         const val MICROS_PER_SECOND = 1_000_000L
+        const val MS_PER_SECOND = 1_000L
         const val COVER_TARGET_PX = 1080
     }
 }

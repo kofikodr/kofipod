@@ -110,6 +110,10 @@ class AmplitudeEnvelopeBuilderTest {
         for (b in 0 until barCount / 2) {
             assertEquals(0f, frame0[b], absoluteTolerance = 1e-6f, "frame=0 bar=$b should be 0 (tBar < 0)")
         }
+        // Fence-post check on the other side of frame 0: bar 32 has tBar=0,
+        // which is in-range. Without this assertion the boundary test could
+        // pass with an off-by-one that drops the first in-range bar.
+        assertEquals(1f, frame0[barCount / 2], absoluteTolerance = 1e-3f, "frame=0 bar=${barCount / 2} should be in-range and saturate")
 
         // Last frame: tCenter ≈ ((frameCount-1) * 1000 / fps) = 967ms.
         // tBar = 967 + (b - 32) * 50 ≥ 1000 when b ≥ 33.
@@ -117,6 +121,14 @@ class AmplitudeEnvelopeBuilderTest {
         for (b in 33 until barCount) {
             assertEquals(0f, lastFrame[b], absoluteTolerance = 1e-6f, "frame=${frameCount - 1} bar=$b should be 0 (tBar >= clipMs)")
         }
+        // Fence-post check: bar 32 at the last frame has tBar = 967ms, which
+        // is in-range (< 1000ms). It must be non-zero.
+        assertEquals(
+            1f,
+            lastFrame[barCount / 2],
+            absoluteTolerance = 1e-3f,
+            "frame=${frameCount - 1} bar=${barCount / 2} should be the last in-range bar",
+        )
     }
 
     @Test
@@ -174,26 +186,34 @@ class AmplitudeEnvelopeBuilderTest {
 
     @Test
     fun rejects_invalid_inputs() {
-        runCatching {
-            AmplitudeEnvelopeBuilder.build(
-                pcm = ShortArray(0),
-                sampleRate = 0,
-                frameCount = 1,
-                barCount = 1,
-            )
-        }.also {
-            assertTrue(it.isFailure, "sampleRate=0 should throw")
-        }
-        runCatching {
-            AmplitudeEnvelopeBuilder.build(
-                pcm = ShortArray(0),
-                sampleRate = 44_100,
-                frameCount = 0,
-                barCount = 1,
-            )
-        }.also {
-            assertTrue(it.isFailure, "frameCount=0 should throw")
-        }
+        // Each `require` in AmplitudeEnvelopeBuilder.build is a documented
+        // contract; they all need a regression test or new bypass conditions
+        // could land silently. One block per guard, so any reorder/removal
+        // shows up as a specific failure.
+        fun build(
+            sampleRate: Int = 44_100,
+            frameCount: Int = 1,
+            barCount: Int = 1,
+            sliceWidthMs: Int = 50,
+            fps: Int = 30,
+            smoothingAlpha: Float = 0.4f,
+        ) = AmplitudeEnvelopeBuilder.build(
+            pcm = ShortArray(0),
+            sampleRate = sampleRate,
+            frameCount = frameCount,
+            barCount = barCount,
+            sliceWidthMs = sliceWidthMs,
+            fps = fps,
+            smoothingAlpha = smoothingAlpha,
+        )
+        assertTrue(runCatching { build(sampleRate = 0) }.isFailure, "sampleRate=0 should throw")
+        assertTrue(runCatching { build(sampleRate = -1) }.isFailure, "negative sampleRate should throw")
+        assertTrue(runCatching { build(frameCount = 0) }.isFailure, "frameCount=0 should throw")
+        assertTrue(runCatching { build(barCount = 0) }.isFailure, "barCount=0 should throw")
+        assertTrue(runCatching { build(sliceWidthMs = 0) }.isFailure, "sliceWidthMs=0 should throw")
+        assertTrue(runCatching { build(fps = 0) }.isFailure, "fps=0 should throw")
+        assertTrue(runCatching { build(smoothingAlpha = -0.01f) }.isFailure, "smoothingAlpha < 0 should throw")
+        assertTrue(runCatching { build(smoothingAlpha = 1.01f) }.isFailure, "smoothingAlpha > 1 should throw")
     }
 
     @Test

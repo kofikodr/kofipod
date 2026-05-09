@@ -103,9 +103,11 @@ internal object AmplitudeEnvelopeBuilder {
     }
 
     /**
-     * RMS of `pcm[start, end)` using a Long accumulator. Each `Short * Short`
-     * fits in Int but a sum of millions of them does not — Long avoids the
-     * silent overflow that would clip RMS to zero on long slices.
+     * RMS of `pcm[start, end)` using a Long accumulator. Each squared Short
+     * sample fits in Int (Short.MAX_VALUE^2 = 2^30-ish) but a sum of millions
+     * of them does not — Long avoids the silent overflow that would clip RMS
+     * to zero on long slices. We promote `s` to Long *before* the multiply so
+     * the safety property survives any future widening of pcm's element type.
      */
     private fun rmsOf(
         pcm: ShortArray,
@@ -116,8 +118,8 @@ internal object AmplitudeEnvelopeBuilder {
         if (n <= 0) return 0f
         var acc = 0L
         for (i in start until end) {
-            val s = pcm[i].toInt()
-            acc += (s * s).toLong()
+            val s = pcm[i].toLong()
+            acc += s * s
         }
         return sqrt(acc.toDouble() / n).toFloat()
     }
