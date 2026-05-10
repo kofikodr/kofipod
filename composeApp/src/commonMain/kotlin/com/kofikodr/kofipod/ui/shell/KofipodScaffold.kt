@@ -1,31 +1,26 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.kofikodr.kofipod.ui.shell
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navOptions
 import com.kofikodr.kofipod.ui.layout.LocalTabletSize
 import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.nav.Route
+import com.kofikodr.kofipod.ui.player.DockedMiniPlayer
 import com.kofikodr.kofipod.ui.player.MiniPlayer
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
 
@@ -40,8 +35,8 @@ import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
  * is always chosen — by design for this task; the tablet branch is exercised
  * via Paparazzi snapshots that inject [LocalTabletSize] directly.
  *
- * Tablet branch currently uses placeholder rail + docked mini-player composables.
- * Tasks 1.3 and 1.4 of the tablet Phase 1 plan replace them with real components.
+ * Tablet branch wires [com.kofikodr.kofipod.ui.shell.KofipodNavigationRail] beside
+ * a content column whose foot carries the docked [DockedMiniPlayer] (spec §4).
  */
 @Composable
 fun KofipodScaffold(
@@ -151,26 +146,17 @@ private fun TabletScaffold(
             ) {
                 Box(Modifier.weight(1f)) { content() }
                 if (!onPlayerScreen) {
-                    PlaceholderDockedMiniPlayer()
+                    DockedMiniPlayer(
+                        size = size,
+                        onOpen = {
+                            nav.navigate(
+                                Route.Player,
+                                navOptions { launchSingleTop = true },
+                            )
+                        },
+                    )
                 }
             }
         }
-    }
-}
-
-/**
- * Placeholder docked mini-player. Replaced by the real component in Phase 1 Task 1.4.
- */
-@Composable
-private fun PlaceholderDockedMiniPlayer() {
-    val c = LocalKofipodColors.current
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(72.dp)
-            .background(c.surface),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(text = "Mini-player (placeholder)", color = c.textMute)
     }
 }
