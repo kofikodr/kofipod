@@ -287,6 +287,9 @@ class SettingsViewModel(
     fun submitReviewerUnlock(code: String) =
         viewModelScope.launch {
             val ok = pro.applyReviewerUnlock(code.trim())
+            if (ok) {
+                telemetry.track(com.kofikodr.kofipod.diagnostics.TelemetryEvent.ReviewerUnlockApplied)
+            }
             uiEvents.emit(
                 UiEvent.Snackbar(
                     if (ok) "Pro unlocked for review" else "Invalid code",

@@ -11,6 +11,7 @@ import com.kofikodr.kofipod.di.flavorPlatformModule
 import com.kofikodr.kofipod.diagnostics.DiagnosticsBootstrapper
 import com.kofikodr.kofipod.diagnostics.Telemetry
 import com.kofikodr.kofipod.diagnostics.TelemetryEvent
+import com.kofikodr.kofipod.diagnostics.toTelemetryTag
 import com.kofikodr.kofipod.pro.ProEntitlementRepository
 import com.kofikodr.kofipod.ui.theme.ThemeSystem
 import com.kofikodr.kofipod.update.UpdateInstaller
@@ -67,15 +68,6 @@ class KofipodApplication : Application() {
         // the SDK isn't initialized yet. The telemetryReady flow flips only
         // AFTER enable() returns, eliminating the cold-start race.
         val telemetry = get<Telemetry>(Telemetry::class.java)
-        appScope.launch {
-            // Bound the await: if the bootstrapper never flips telemetryReady
-            // true (disclosure not acknowledged, telemetry toggle off, or SDK
-            // init failed), this coroutine would otherwise suspend for the
-            // process lifetime. 5s is generous — readiness usually settles in
-            // <50ms once prefs are decrypted.
-            val ready = withTimeoutOrNull(5_000) { bootstrapper.telemetryReady.first { it } }
-            if (ready == true) telemetry.track(TelemetryEvent.AppOpened)
-        }
         // Kick Pro entitlement reconciliation eagerly. Repository hydrates from
         // cache first, then refreshes from Play Billing — so paywall-gated UI
         // sees the right tier within a few hundred ms of process start. Failure
@@ -83,6 +75,23 @@ class KofipodApplication : Application() {
         val pro = get<ProEntitlementRepository>(ProEntitlementRepository::class.java)
         appScope.launch {
             pro.refreshOnStart()
+        }
+        appScope.launch {
+            // Bound the await: if the bootstrapper never flips telemetryReady
+            // true (disclosure not acknowledged, telemetry toggle off, or SDK
+            // init failed), this coroutine would otherwise suspend for the
+            // process lifetime. 5s is generous — readiness usually settles in
+            // <50ms once prefs are decrypted.
+            val ready = withTimeoutOrNull(5_000) { bootstrapper.telemetryReady.first { it } }
+            if (ready != true) return@launch
+            // Also wait for the entitlement cache to hydrate so AppOpened's
+            // pro_source prop reflects the cached tier instead of Unknown.
+            // Bounded by a tight timeout because hydrateFromCache is just a
+            // backup-excluded prefs read — should settle in <50ms. If it
+            // doesn't, fire AppOpened anyway with Unknown rather than dropping
+            // the event.
+            withTimeoutOrNull(1_000) { pro.hydrateFromCache() }
+            telemetry.track(TelemetryEvent.AppOpened(pro.state.value.toTelemetryTag()))
         }
     }
 }
