@@ -223,6 +223,13 @@ android {
     }
     applicationVariants.all {
         val variant = this
+        // Distinct launcher label per variant so debug installs don't collide visually with
+        // release on the same device. Set here (not in buildTypes.debug) because a buildType
+        // placeholder silently overrides the per-flavor value, which would drop the "(FOSS)"
+        // suffix from foss-debug.
+        val flavorLabel = if (variant.flavorName == "foss") "Kofipod (FOSS)" else "Kofipod"
+        val label = if (variant.buildType.name == "debug") "$flavorLabel debug" else flavorLabel
+        variant.mergedFlavor.manifestPlaceholders["appLabel"] = label
         if (variant.buildType.name == "release") {
             variant.outputs.all {
                 val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
