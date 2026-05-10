@@ -38,7 +38,10 @@ sealed interface Route {
 
     @Serializable data object Connections : Route
 
-    @Serializable data class SmartPlaylistEditor(val playlistId: String? = null) : Route
+    @Serializable data class SmartPlaylistEditor(
+        val playlistId: String? = null,
+        val initialName: String? = null,
+    ) : Route
 
     @Serializable data class SmartPlaylistDetail(val playlistId: String) : Route
 }

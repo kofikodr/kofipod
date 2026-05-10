@@ -10,6 +10,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -26,6 +27,7 @@ fun KPButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     style: KPButtonStyle = KPButtonStyle.PrimaryPink,
+    enabled: Boolean = true,
 ) {
     val colors = LocalKofipodColors.current
     val radii = LocalKofipodRadii.current
@@ -40,7 +42,8 @@ fun KPButton(
             modifier
                 .clip(RoundedCornerShape(radii.pill))
                 .background(bg)
-                .clickable { onClick() }
+                .alpha(if (enabled) 1f else 0.4f)
+                .clickable(enabled = enabled) { onClick() }
                 .padding(horizontal = 24.dp, vertical = 14.dp),
         contentAlignment = Alignment.Center,
     ) {

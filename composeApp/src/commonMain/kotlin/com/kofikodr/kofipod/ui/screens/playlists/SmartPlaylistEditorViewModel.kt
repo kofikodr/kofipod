@@ -50,11 +50,15 @@ class SmartPlaylistEditorViewModel(
     private val resolver: SmartPlaylistResolver,
     private val library: LibraryRepository,
     private val playlistId: String?,
+    initialName: String? = null,
     private val clock: Clock = Clock.System,
 ) : ViewModel() {
     private val draft =
         MutableStateFlow(
-            SmartPlaylistEditorUiState(isEditMode = playlistId != null),
+            SmartPlaylistEditorUiState(
+                name = initialName.orEmpty(),
+                isEditMode = playlistId != null,
+            ),
         )
 
     val state: StateFlow<SmartPlaylistEditorUiState> =

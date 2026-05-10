@@ -592,12 +592,13 @@ val commonDataModule =
         // create-mode (no parametersOf arg) resolve to null and edit-mode (passing the
         // id via parametersOf) resolve to a String. Mirrors the LibraryDetailViewModel
         // factory pattern above.
-        viewModel { params ->
+        viewModel { (playlistId: String?, initialName: String?) ->
             com.kofikodr.kofipod.ui.screens.playlists.SmartPlaylistEditorViewModel(
                 playlists = get(),
                 resolver = get(),
                 library = get(),
-                playlistId = params.getOrNull<String>(),
+                playlistId = playlistId,
+                initialName = initialName,
             )
         }
         // Slice 7 Task 10 — Smart Playlist detail. Required `playlistId` is passed via

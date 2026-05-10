@@ -47,8 +47,10 @@ fun KofipodNavHost(navController: NavHostController) {
                 onOpenStats = { navController.navigate(Route.Stats) },
                 onOpenBookmarks = { navController.navigate(Route.Bookmarks) },
                 onOpenLibrarySearch = { navController.navigate(Route.LibrarySearch) },
-                onOpenSmartPlaylistEditor = { id ->
-                    navController.navigate(Route.SmartPlaylistEditor(playlistId = id))
+                onOpenSmartPlaylistEditor = { id, initialName ->
+                    navController.navigate(
+                        Route.SmartPlaylistEditor(playlistId = id, initialName = initialName),
+                    )
                 },
                 onOpenSmartPlaylistDetail = { id ->
                     navController.navigate(Route.SmartPlaylistDetail(playlistId = id))
@@ -205,6 +207,7 @@ fun KofipodNavHost(navController: NavHostController) {
             val args = entry.toRoute<Route.SmartPlaylistEditor>()
             SmartPlaylistEditorScreen(
                 playlistId = args.playlistId,
+                initialName = args.initialName,
                 onBack = { navController.popBackStack() },
             )
         }

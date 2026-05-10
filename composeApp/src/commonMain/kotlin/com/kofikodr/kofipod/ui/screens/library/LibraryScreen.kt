@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -76,7 +77,7 @@ fun LibraryScreen(
     onOpenStats: () -> Unit,
     onOpenBookmarks: () -> Unit,
     onOpenLibrarySearch: () -> Unit,
-    onOpenSmartPlaylistEditor: (playlistId: String?) -> Unit,
+    onOpenSmartPlaylistEditor: (playlistId: String?, initialName: String?) -> Unit,
     onOpenSmartPlaylistDetail: (playlistId: String) -> Unit,
     viewModel: LibraryViewModel = koinViewModel(),
 ) {
@@ -116,9 +117,6 @@ fun LibraryScreen(
             // folder organization stays the primary visual anchor; the "+ New playlist"
             // CTA only shows once any folder or playlist exists, mirroring NewListTile.
             state.smartPlaylists.forEach { add(Tile.SmartPlaylist(it.playlist, it.matchedCount)) }
-            if (state.smartPlaylists.isNotEmpty() || state.groups.isNotEmpty()) {
-                add(Tile.NewSmartPlaylist)
-            }
         }
 
     LazyColumn(
@@ -178,9 +176,6 @@ fun LibraryScreen(
                             if (viewModel.onSmartPlaylistTapped()) onOpenSmartPlaylistDetail(id)
                         },
                         onLongPressSmartPlaylist = { pendingDeleteSmartPlaylist = it },
-                        onCreateSmartPlaylist = {
-                            if (viewModel.onCreateSmartPlaylistTapped()) onOpenSmartPlaylistEditor(null)
-                        },
                     )
                     TileSlot(
                         modifier = Modifier.weight(1f),
@@ -195,9 +190,6 @@ fun LibraryScreen(
                             if (viewModel.onSmartPlaylistTapped()) onOpenSmartPlaylistDetail(id)
                         },
                         onLongPressSmartPlaylist = { pendingDeleteSmartPlaylist = it },
-                        onCreateSmartPlaylist = {
-                            if (viewModel.onCreateSmartPlaylistTapped()) onOpenSmartPlaylistEditor(null)
-                        },
                     )
                 }
             }
@@ -231,9 +223,18 @@ fun LibraryScreen(
     if (newListOpen) {
         NewListDialog(
             onDismiss = { newListOpen = false },
-            onCreate = {
-                viewModel.createList(it)
-                newListOpen = false
+            onCreate = { name, smart ->
+                if (smart) {
+                    if (viewModel.onCreateSmartPlaylistTapped()) {
+                        newListOpen = false
+                        onOpenSmartPlaylistEditor(null, name)
+                    }
+                    // Paywall-blocked: leave the dialog open so the user keeps
+                    // their typed name and can retry after upgrading or unchecking.
+                } else {
+                    viewModel.createList(name)
+                    newListOpen = false
+                }
             },
         )
     }
@@ -286,8 +287,6 @@ private sealed interface Tile {
     data object NewList : Tile
 
     data class SmartPlaylist(val playlist: SmartPlaylistDomain, val matchedCount: Int) : Tile
-
-    data object NewSmartPlaylist : Tile
 }
 
 @Composable
@@ -405,7 +404,6 @@ private fun TileSlot(
     onCreateList: () -> Unit,
     onOpenSmartPlaylistDetail: (String) -> Unit,
     onLongPressSmartPlaylist: (SmartPlaylistDomain) -> Unit,
-    onCreateSmartPlaylist: () -> Unit,
 ) {
     when (tile) {
         is Tile.OfList -> {
@@ -437,7 +435,6 @@ private fun TileSlot(
                 onClick = { onOpenSmartPlaylistDetail(tile.playlist.id) },
                 onLongClick = { onLongPressSmartPlaylist(tile.playlist) },
             )
-        Tile.NewSmartPlaylist -> NewSmartPlaylistTile(modifier = modifier, onClick = onCreateSmartPlaylist)
         null -> Box(modifier = modifier.aspectRatio(1f)) // balances odd-count rows
     }
 }
@@ -727,44 +724,6 @@ private fun NewListTile(
             Spacer(Modifier.height(8.dp))
             Text(
                 "New list",
-                color = c.textSoft,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 14.sp,
-            )
-        }
-    }
-}
-
-/**
- * Dashed-border CTA tile mirroring [NewListTile] but labelled "New playlist" with the
- * Sparkle glyph so it visually clusters with the populated [SmartPlaylistTile]s above.
- */
-@Composable
-private fun NewSmartPlaylistTile(
-    modifier: Modifier,
-    onClick: () -> Unit,
-) {
-    val c = LocalKofipodColors.current
-    val r = LocalKofipodRadii.current
-
-    Box(
-        modifier
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(r.md))
-            .dashedBorder(color = c.borderStrong, cornerRadius = r.md)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            KPIcon(
-                name = KPIconName.Sparkle,
-                color = c.textSoft,
-                size = 26.dp,
-                strokeWidth = 2.2f,
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "New playlist",
                 color = c.textSoft,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp,
@@ -1215,11 +1174,12 @@ private fun StartActionRow(
 @Composable
 private fun NewListDialog(
     onDismiss: () -> Unit,
-    onCreate: (String) -> Unit,
+    onCreate: (name: String, smart: Boolean) -> Unit,
 ) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
     var name by remember { mutableStateOf("") }
+    var smart by remember { mutableStateOf(false) }
     Dialog(onDismissRequest = onDismiss) {
         Column(
             Modifier
@@ -1244,8 +1204,30 @@ private fun NewListDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(r.sm))
+                        .clickable { smart = !smart }
+                        .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = smart,
+                    onCheckedChange = null,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Smart Playlist",
+                    color = c.text,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                )
+            }
             Spacer(Modifier.height(16.dp))
-            Row {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "Cancel",
                     color = c.textSoft,
@@ -1253,7 +1235,11 @@ private fun NewListDialog(
                     modifier = Modifier.clickable { onDismiss() }.padding(12.dp),
                 )
                 Spacer(Modifier.weight(1f))
-                KPButton(label = "Create", onClick = { if (name.isNotBlank()) onCreate(name) })
+                KPButton(
+                    label = "Create",
+                    enabled = name.isNotBlank(),
+                    onClick = { onCreate(name, smart) },
+                )
             }
         }
     }

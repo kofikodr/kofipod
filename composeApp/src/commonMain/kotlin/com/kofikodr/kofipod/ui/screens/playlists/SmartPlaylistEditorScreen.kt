@@ -67,8 +67,9 @@ import org.koin.core.parameter.parametersOf
 fun SmartPlaylistEditorScreen(
     playlistId: String?,
     onBack: () -> Unit,
+    initialName: String? = null,
     viewModel: SmartPlaylistEditorViewModel =
-        koinViewModel(parameters = { parametersOf(playlistId) }),
+        koinViewModel(parameters = { parametersOf(playlistId, initialName) }),
 ) {
     val state by viewModel.state.collectAsState()
     val c = LocalKofipodColors.current
