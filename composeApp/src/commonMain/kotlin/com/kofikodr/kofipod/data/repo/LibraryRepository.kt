@@ -8,18 +8,24 @@ import com.kofikodr.kofipod.db.KofipodDatabase
 import com.kofikodr.kofipod.db.Podcast
 import com.kofikodr.kofipod.db.PodcastList
 import com.kofikodr.kofipod.domain.PodcastSummary
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 
-class LibraryRepository(private val db: KofipodDatabase) {
-    fun listsFlow(): Flow<List<PodcastList>> = db.podcastListQueries.selectAll().asFlow().mapToList(Dispatchers.Default)
+class LibraryRepository(
+    private val db: KofipodDatabase,
+    // Override for tests so SQLDelight `mapToList`/`mapToOneOrNull` query work
+    // runs on the test scheduler instead of the real `Dispatchers.Default` pool —
+    // the latter races test schedulers and turns flow-driven VM tests flaky.
+    private val queryDispatcher: CoroutineDispatcher = Dispatchers.Default,
+) {
+    fun listsFlow(): Flow<List<PodcastList>> = db.podcastListQueries.selectAll().asFlow().mapToList(queryDispatcher)
 
-    fun podcastsFlow(): Flow<List<Podcast>> = db.podcastQueries.selectAll().asFlow().mapToList(Dispatchers.Default)
+    fun podcastsFlow(): Flow<List<Podcast>> = db.podcastQueries.selectAll().asFlow().mapToList(queryDispatcher)
 
-    fun podcastsInList(listId: String?): Flow<List<Podcast>> =
-        db.podcastQueries.selectByList(listId).asFlow().mapToList(Dispatchers.Default)
+    fun podcastsInList(listId: String?): Flow<List<Podcast>> = db.podcastQueries.selectByList(listId).asFlow().mapToList(queryDispatcher)
 
-    fun podcastFlow(id: String): Flow<Podcast?> = db.podcastQueries.selectById(id).asFlow().mapToOneOrNull(Dispatchers.Default)
+    fun podcastFlow(id: String): Flow<Podcast?> = db.podcastQueries.selectById(id).asFlow().mapToOneOrNull(queryDispatcher)
 
     fun podcastNow(id: String): Podcast? = db.podcastQueries.selectById(id).executeAsOneOrNull()
 

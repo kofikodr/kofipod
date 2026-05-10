@@ -12,6 +12,7 @@ import com.kofikodr.kofipod.playlists.SmartPlaylistRepository
 import com.kofikodr.kofipod.playlists.SmartPlaylistResolver
 import com.kofikodr.kofipod.util.slugifyName
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -52,6 +53,10 @@ class SmartPlaylistEditorViewModel(
     private val playlistId: String?,
     initialName: String? = null,
     private val clock: Clock = Clock.System,
+    // Injectable so tests can route the off-Main `library.podcastsFlow().first()`
+    // hop onto the test scheduler — without this it races the test scheduler and
+    // editor-VM tests turn flaky when run together.
+    private val defaultDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     private val draft =
         MutableStateFlow(
@@ -87,7 +92,7 @@ class SmartPlaylistEditorViewModel(
         // Load available podcasts (one-shot — refreshes on VM re-init).
         viewModelScope.launch {
             val podcasts =
-                withContext(Dispatchers.Default) {
+                withContext(defaultDispatcher) {
                     library.podcastsFlow().first().map { PodcastChoice(it.id, it.title) }
                 }
             draft.update { it.copy(availablePodcasts = podcasts) }

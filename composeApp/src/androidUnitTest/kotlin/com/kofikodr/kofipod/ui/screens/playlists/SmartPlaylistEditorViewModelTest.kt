@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.kofikodr.kofipod.ui.screens.playlists
 
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
 import com.kofikodr.kofipod.data.repo.LibraryRepository
 import com.kofikodr.kofipod.db.KofipodDatabase
 import com.kofikodr.kofipod.playlists.EpisodeFacts
@@ -12,6 +15,7 @@ import com.kofikodr.kofipod.playlists.SmartPlaylistPredicate
 import com.kofikodr.kofipod.playlists.SmartPlaylistRepository
 import com.kofikodr.kofipod.playlists.SmartPlaylistResolver
 import com.kofikodr.kofipod.testing.inMemoryDatabase
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -56,20 +60,40 @@ class SmartPlaylistEditorViewModelTest {
             override fun now(): Instant = fixedNow
         }
 
+    private val viewModelStore = ViewModelStore()
+
     @After
     fun tearDown() {
         Dispatchers.resetMain()
     }
 
+    private var testDispatcher: CoroutineDispatcher? = null
+
     /**
      * Routes `Dispatchers.Main` to the test scheduler so `viewModelScope.launch { ... }`
-     * (which defaults to `Main.immediate`) is drained by `advanceUntilIdle()`. Without
-     * this hook the VM's init-block coroutines never run during the test body.
+     * (which defaults to `Main.immediate`) is drained by `advanceUntilIdle()`. Also
+     * stashes the same dispatcher in [testDispatcher] so the [harness] can pass it into
+     * the VM's `defaultDispatcher` and the [LibraryRepository] `queryDispatcher` —
+     * routing every off-Main hop onto the test scheduler instead of the real
+     * `Dispatchers.Default` pool, which otherwise races assertions and turns the class
+     * flaky when run end-to-end.
+     *
+     * After `block()` completes we clear the [viewModelStore] **inside** the same
+     * `runTest` so each VM's `viewModelScope` is cancelled while its test scheduler is
+     * still alive. Without this, an Eagerly-started `stateIn` collector survives the
+     * test and leaks across to the next one.
      */
     private fun runVmTest(block: suspend TestScope.() -> Unit) =
         runTest {
-            Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
-            block()
+            val dispatcher = UnconfinedTestDispatcher(testScheduler)
+            testDispatcher = dispatcher
+            Dispatchers.setMain(dispatcher)
+            try {
+                block()
+            } finally {
+                viewModelStore.clear()
+                testDispatcher = null
+            }
         }
 
     private fun fact(
@@ -132,20 +156,43 @@ class SmartPlaylistEditorViewModelTest {
     ): Harness {
         val db = inMemoryDatabase()
         seedPodcasts(db, *availablePodcasts.toTypedArray())
-        val library = LibraryRepository(db)
+        val library =
+            LibraryRepository(
+                db = db,
+                queryDispatcher =
+                    requireNotNull(testDispatcher) {
+                        "harness() must be called inside runVmTest { ... }"
+                    },
+            )
         val playlists = FakeSmartPlaylistRepository().apply { seedPlaylists.forEach { saveSync(it) } }
         val facts = FakeEpisodeFactsRepository(seedFacts)
         val resolver = SmartPlaylistResolver(facts = facts, evaluator = PredicateEvaluator(), clock = fixedClock)
-        val vm =
-            SmartPlaylistEditorViewModel(
-                playlists = playlists,
-                resolver = resolver,
-                library = library,
-                playlistId = playlistId,
-                clock = fixedClock,
-            )
+        val factory =
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                    SmartPlaylistEditorViewModel(
+                        playlists = playlists,
+                        resolver = resolver,
+                        library = library,
+                        playlistId = playlistId,
+                        clock = fixedClock,
+                        defaultDispatcher =
+                            requireNotNull(testDispatcher) {
+                                "harness() must be called inside runVmTest { ... }"
+                            },
+                    ) as T
+            }
+        // Hosting the VM in a ViewModelStore lets `tearDown` cancel its viewModelScope
+        // via `store.clear()` between tests; without it Eagerly-started state collectors
+        // leak across tests on the dead test scheduler. A unique key per call lets a
+        // single test create multiple VMs without colliding on the cached instance.
+        val key = "vm-${vmCounter++}"
+        val vm = ViewModelProvider(viewModelStore, factory)[key, SmartPlaylistEditorViewModel::class.java]
         return Harness(vm, playlists, facts)
     }
+
+    private var vmCounter = 0
 
     @Test
     fun createMode_initialState_hasEmptyDraftAndAllFactsMatched() =
