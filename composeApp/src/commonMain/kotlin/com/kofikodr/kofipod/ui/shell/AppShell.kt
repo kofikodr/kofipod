@@ -46,6 +46,7 @@ import com.kofikodr.kofipod.pro.PaywallRouter
 import com.kofikodr.kofipod.pro.PaywallState
 import com.kofikodr.kofipod.ui.UiEvent
 import com.kofikodr.kofipod.ui.UiEventBus
+import com.kofikodr.kofipod.ui.layout.WithTabletSize
 import com.kofikodr.kofipod.ui.nav.DeepLinks
 import com.kofikodr.kofipod.ui.nav.KofipodNavHost
 import com.kofikodr.kofipod.ui.nav.Route
@@ -154,8 +155,10 @@ fun AppShell() {
             }
         }
     }
-    KofipodScaffold(nav = nav, snackbarHostState = snackbarHostState) {
-        KofipodNavHost(nav)
+    WithTabletSize {
+        KofipodScaffold(nav = nav, snackbarHostState = snackbarHostState) {
+            KofipodNavHost(nav)
+        }
     }
     // Hoisted at the shell level so SAF launchers stay rooted regardless of which
     // screen triggered the import/export or backup pick. No-ops on iOS.
