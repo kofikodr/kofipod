@@ -28,6 +28,12 @@ data class PlayerState(
     val bufferedMs: Long = 0,
     val speed: Float = 1f,
     val sleepRemainingMs: Long? = null,
+    /**
+     * True when the currently-loaded media is a local file (a completed download).
+     * UI uses this to render the "buffered" track as fully filled, since the entire
+     * episode is already on disk — even when ExoPlayer's [bufferedMs] is still ramping up.
+     */
+    val isLocalSource: Boolean = false,
 )
 
 /**

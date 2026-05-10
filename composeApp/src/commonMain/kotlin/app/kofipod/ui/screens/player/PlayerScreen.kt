@@ -129,6 +129,7 @@ fun PlayerScreen(
             durationMs = p.durationMs,
             bufferedMs = p.bufferedMs,
             onSeek = viewModel::seekTo,
+            isLocalSource = p.isLocalSource,
         )
         Spacer(Modifier.height(20.dp))
         PlayerTransport(

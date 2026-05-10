@@ -85,15 +85,21 @@ actual class KofipodPlayer(private val context: Context) {
 
     private fun pushState() {
         val c = controller ?: return
-        val meta = c.currentMediaItem?.mediaMetadata
+        val item = c.currentMediaItem
+        val meta = item?.mediaMetadata
         val extras = meta?.extras
         val remainingSleep =
             sleepExpiresAt?.let {
                 (it - System.currentTimeMillis()).coerceAtLeast(0L)
             }
+        // localConfiguration is the URI ExoPlayer is actually loading from. Auto-browsed
+        // items are resolved into a localConfiguration by AutoMediaTree.resolveForPlayback
+        // before they reach the player, so this is the same source of truth that
+        // SchemeAwareDataSource.open() will see at the data layer.
+        val uriScheme = item?.localConfiguration?.uri?.scheme
         _state.value =
             PlayerState(
-                episodeId = c.currentMediaItem?.mediaId?.removePrefix(MEDIA_ID_EPISODE_PREFIX)?.takeIf { it.isNotBlank() },
+                episodeId = item?.mediaId?.removePrefix(MEDIA_ID_EPISODE_PREFIX)?.takeIf { it.isNotBlank() },
                 podcastId = extras?.getString(EXTRA_PODCAST_ID).orEmpty(),
                 title = meta?.title?.toString().orEmpty(),
                 podcastTitle = meta?.artist?.toString().orEmpty(),
@@ -105,6 +111,7 @@ actual class KofipodPlayer(private val context: Context) {
                 bufferedMs = c.bufferedPosition.coerceAtLeast(0),
                 speed = c.playbackParameters.speed,
                 sleepRemainingMs = remainingSleep,
+                isLocalSource = uriScheme == "file",
             )
     }
 
