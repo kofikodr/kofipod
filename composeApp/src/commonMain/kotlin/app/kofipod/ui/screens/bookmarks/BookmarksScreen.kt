@@ -108,16 +108,16 @@ fun BookmarksScreen(
             items(grouped, key = { it.key }) { item ->
                 when (item) {
                     is BookmarkListItem.PodcastHeader -> PodcastGroupHeader(item)
-                    is BookmarkListItem.EpisodeHeader -> EpisodeGroupHeader(item)
-                    is BookmarkListItem.Row ->
-                        BookmarkRow(
-                            row = item.row,
+                    is BookmarkListItem.EpisodeGroup ->
+                        EpisodeBookmarkCard(
+                            header = item.header,
+                            rows = item.rows,
                             query = state.query,
-                            onTap = {
-                                viewModel.openAt(item.row)
+                            onRowTap = { row ->
+                                viewModel.openAt(row)
                                 onOpenPlayer()
                             },
-                            onLongPress = { pendingDeleteId = item.row.bookmark.id },
+                            onRowLongPress = { row -> pendingDeleteId = row.bookmark.id },
                         )
                 }
             }
@@ -406,29 +406,55 @@ private fun PodcastGroupHeader(header: BookmarkListItem.PodcastHeader) {
 }
 
 @Composable
-private fun EpisodeGroupHeader(header: BookmarkListItem.EpisodeHeader) {
+private fun EpisodeBookmarkCard(
+    header: BookmarkListItem.EpisodeHeader,
+    rows: List<BookmarkWithContext>,
+    query: String,
+    onRowTap: (BookmarkWithContext) -> Unit,
+    onRowLongPress: (BookmarkWithContext) -> Unit,
+) {
     val c = LocalKofipodColors.current
-    Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            header.title.ifBlank { "Untitled episode" },
-            color = c.text,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            header.dateLabel,
-            color = c.textMute,
-            fontSize = 11.sp,
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
-        )
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                header.title.ifBlank { "Untitled episode" },
+                color = c.text,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                header.dateLabel,
+                color = c.textMute,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(c.surface)
+                .border(1.dp, c.border, RoundedCornerShape(14.dp))
+                .padding(vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            for (row in rows) {
+                BookmarkRow(
+                    row = row,
+                    query = query,
+                    onTap = { onRowTap(row) },
+                    onLongPress = { onRowLongPress(row) },
+                )
+            }
+        }
     }
 }
 
@@ -444,9 +470,6 @@ private fun BookmarkRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(c.surface)
-            .border(1.dp, c.border, RoundedCornerShape(14.dp))
             .combinedClickable(onClick = onTap, onLongClick = onLongPress)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -627,12 +650,13 @@ private sealed interface BookmarkListItem {
         val episodeId: String,
         val title: String,
         val dateLabel: String,
-    ) : BookmarkListItem {
-        override val key = "episode::$episodeId"
-    }
+    )
 
-    data class Row(val row: BookmarkWithContext) : BookmarkListItem {
-        override val key = "row::${row.bookmark.id}"
+    data class EpisodeGroup(
+        val header: EpisodeHeader,
+        val rows: List<BookmarkWithContext>,
+    ) : BookmarkListItem {
+        override val key = "episode::${header.episodeId}"
     }
 }
 
@@ -665,15 +689,18 @@ private fun groupForDisplay(rows: List<BookmarkWithContext>): List<BookmarkListI
         for ((eid, episodeRows) in byEpisode) {
             val firstEp = episodeRows.first()
             out.add(
-                BookmarkListItem.EpisodeHeader(
-                    episodeId = eid,
-                    title = firstEp.episodeTitle,
-                    // Bookmark-creation date, not episode publish date —
-                    // BookmarkWithContext doesn't carry pubDate yet.
-                    dateLabel = formatShortDate(firstEp.bookmark.createdAtMs),
+                BookmarkListItem.EpisodeGroup(
+                    header =
+                        BookmarkListItem.EpisodeHeader(
+                            episodeId = eid,
+                            title = firstEp.episodeTitle,
+                            // Bookmark-creation date, not episode publish date —
+                            // BookmarkWithContext doesn't carry pubDate yet.
+                            dateLabel = formatShortDate(firstEp.bookmark.createdAtMs),
+                        ),
+                    rows = episodeRows.toList(),
                 ),
             )
-            for (row in episodeRows) out.add(BookmarkListItem.Row(row))
         }
     }
     return out
