@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,9 +15,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,7 +49,6 @@ import com.kofikodr.kofipod.ui.UiEventBus
 import com.kofikodr.kofipod.ui.nav.DeepLinks
 import com.kofikodr.kofipod.ui.nav.KofipodNavHost
 import com.kofikodr.kofipod.ui.nav.Route
-import com.kofikodr.kofipod.ui.player.MiniPlayer
 import com.kofikodr.kofipod.ui.primitives.KPIcon
 import com.kofikodr.kofipod.ui.primitives.KPIconName
 import com.kofikodr.kofipod.ui.screens.bookmarks.BookmarkComposerSheet
@@ -65,8 +61,6 @@ import org.koin.compose.koinInject
 @Composable
 fun AppShell() {
     val nav = rememberNavController()
-    val backStack by nav.currentBackStackEntryAsState()
-    val currentRoute = backStack?.destination?.route
     val bus: UiEventBus = koinInject()
     val paywallRouter: PaywallRouter = koinInject()
     val paywall by paywallRouter.state.collectAsState()
@@ -160,38 +154,8 @@ fun AppShell() {
             }
         }
     }
-    val onPlayerScreen = currentRoute == Route.Player::class.qualifiedName
-    val c = LocalKofipodColors.current
-    Scaffold(
-        containerColor = c.bg,
-        snackbarHost = {
-            SnackbarHost(snackbarHostState) { data ->
-                Snackbar(
-                    snackbarData = data,
-                    containerColor = c.surface,
-                    contentColor = c.text,
-                )
-            }
-        },
-        bottomBar = {
-            Column {
-                if (!onPlayerScreen) {
-                    MiniPlayer(
-                        onOpen = {
-                            nav.navigate(
-                                Route.Player,
-                                navOptions { launchSingleTop = true },
-                            )
-                        },
-                    )
-                }
-                BottomNav(nav)
-            }
-        },
-    ) { padding ->
-        Box(Modifier.padding(padding)) {
-            KofipodNavHost(nav)
-        }
+    KofipodScaffold(nav = nav, snackbarHostState = snackbarHostState) {
+        KofipodNavHost(nav)
     }
     // Hoisted at the shell level so SAF launchers stay rooted regardless of which
     // screen triggered the import/export or backup pick. No-ops on iOS.
@@ -274,7 +238,7 @@ private val TABS =
     )
 
 @Composable
-private fun BottomNav(nav: NavHostController) {
+internal fun BottomNav(nav: NavHostController) {
     val c = LocalKofipodColors.current
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
