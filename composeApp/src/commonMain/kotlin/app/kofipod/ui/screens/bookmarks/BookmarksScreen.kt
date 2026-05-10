@@ -26,10 +26,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,6 +64,7 @@ fun BookmarksScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val c = LocalKofipodColors.current
+    var pendingDeleteId by remember { mutableStateOf<String?>(null) }
 
     Column(Modifier.fillMaxSize().background(c.bg)) {
         BookmarksTopBar(
@@ -112,12 +117,57 @@ fun BookmarksScreen(
                                 viewModel.openAt(item.row)
                                 onOpenPlayer()
                             },
-                            onLongPress = { viewModel.delete(item.row.bookmark.id) },
+                            onLongPress = { pendingDeleteId = item.row.bookmark.id },
                         )
                 }
             }
         }
     }
+    pendingDeleteId?.let { id ->
+        DeleteBookmarkDialog(
+            onConfirm = {
+                viewModel.delete(id)
+                pendingDeleteId = null
+            },
+            onDismiss = { pendingDeleteId = null },
+        )
+    }
+}
+
+@Composable
+private fun DeleteBookmarkDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = c.surface,
+        title = { Text("Delete bookmark?", color = c.text, fontWeight = FontWeight.Bold) },
+        text = {
+            Text(
+                "This timestamp and any note will be removed from this device.",
+                color = c.textMute,
+                fontSize = 13.sp,
+            )
+        },
+        confirmButton = {
+            Text(
+                "Delete",
+                color = c.pink,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable { onConfirm() }.padding(8.dp),
+            )
+        },
+        dismissButton = {
+            Text(
+                "Cancel",
+                color = c.textMute,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable { onDismiss() }.padding(8.dp),
+            )
+        },
+    )
 }
 
 @Composable

@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -89,8 +90,10 @@ fun EpisodeDetailScreen(
             if (!state.isCurrentEpisode) onOpenPlayer()
         },
         onSnippetTap = onOpenSnippetEditor,
-        onBookmarkLongPress = { bm -> viewModel.onBookmarkExportRequested(bm.id) },
-        onSnippetLongPress = { sn -> viewModel.onSnippetExportRequested(sn.id) },
+        onBookmarkExport = { bm -> viewModel.onBookmarkExportRequested(bm.id) },
+        onSnippetExport = { sn -> viewModel.onSnippetExportRequested(sn.id) },
+        onBookmarkDelete = viewModel::deleteBookmark,
+        onSnippetDelete = viewModel::deleteSnippet,
         onAiSummaryExport = viewModel::onAiSummaryExportRequested,
         onOpenAiSetup = onOpenAiSetup,
         onOpenAskGemini = onOpenAskGemini,
@@ -120,8 +123,10 @@ internal fun EpisodeDetailContent(
     saved: List<SavedItem> = emptyList(),
     onBookmarkTap: (Long) -> Unit = {},
     onSnippetTap: (String) -> Unit = {},
-    onBookmarkLongPress: (Bookmark) -> Unit = {},
-    onSnippetLongPress: (Snippet) -> Unit = {},
+    onBookmarkExport: (Bookmark) -> Unit = {},
+    onSnippetExport: (Snippet) -> Unit = {},
+    onBookmarkDelete: (String) -> Unit = {},
+    onSnippetDelete: (String) -> Unit = {},
     onAiSummaryExport: () -> Unit = {},
 ) {
     val c = LocalKofipodColors.current
@@ -165,8 +170,10 @@ internal fun EpisodeDetailContent(
                     saved = saved,
                     onBookmarkTap = onBookmarkTap,
                     onSnippetTap = onSnippetTap,
-                    onBookmarkLongPress = onBookmarkLongPress,
-                    onSnippetLongPress = onSnippetLongPress,
+                    onBookmarkExport = onBookmarkExport,
+                    onSnippetExport = onSnippetExport,
+                    onBookmarkDelete = onBookmarkDelete,
+                    onSnippetDelete = onSnippetDelete,
                     onAiSummaryExport = onAiSummaryExport,
                 )
             }
@@ -224,8 +231,10 @@ private fun EpisodeBody(
     saved: List<SavedItem>,
     onBookmarkTap: (Long) -> Unit,
     onSnippetTap: (String) -> Unit,
-    onBookmarkLongPress: (Bookmark) -> Unit,
-    onSnippetLongPress: (Snippet) -> Unit,
+    onBookmarkExport: (Bookmark) -> Unit,
+    onSnippetExport: (Snippet) -> Unit,
+    onBookmarkDelete: (String) -> Unit,
+    onSnippetDelete: (String) -> Unit,
     onAiSummaryExport: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
@@ -334,14 +343,74 @@ private fun EpisodeBody(
 
     if (saved.isNotEmpty()) {
         Spacer(Modifier.height(28.dp))
+        var pendingDelete by remember { mutableStateOf<PendingDelete?>(null) }
         SavedSection(
             items = saved,
             onBookmarkTap = onBookmarkTap,
             onSnippetTap = onSnippetTap,
-            onBookmarkLongPress = onBookmarkLongPress,
-            onSnippetLongPress = onSnippetLongPress,
+            onBookmarkExport = onBookmarkExport,
+            onSnippetExport = onSnippetExport,
+            onBookmarkDelete = { bm -> pendingDelete = PendingDelete.Bookmark(bm.id) },
+            onSnippetDelete = { sn -> pendingDelete = PendingDelete.Snippet(sn.id) },
         )
+        pendingDelete?.let { p ->
+            DeleteConfirmDialog(
+                kind = p,
+                onConfirm = {
+                    when (p) {
+                        is PendingDelete.Bookmark -> onBookmarkDelete(p.id)
+                        is PendingDelete.Snippet -> onSnippetDelete(p.id)
+                    }
+                    pendingDelete = null
+                },
+                onDismiss = { pendingDelete = null },
+            )
+        }
     }
+}
+
+private sealed interface PendingDelete {
+    data class Bookmark(val id: String) : PendingDelete
+
+    data class Snippet(val id: String) : PendingDelete
+}
+
+@Composable
+private fun DeleteConfirmDialog(
+    kind: PendingDelete,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    val (title, body) =
+        when (kind) {
+            is PendingDelete.Bookmark ->
+                "Delete bookmark?" to "This timestamp and any note will be removed from this device."
+            is PendingDelete.Snippet ->
+                "Delete snippet?" to "The clip and any saved export will be removed from this device."
+        }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = c.surface,
+        title = { Text(title, color = c.text, fontWeight = FontWeight.Bold) },
+        text = { Text(body, color = c.textMute, fontSize = 13.sp) },
+        confirmButton = {
+            Text(
+                "Delete",
+                color = c.pink,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable { onConfirm() }.padding(8.dp),
+            )
+        },
+        dismissButton = {
+            Text(
+                "Cancel",
+                color = c.textMute,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable { onDismiss() }.padding(8.dp),
+            )
+        },
+    )
 }
 
 private fun AiSummaryUiState.mentionedCount(): Int =

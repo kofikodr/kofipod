@@ -68,7 +68,7 @@ class EpisodeDetailViewModel(
     private val chapters: ChaptersRepository,
     aiConfig: AiConfigRepository,
     private val bookmarkRepo: BookmarkRepository,
-    snippetRepo: SnippetRepository,
+    private val snippetRepo: SnippetRepository,
     private val fileSizer: FileSizer,
     private val pkmExport: PkmExportCoordinator,
     private val paywallRouter: PaywallRouter,
@@ -265,6 +265,8 @@ class EpisodeDetailViewModel(
     fun seekToBookmark(timestampMs: Long) = seekToChapter(timestampMs)
 
     fun deleteBookmark(id: String) = bookmarkRepo.deleteById(id)
+
+    fun deleteSnippet(id: String) = snippetRepo.deleteById(id)
 
     /**
      * Pro-gated. On Pro: open the markdown export sheet for [snippetId].

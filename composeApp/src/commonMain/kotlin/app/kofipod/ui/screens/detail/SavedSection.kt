@@ -4,7 +4,9 @@ package app.kofipod.ui.screens.detail
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,13 +14,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,47 +33,71 @@ import app.kofipod.bookmarks.formatBookmarkTimestamp
 import app.kofipod.snippets.Snippet
 import app.kofipod.snippets.SnippetSizeEstimator
 import app.kofipod.snippets.SnippetWindow
+import app.kofipod.ui.primitives.KPBadge
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.primitives.SectionLabel
 import app.kofipod.ui.theme.LocalKofipodColors
 
 /**
- * Per-episode Saved section. Sibling to the tab content area, not a fifth tab —
- * the tab strip stays four max per project convention. Tap a bookmark row to
- * seek/play at the bookmark's timestamp; long-press a bookmark or snippet row
- * to open the Pro-gated markdown export sheet. Tap a snippet row to open the
- * snippet editor. Bookmark deletion lives on the global Bookmarks screen.
+ * Per-episode "Saved" section. Bookmarks (Slice 1) and snippets (Slice 3) coexist in
+ * a single grouped card with a header, count badge, and per-row affordances:
+ *
+ *  - Tap a row: seek/play (bookmark) or open the editor (snippet).
+ *  - Tap the trailing share icon: open the Pro-gated markdown export sheet.
+ *  - Long-press a row: delete (caller is responsible for confirmation).
+ *
+ * Visual matches `docs/kofipod-pro-ui-design.html` — icon tile + colored mono
+ * timestamp + title (+ optional subtitle for snippets) + trailing share.
  */
 @Composable
 internal fun SavedSection(
     items: List<SavedItem>,
     onBookmarkTap: (Long) -> Unit,
     onSnippetTap: (String) -> Unit,
-    onBookmarkLongPress: (Bookmark) -> Unit,
-    onSnippetLongPress: (Snippet) -> Unit,
+    onBookmarkExport: (Bookmark) -> Unit,
+    onSnippetExport: (Snippet) -> Unit,
+    onBookmarkDelete: (Bookmark) -> Unit,
+    onSnippetDelete: (Snippet) -> Unit,
 ) {
     if (items.isEmpty()) return
+    val c = LocalKofipodColors.current
 
     Column(Modifier.fillMaxWidth()) {
-        SectionLabel("Saved")
+        SectionLabel(
+            title = "Saved on this episode",
+            trailing = { KPBadge("${items.size} ${if (items.size == 1) "item" else "items"}") },
+        )
         Spacer(Modifier.height(8.dp))
-        items.forEachIndexed { idx, item ->
-            if (idx > 0) Spacer(Modifier.height(8.dp))
-            when (item) {
-                is SavedItem.BookmarkItem ->
-                    BookmarkRow(
-                        bookmark = item.bookmark,
-                        onTap = onBookmarkTap,
-                        onLongPress = onBookmarkLongPress,
-                    )
-                is SavedItem.SnippetItem ->
-                    SnippetRow(
-                        snippet = item.snippet,
-                        sizeBytes = item.sizeBytes,
-                        onTap = onSnippetTap,
-                        onLongPress = onSnippetLongPress,
-                    )
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(c.surface)
+                    .border(1.dp, c.border, RoundedCornerShape(16.dp)),
+        ) {
+            items.forEachIndexed { idx, item ->
+                if (idx > 0) {
+                    HorizontalDivider(color = c.border, thickness = 1.dp)
+                }
+                when (item) {
+                    is SavedItem.BookmarkItem ->
+                        BookmarkRow(
+                            bookmark = item.bookmark,
+                            onTap = onBookmarkTap,
+                            onExport = onBookmarkExport,
+                            onLongPress = onBookmarkDelete,
+                        )
+                    is SavedItem.SnippetItem ->
+                        SnippetRow(
+                            snippet = item.snippet,
+                            sizeBytes = item.sizeBytes,
+                            onTap = onSnippetTap,
+                            onExport = onSnippetExport,
+                            onLongPress = onSnippetDelete,
+                        )
+                }
             }
         }
     }
@@ -79,6 +108,7 @@ internal fun SavedSection(
 private fun BookmarkRow(
     bookmark: Bookmark,
     onTap: (Long) -> Unit,
+    onExport: (Bookmark) -> Unit,
     onLongPress: (Bookmark) -> Unit,
 ) {
     val c = LocalKofipodColors.current
@@ -86,9 +116,6 @@ private fun BookmarkRow(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(c.surface)
-                .border(1.dp, c.border, RoundedCornerShape(12.dp))
                 .combinedClickable(
                     onClick = { onTap(bookmark.timestampMs) },
                     onLongClick = { onLongPress(bookmark) },
@@ -96,26 +123,43 @@ private fun BookmarkRow(
                 .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        KPIcon(name = KPIconName.Bookmark, color = c.purple, size = 18.dp)
-        Spacer(Modifier.size(12.dp))
-        Column(Modifier) {
-            Text(
-                formatBookmarkTimestamp(bookmark.timestampMs),
-                color = c.text,
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-            )
-            if (!bookmark.note.isNullOrBlank()) {
-                Spacer(Modifier.height(2.dp))
+        IconTile(
+            name = KPIconName.Bookmark,
+            tint = c.purple,
+            background = c.purpleTint,
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = formatBookmarkTimestamp(bookmark.timestampMs),
+            color = c.purple,
+            fontWeight = FontWeight.Bold,
+            fontSize = 14.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+        Spacer(Modifier.width(10.dp))
+        Box(Modifier.weight(1f)) {
+            val note = bookmark.note?.takeIf { it.isNotBlank() }
+            if (note != null) {
                 Text(
-                    bookmark.note,
-                    color = c.textMute,
-                    fontSize = 13.sp,
+                    text = note,
+                    color = c.text,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
                     maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else {
+                Text(
+                    text = "Bookmark · no note yet",
+                    color = c.textMute,
+                    fontStyle = FontStyle.Italic,
+                    fontSize = 14.sp,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
         }
+        ShareButton(onClick = { onExport(bookmark) })
     }
 }
 
@@ -125,6 +169,7 @@ private fun SnippetRow(
     snippet: Snippet,
     sizeBytes: Long,
     onTap: (String) -> Unit,
+    onExport: (Snippet) -> Unit,
     onLongPress: (Snippet) -> Unit,
 ) {
     val c = LocalKofipodColors.current
@@ -134,14 +179,19 @@ private fun SnippetRow(
             SnippetWindow.formatTimestampDeci(snippet.endMs)
     val displayTitle =
         snippet.title?.takeIf { it.isNotBlank() } ?: "Snippet · $window"
+    val format = snippet.lastExportFormat
+    val subtitle =
+        when {
+            format != null && sizeBytes > 0L ->
+                "${format.name} · ${SnippetSizeEstimator.formatBytes(sizeBytes)}"
+            format != null -> format.name
+            else -> window
+        }
 
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(c.surface)
-                .border(1.dp, c.border, RoundedCornerShape(12.dp))
                 .combinedClickable(
                     onClick = { onTap(snippet.id) },
                     onLongClick = { onLongPress(snippet) },
@@ -149,53 +199,72 @@ private fun SnippetRow(
                 .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        KPIcon(name = KPIconName.Scissors, color = c.pink, size = 18.dp)
-        Spacer(Modifier.size(12.dp))
+        IconTile(
+            name = KPIconName.Scissors,
+            tint = c.pink,
+            background = c.pinkSoft,
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = formatBookmarkTimestamp(snippet.startMs),
+            color = c.pink,
+            fontWeight = FontWeight.Bold,
+            fontSize = 14.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+        Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                displayTitle,
+                text = displayTitle,
                 color = c.text,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                window,
+                text = subtitle,
                 color = c.textMute,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
-        val format = snippet.lastExportFormat
-        if (format != null && sizeBytes > 0L) {
-            Spacer(Modifier.size(8.dp))
-            FormatSizeChip(formatName = format.name, sizeBytes = sizeBytes)
-        }
+        ShareButton(onClick = { onExport(snippet) })
     }
 }
 
 @Composable
-private fun FormatSizeChip(
-    formatName: String,
-    sizeBytes: Long,
+private fun IconTile(
+    name: KPIconName,
+    tint: androidx.compose.ui.graphics.Color,
+    background: androidx.compose.ui.graphics.Color,
 ) {
-    val c = LocalKofipodColors.current
-    Row(
+    Box(
         modifier =
             Modifier
-                .clip(RoundedCornerShape(999.dp))
-                .border(1.dp, c.pink, RoundedCornerShape(999.dp))
-                .padding(horizontal = 8.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
+                .size(36.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(background),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(
-            "$formatName · ${SnippetSizeEstimator.formatBytes(sizeBytes)}",
-            color = c.pink,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 10.sp,
-            fontFamily = FontFamily.Monospace,
-        )
+        KPIcon(name = name, color = tint, size = 18.dp)
+    }
+}
+
+@Composable
+private fun ShareButton(onClick: () -> Unit) {
+    val c = LocalKofipodColors.current
+    Box(
+        modifier =
+            Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        KPIcon(name = KPIconName.Share, color = c.textMute, size = 18.dp)
     }
 }
