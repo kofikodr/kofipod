@@ -2,6 +2,7 @@
 package com.kofikodr.kofipod.backup
 
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import android.util.Log
 import java.io.File
 
@@ -54,6 +55,7 @@ internal object PendingRestore {
                 File(dbFile.absolutePath + "-wal").delete()
                 File(dbFile.absolutePath + "-shm").delete()
                 stagedFile.delete()
+                scrubTransientState(dbFile)
                 // Length only, no path. Path would leak the user's data dir.
                 Log.i(LOG_TAG, "restore consumed (${dbFile.length()} bytes)")
                 true
@@ -72,6 +74,42 @@ internal object PendingRestore {
             apply()
         }
         return ok
+    }
+
+    /**
+     * Drop rows from tables whose contents only make sense on the device that produced
+     * the backup: `Download` entries point at `localPath`s that don't exist on this
+     * install, and `PlaybackState` resume positions reference audio that may also be
+     * gone. Run this against the just-restored DB *before* SQLDelight stands up so the
+     * first repository read sees a clean slate.
+     *
+     * Wrapped in its own `runCatching`: if the scrub throws (corrupt DB, missing table
+     * because of a schema mismatch we somehow let through, etc.) we still want the
+     * restore itself to count as successful — the caller has already overwritten
+     * `kofipod.db`. Worst case is the bug we're fixing here continues to manifest.
+     */
+    private fun scrubTransientState(dbFile: File) {
+        runCatching {
+            SQLiteDatabase.openDatabase(
+                dbFile.absolutePath,
+                // factory =
+                null,
+                SQLiteDatabase.OPEN_READWRITE,
+            ).use { db ->
+                // Atomic: a kill between the two DELETEs would otherwise leave
+                // PlaybackState scrubbed but Download surviving (or vice versa).
+                db.beginTransaction()
+                try {
+                    db.execSQL("DELETE FROM Download")
+                    db.execSQL("DELETE FROM PlaybackState")
+                    db.setTransactionSuccessful()
+                } finally {
+                    db.endTransaction()
+                }
+            }
+        }.onFailure { t ->
+            Log.w(LOG_TAG, "post-restore scrub failed: ${t::class.simpleName}")
+        }
     }
 
     /**
