@@ -14,7 +14,7 @@ import com.kofikodr.kofipod.db.Episode
  * the strategy seam contract `DiscussSource` shares with [TranscriptDiscussSource].
  *
  * Phase 1 in `commonMain` is Android-only at runtime — `iosMain` does not
- * provide a real [openLocalFileChannel] yet. The composite source binding in
+ * provide a real [openFileRange] yet. The composite source binding in
  * `CommonModule` doesn't gate on platform here because [DiscussRepository]'s
  * `runSend` only reaches the audio branch if the user has a downloaded
  * episode, and downloads are an Android-only feature today.

@@ -101,6 +101,19 @@ class AiSummaryPanelSnapshots {
     fun aiSummary_generatingAudioPreparing_dark() =
         paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Dark) { Render(generatingAudioPreparing()) } }
 
+    // Mid-chunked-upload state: live byte count + determinate bar. Without
+    // this baseline a regression that drops the byte-level progress wire
+    // (e.g. the panel ignores Generating.uploadedBytes) would slip past the
+    // existing Preparing snapshot, because that fixture has uploadedBytes
+    // = null and falls back to the indeterminate bar.
+    @Test
+    fun aiSummary_generatingAudioUploading_light() =
+        paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Light) { Render(generatingAudioUploading()) } }
+
+    @Test
+    fun aiSummary_generatingAudioUploading_dark() =
+        paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Dark) { Render(generatingAudioUploading()) } }
+
     @Test
     fun aiSummary_readyFresh_light() = paparazzi.snapshot { ThemedPanel(KofipodThemeMode.Light) { Render(readyFresh()) } }
 
@@ -207,6 +220,19 @@ private fun generatingAudioPreparing(): AiSummaryUiState =
         sourceKind = AiSourceKind.Audio,
         stage = GenerationStage.Preparing,
         sizeBytes = 58L * 1024 * 1024,
+    )
+
+// Mid-upload variant — chunked uploader has confirmed ~40% of the payload.
+// Pins the determinate progress bar + "X / Y MB" label that appears only
+// when both sizeBytes and uploadedBytes are non-null. 23 MB / 58 MB chosen
+// so the visible numerator differs from the total; equal numbers would
+// render correctly without the byte plumbing actually working.
+private fun generatingAudioUploading(): AiSummaryUiState =
+    AiSummaryUiState.Generating(
+        sourceKind = AiSourceKind.Audio,
+        stage = GenerationStage.Preparing,
+        sizeBytes = 58L * 1024 * 1024,
+        uploadedBytes = 23L * 1024 * 1024,
     )
 
 private fun readyFresh(): AiSummaryUiState = AiSummaryUiState.Ready(sampleSummary(), stale = false)

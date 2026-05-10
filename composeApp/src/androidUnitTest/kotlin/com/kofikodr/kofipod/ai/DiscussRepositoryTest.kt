@@ -597,7 +597,7 @@ class DiscussRepositoryTest {
             // under the now-revoked key.
             val gate = CompletableDeferred<Result<UploadedFile>>()
             val gatedUploader =
-                AudioUploader { _, _, mimeType, _, displayName ->
+                AudioUploader { _, _, mimeType, _, displayName, _ ->
                     // Park the upload until the test releases the gate. By the
                     // time we release, clearAll will have already wiped the
                     // session, exercising the race.
@@ -743,7 +743,7 @@ class DiscussRepositoryTest {
         source: DiscussSource = StubDiscussSource("transcript-body"),
         downloadSource: DownloadSource = NoDownloadSource,
         uploader: AudioUploader =
-            AudioUploader { _, _, _, _, _ ->
+            AudioUploader { _, _, _, _, _, _ ->
                 // Tests using the default source (transcript) never reach the
                 // audio uploader; if a regression routes them through, this
                 // surfaces the misroute as an explicit failure instead of
@@ -763,7 +763,6 @@ class DiscussRepositoryTest {
             AudioUploadCoordinator(
                 uploader = uploader,
                 db = db,
-                openFile = { io.ktor.utils.io.ByteReadChannel.Empty },
                 ioContext = testDispatcher,
             )
         val repo =
@@ -912,10 +911,11 @@ private class RecordingTestUploader(
 
     override suspend fun upload(
         apiKey: String,
-        channel: io.ktor.utils.io.ByteReadChannel,
+        localPath: String,
         mimeType: String,
         sizeBytes: Long,
         displayName: String,
+        onProgress: (uploadedBytes: Long) -> Unit,
     ): Result<UploadedFile> {
         val call = RecordingUpload(apiKey, mimeType, sizeBytes, displayName)
         calls += call

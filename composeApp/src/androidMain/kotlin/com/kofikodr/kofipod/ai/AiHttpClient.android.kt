@@ -5,20 +5,23 @@ import com.kofikodr.kofipod.data.net.kofipodJson
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 
 internal actual fun buildAiHttpClient(): HttpClient =
     HttpClient(OkHttp) {
         install(ContentNegotiation) { json(kofipodJson) }
-        // Gemini 2.5 Flash routinely takes 15–30s for a transcript-length input;
-        // OkHttp's 10s defaults would surface as AiError.Network mid-generation.
-        // 90s request / 60s socket gives the model headroom on long episodes
-        // without making the user wait forever on a hung connection.
+        // Defaults installed at the engine level: connect + socket-inactivity
+        // are real ceilings (a network that goes silent for >120s is dead, not
+        // just slow); request timeout is INFINITE here so a 200MB chunked
+        // upload doesn't get axed mid-stream. Per-call `timeout { ... }`
+        // overrides in [GeminiClient] put a wall-clock cap on inference and
+        // metadata calls — see the call sites for the per-operation budget.
         install(HttpTimeout) {
             connectTimeoutMillis = 15_000
-            requestTimeoutMillis = 90_000
-            socketTimeoutMillis = 60_000
+            socketTimeoutMillis = 120_000
+            requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
         }
         // Intentionally NO Logging plugin — see AiHttpClient.kt KDoc.
     }

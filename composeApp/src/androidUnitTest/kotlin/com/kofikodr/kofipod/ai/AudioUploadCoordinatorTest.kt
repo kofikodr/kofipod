@@ -4,7 +4,6 @@ package com.kofikodr.kofipod.ai
 import com.kofikodr.kofipod.db.Download
 import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.testing.inMemoryDatabase
-import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.Instant
@@ -153,13 +152,84 @@ class AudioUploadCoordinatorTest {
         }
 
     @Test
+    fun acquire_freshUpload_forwardsByteProgress_toCaller() =
+        runTest {
+            // The chunked uploader fires onProgress repeatedly as bytes land
+            // server-side; the coordinator must forward each tick to the
+            // caller's lambda so the UI can render a determinate bar.
+            // Without this plumbing the audio row would freeze on the size
+            // label and only flip when the upload completes.
+            val db = inMemoryDatabase()
+            val received = mutableListOf<Long>()
+            val uploader =
+                RecordingUploader(handler = { call, onProgress ->
+                    // Two-chunk simulation: half, then full. Asserts the
+                    // monotonic, terminal-at-sizeBytes contract.
+                    onProgress(call.sizeBytes / 2)
+                    onProgress(call.sizeBytes)
+                    Result.success(
+                        UploadedFile(
+                            name = "files/x",
+                            uri = "https://gemini/x",
+                            mimeType = call.mimeType,
+                            state = "ACTIVE",
+                        ),
+                    )
+                })
+            val coordinator = buildCoordinator(db, uploader)
+            insertEpisode(db, "ep1")
+
+            coordinator
+                .acquire(
+                    apiKey = "k",
+                    episode = episode("ep1"),
+                    download = download("ep1", bytes = 8_000L),
+                    onUploadProgress = { received += it },
+                ).getOrThrow()
+
+            assertEquals(listOf(4_000L, 8_000L), received, "Both progress ticks must reach the caller in order")
+        }
+
+    @Test
+    fun acquire_cacheHit_doesNotInvokeOnUploadProgress() =
+        runTest {
+            // No fresh upload → no chunked-PUT signal to forward. The UI
+            // should never see a phantom progress event when the cache
+            // hands back a URI immediately.
+            val db = inMemoryDatabase()
+            val uploader = RecordingUploader()
+            val coordinator = buildCoordinator(db, uploader, nowMs = 1_000L)
+            insertEpisode(db, "ep1")
+            db.audioUploadCacheQueries.upsert(
+                episodeId = "ep1",
+                geminiUri = "https://gemini/cached",
+                geminiName = "files/cached",
+                mimeType = "audio/mpeg",
+                fingerprint = "5000000",
+                uploadedAtMs = 0L,
+                expiresAtMs = 1_000L + AudioUploadCoordinator.DEFAULT_TTL_MS,
+            )
+
+            val received = mutableListOf<Long>()
+            coordinator
+                .acquire(
+                    apiKey = "k",
+                    episode = episode("ep1"),
+                    download = download("ep1", bytes = 5_000_000L),
+                    onUploadProgress = { received += it },
+                ).getOrThrow()
+
+            assertTrue(received.isEmpty(), "Cache hit must not synthesise progress events")
+        }
+
+    @Test
     fun acquire_uploadFailure_surfacesAsAiError_andDoesNotCacheRow() =
         runTest {
             // Network failure during upload must surface the underlying AiError
             // and leave the cache empty so a retry hits the upload path again.
             val db = inMemoryDatabase()
             val uploader =
-                RecordingUploader(handler = {
+                RecordingUploader(handler = { _, _ ->
                     Result.failure(AiErrorException(AiError.Network))
                 })
             val coordinator = buildCoordinator(db, uploader)
@@ -207,7 +277,6 @@ class AudioUploadCoordinatorTest {
         AudioUploadCoordinator(
             uploader = uploader,
             db = db,
-            openFile = { ByteReadChannel.Empty },
             clock = FixedClock(nowMs),
             ioContext = kotlinx.coroutines.Dispatchers.Unconfined,
         )
@@ -288,7 +357,11 @@ class AudioUploadCoordinatorTest {
         )
 
     private class RecordingUploader(
-        private val handler: suspend (StubUpload) -> Result<UploadedFile> = { call ->
+        private val handler: suspend (StubUpload, (Long) -> Unit) -> Result<UploadedFile> = { call, onProgress ->
+            // Default fake fires onProgress once at completion to mirror the
+            // real chunked uploader's terminal callback. Tests that need
+            // mid-upload progress assertions inject a custom handler.
+            onProgress(call.sizeBytes)
             Result.success(
                 UploadedFile(
                     name = "files/${call.displayName}",
@@ -303,19 +376,21 @@ class AudioUploadCoordinatorTest {
 
         override suspend fun upload(
             apiKey: String,
-            channel: ByteReadChannel,
+            localPath: String,
             mimeType: String,
             sizeBytes: Long,
             displayName: String,
+            onProgress: (uploadedBytes: Long) -> Unit,
         ): Result<UploadedFile> {
-            val call = StubUpload(apiKey, mimeType, sizeBytes, displayName)
+            val call = StubUpload(apiKey, localPath, mimeType, sizeBytes, displayName)
             calls += call
-            return handler(call)
+            return handler(call, onProgress)
         }
     }
 
     private data class StubUpload(
         val apiKey: String,
+        val localPath: String,
         val mimeType: String,
         val sizeBytes: Long,
         val displayName: String,
