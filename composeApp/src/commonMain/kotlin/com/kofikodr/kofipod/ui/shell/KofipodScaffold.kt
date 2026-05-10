@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -64,6 +63,7 @@ fun KofipodScaffold(
         )
     } else {
         TabletScaffold(
+            nav = nav,
             snackbarHostState = snackbarHostState,
             onPlayerScreen = onPlayerScreen,
             size = tabletSize,
@@ -117,6 +117,7 @@ private fun PhoneScaffold(
 /** Tablet branch: leading navigation rail beside a column of content + docked mini-player. */
 @Composable
 private fun TabletScaffold(
+    nav: NavHostController,
     snackbarHostState: SnackbarHostState,
     onPlayerScreen: Boolean,
     size: TabletSize,
@@ -141,7 +142,7 @@ private fun TabletScaffold(
                 .fillMaxSize(),
         ) {
             if (!onPlayerScreen) {
-                PlaceholderRail(size)
+                KofipodNavigationRail(nav = nav, size = size)
             }
             Column(
                 Modifier
@@ -154,24 +155,6 @@ private fun TabletScaffold(
                 }
             }
         }
-    }
-}
-
-/**
- * Placeholder navigation rail. Replaced by the real rail composable in Phase 1 Task 1.3.
- * Width follows the spec's icon-only baseline (72.dp) to keep the layout structure stable.
- */
-@Composable
-private fun PlaceholderRail(size: TabletSize) {
-    val c = LocalKofipodColors.current
-    Box(
-        Modifier
-            .width(72.dp)
-            .fillMaxHeight()
-            .background(c.surface),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(text = "Rail\n${size.name}", color = c.textMute)
     }
 }
 
