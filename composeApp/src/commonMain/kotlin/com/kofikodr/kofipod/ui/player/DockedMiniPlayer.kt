@@ -29,8 +29,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kofikodr.kofipod.playback.KofipodPlayer
 import com.kofikodr.kofipod.playback.PlayerState
-import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.primitives.KofipodArtwork
+import com.kofikodr.kofipod.ui.screens.player.formatMs
+import com.kofikodr.kofipod.ui.screens.player.formatSpeed
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
 import org.koin.compose.koinInject
 
@@ -44,7 +45,6 @@ import org.koin.compose.koinInject
  */
 @Composable
 fun DockedMiniPlayer(
-    size: TabletSize,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -53,7 +53,6 @@ fun DockedMiniPlayer(
     if (state.episodeId == null) return
     DockedMiniPlayerContent(
         state = state,
-        size = size,
         onOpen = onOpen,
         onPlayPause = { if (state.isPlaying) player.pause() else player.resume() },
         modifier = modifier,
@@ -67,7 +66,6 @@ fun DockedMiniPlayer(
 @Composable
 fun DockedMiniPlayerContent(
     state: PlayerState,
-    @Suppress("UNUSED_PARAMETER") size: TabletSize,
     onOpen: () -> Unit,
     onPlayPause: () -> Unit,
     modifier: Modifier = Modifier,
@@ -152,18 +150,8 @@ private fun subtitleLine(state: PlayerState): String {
     val parts = mutableListOf<String>()
     if (state.podcastTitle.isNotBlank()) parts += state.podcastTitle
     state.episodeNumber?.let { parts += "Ep $it" }
-    parts += "${formatProgress(state.positionMs)} / ${formatProgress(state.durationMs)}"
+    parts += "${formatMs(state.positionMs)} / ${formatMs(state.durationMs)}"
     return parts.joinToString(" · ")
-}
-
-private fun formatProgress(ms: Long): String {
-    if (ms <= 0L) return "0:00"
-    val total = ms / 1000
-    val h = total / 3600
-    val m = (total % 3600) / 60
-    val s = total % 60
-    val sPad = s.toString().padStart(2, '0')
-    return if (h > 0) "$h:${m.toString().padStart(2, '0')}:$sPad" else "$m:$sPad"
 }
 
 @Composable
@@ -177,15 +165,10 @@ private fun SpeedChip(speed: Float) {
             .testTag("dockedMiniPlayerSpeedChip"),
     ) {
         Text(
-            text = "${formatSpeedTenths(speed)}×",
+            text = "${formatSpeed(speed)}×",
             color = c.text,
             fontWeight = FontWeight.SemiBold,
             fontSize = 12.sp,
         )
     }
-}
-
-private fun formatSpeedTenths(speed: Float): String {
-    val tenths = ((speed * 10f) + 0.5f).toInt().coerceAtLeast(0)
-    return "${tenths / 10}.${tenths % 10}"
 }

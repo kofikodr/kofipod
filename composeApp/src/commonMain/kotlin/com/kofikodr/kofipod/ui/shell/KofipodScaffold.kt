@@ -109,6 +109,16 @@ private fun PhoneScaffold(
     }
 }
 
+// TODO(tablet-scaffold-snapshot): Phase 1 Task 1.2 originally included a
+// Paparazzi smoke test of the full Row(rail, Column(content, mini-player))
+// scaffold at 1400x1000. Task 1.4 replaced the placeholder mini-player with
+// the real DockedMiniPlayer which pulls KofipodPlayer from Koin; that
+// constructor builds a MediaController eagerly in init and crashes inside
+// Paparazzi. Restoring the integration snapshot requires either a
+// KofipodPlayer Koin test module or a stateless KofipodScaffoldContent
+// seam that takes PlayerState as a parameter. Track for Phase 1 polish
+// before later phases compound the rotation-coverage gap.
+
 /** Tablet branch: leading navigation rail beside a column of content + docked mini-player. */
 @Composable
 private fun TabletScaffold(
@@ -147,7 +157,6 @@ private fun TabletScaffold(
                 Box(Modifier.weight(1f)) { content() }
                 if (!onPlayerScreen) {
                     DockedMiniPlayer(
-                        size = size,
                         onOpen = {
                             nav.navigate(
                                 Route.Player,

@@ -11,7 +11,6 @@ import app.cash.paparazzi.Paparazzi
 import com.android.resources.Density
 import com.android.resources.ScreenOrientation
 import com.kofikodr.kofipod.playback.PlayerState
-import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.player.DockedMiniPlayerContent
 import com.kofikodr.kofipod.ui.theme.KofipodTheme
 import com.kofikodr.kofipod.ui.theme.KofipodThemeMode
@@ -50,21 +49,18 @@ class DockedMiniPlayerSnapshots {
         )
 
     @Test
-    fun tablet8Port_light() = snap(width = 728, size = TabletSize.Tablet8Port)
+    fun tablet8Port_light() = snap(width = 728)
 
     @Test
-    fun tablet8Land_light() = snap(width = 1128, size = TabletSize.Tablet8Land)
+    fun tablet8Land_light() = snap(width = 1128)
 
     @Test
-    fun tablet10Port_light() = snap(width = 800, size = TabletSize.Tablet10Port)
+    fun tablet10Port_light() = snap(width = 800)
 
     @Test
-    fun tablet10Land_light() = snap(width = 1160, size = TabletSize.Tablet10Land)
+    fun tablet10Land_light() = snap(width = 1160)
 
-    private fun snap(
-        width: Int,
-        size: TabletSize,
-    ) {
+    private fun snap(width: Int) {
         paparazzi.unsafeUpdateConfig(
             deviceConfig =
                 DeviceConfig.PIXEL_5.copy(
@@ -77,7 +73,7 @@ class DockedMiniPlayerSnapshots {
                 ),
         )
         paparazzi.snapshot {
-            DockedMiniPlayerHarness(size = size)
+            DockedMiniPlayerHarness()
         }
     }
 }
@@ -100,13 +96,12 @@ private val STUB_STATE =
     )
 
 @Composable
-private fun DockedMiniPlayerHarness(size: TabletSize) {
+private fun DockedMiniPlayerHarness() {
     KofipodTheme(KofipodThemeMode.Light) {
         val c = LocalKofipodColors.current
         Box(modifier = Modifier.fillMaxSize().background(c.bg)) {
             DockedMiniPlayerContent(
                 state = STUB_STATE,
-                size = size,
                 onOpen = {},
                 onPlayPause = {},
             )
