@@ -6,4 +6,16 @@
     <files-path
         name="updates"
         path="updates/" />
+    <!-- Exposes <cacheDir>/snippets/ where rendered snippet MP3s land before the
+         user shares them via the system share sheet. Scoped narrowly to this
+         directory only. -->
+    <cache-path
+        name="snippets"
+        path="snippets/" />
+    <!-- Exposes <cacheDir>/markdown/ where the PKM Slice 5 export pipeline writes
+         .md blobs before handing them to the system share sheet. Scoped narrowly
+         to this directory only. -->
+    <cache-path
+        name="markdown"
+        path="markdown/" />
 </paths>

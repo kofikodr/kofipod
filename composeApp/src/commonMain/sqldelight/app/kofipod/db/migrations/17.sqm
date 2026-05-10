@@ -1,0 +1,89 @@
+-- Slice 2 (Pro Library Search): introduce TranscriptCache + the
+-- LibrarySearchIndex FTS5 virtual table + the nine triggers that keep the
+-- index synced with Bookmark / EpisodeAiSummary / TranscriptCache.
+--
+-- Backfill at the end: existing Bookmark + EpisodeAiSummary rows are seeded
+-- into the index so already-saved bookmarks and already-cached summaries are
+-- searchable on first launch after upgrade. TranscriptCache is brand new
+-- and has nothing to backfill.
+
+CREATE TABLE TranscriptCache (
+    episodeId    TEXT NOT NULL PRIMARY KEY,
+    text         TEXT NOT NULL,
+    fetchedAtMs  INTEGER NOT NULL,
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
+);
+
+CREATE VIRTUAL TABLE LibrarySearchIndex USING fts5(
+    kind UNINDEXED,
+    itemId UNINDEXED,
+    episodeId UNINDEXED,
+    timestampMs UNINDEXED,
+    text,
+    tokenize = 'porter unicode61 remove_diacritics 2'
+);
+
+CREATE TRIGGER bookmark_fts_ai AFTER INSERT ON Bookmark
+BEGIN
+    INSERT INTO LibrarySearchIndex (kind, itemId, episodeId, timestampMs, text)
+    VALUES ('bookmark', new.id, new.episodeId, new.timestampMs, COALESCE(new.note, ''));
+END;
+
+CREATE TRIGGER bookmark_fts_au AFTER UPDATE ON Bookmark
+BEGIN
+    DELETE FROM LibrarySearchIndex WHERE kind = 'bookmark' AND itemId = old.id;
+    INSERT INTO LibrarySearchIndex (kind, itemId, episodeId, timestampMs, text)
+    VALUES ('bookmark', new.id, new.episodeId, new.timestampMs, COALESCE(new.note, ''));
+END;
+
+CREATE TRIGGER bookmark_fts_ad AFTER DELETE ON Bookmark
+BEGIN
+    DELETE FROM LibrarySearchIndex WHERE kind = 'bookmark' AND itemId = old.id;
+END;
+
+CREATE TRIGGER summary_fts_ai AFTER INSERT ON EpisodeAiSummary
+BEGIN
+    INSERT INTO LibrarySearchIndex (kind, itemId, episodeId, timestampMs, text)
+    VALUES ('summary', new.episodeId, new.episodeId, 0, new.summary);
+END;
+
+CREATE TRIGGER summary_fts_au AFTER UPDATE ON EpisodeAiSummary
+BEGIN
+    DELETE FROM LibrarySearchIndex WHERE kind = 'summary' AND itemId = old.episodeId;
+    INSERT INTO LibrarySearchIndex (kind, itemId, episodeId, timestampMs, text)
+    VALUES ('summary', new.episodeId, new.episodeId, 0, new.summary);
+END;
+
+CREATE TRIGGER summary_fts_ad AFTER DELETE ON EpisodeAiSummary
+BEGIN
+    DELETE FROM LibrarySearchIndex WHERE kind = 'summary' AND itemId = old.episodeId;
+END;
+
+CREATE TRIGGER transcript_fts_ai AFTER INSERT ON TranscriptCache
+BEGIN
+    INSERT INTO LibrarySearchIndex (kind, itemId, episodeId, timestampMs, text)
+    VALUES ('transcript', new.episodeId, new.episodeId, 0, new.text);
+END;
+
+CREATE TRIGGER transcript_fts_au AFTER UPDATE ON TranscriptCache
+BEGIN
+    DELETE FROM LibrarySearchIndex WHERE kind = 'transcript' AND itemId = old.episodeId;
+    INSERT INTO LibrarySearchIndex (kind, itemId, episodeId, timestampMs, text)
+    VALUES ('transcript', new.episodeId, new.episodeId, 0, new.text);
+END;
+
+CREATE TRIGGER transcript_fts_ad AFTER DELETE ON TranscriptCache
+BEGIN
+    DELETE FROM LibrarySearchIndex WHERE kind = 'transcript' AND itemId = old.episodeId;
+END;
+
+-- Backfill existing rows. INSERT triggers do NOT fire for INSERTs into the
+-- FTS table itself, so this is a single transactional block with the schema
+-- creation above (SQLDelight wraps each .sqm in a transaction by default).
+INSERT INTO LibrarySearchIndex (kind, itemId, episodeId, timestampMs, text)
+SELECT 'bookmark', id, episodeId, timestampMs, COALESCE(note, '')
+FROM Bookmark;
+
+INSERT INTO LibrarySearchIndex (kind, itemId, episodeId, timestampMs, text)
+SELECT 'summary', episodeId, episodeId, 0, summary
+FROM EpisodeAiSummary;

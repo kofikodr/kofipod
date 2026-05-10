@@ -49,6 +49,8 @@ import app.kofipod.config.AppInfo
 import app.kofipod.data.repo.UpdateUiState
 import app.kofipod.diagnostics.DiagnosticsCapabilities
 import app.kofipod.opml.OpmlAction
+import app.kofipod.pro.ProEntitlement
+import app.kofipod.pro.ProSource
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
 import app.kofipod.ui.primitives.SectionLabel
@@ -69,6 +71,7 @@ private const val MAX_STREAM_CACHE_BYTES: Long = 2L * 1024 * 1024 * 1024
 fun SettingsScreen(
     onOpenScheduler: () -> Unit,
     onOpenAiSetup: () -> Unit,
+    onOpenConnections: () -> Unit,
     viewModel: SettingsViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -88,6 +91,14 @@ fun SettingsScreen(
             fontWeight = FontWeight.ExtraBold,
             fontSize = 32.sp,
         )
+        SectionLabel("Kofipod Pro", topSpacing = 22.dp)
+        ProStatusCard(
+            entitlement = state.proEntitlement,
+            restoreInFlight = state.restoreInFlight,
+            onUpgrade = viewModel::openPaywall,
+            onRestore = viewModel::restorePurchase,
+        )
+
         if (UpdaterCapability.enabled) {
             SectionLabel("App update", topSpacing = 22.dp)
             UpdateCard(
@@ -140,6 +151,17 @@ fun SettingsScreen(
             onRestore = viewModel::restoreFromBackup,
             onConfirmRestore = viewModel::confirmRestore,
             onCancelRestoreConfirm = viewModel::cancelRestoreConfirm,
+        )
+
+        SectionLabel("Connections", topSpacing = 22.dp)
+        SettingRow(
+            icon = KPIconName.Share,
+            title = "Connections",
+            subtitle = "Manage Obsidian, Readwise, and Markdown exports",
+            onClick = { viewModel.tapConnections(onOpenConnections) },
+            trailing = {
+                KPIcon(name = KPIconName.ChevronRight, color = c.textMute, size = 18.dp)
+            },
         )
 
         SectionLabel("Appearance", topSpacing = 22.dp)
@@ -898,4 +920,194 @@ private fun formatSize(bytes: Long): String {
     if (bytes <= 0L) return "0 MB"
     val gb = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
     return if (gb >= 1.0) formatGb(bytes) else "${(bytes / (1024L * 1024L)).toInt()} MB"
+}
+
+// --------------------------------------------------------------------------
+// Kofipod Pro status card
+// --------------------------------------------------------------------------
+
+@Composable
+private fun ProStatusCard(
+    entitlement: ProEntitlement,
+    restoreInFlight: Boolean,
+    onUpgrade: () -> Unit,
+    onRestore: () -> Unit,
+) {
+    when (entitlement) {
+        ProEntitlement.Unknown ->
+            // While entitlement is Unknown, refreshOnStart() is in-flight. Showing an
+            // active Restore link would race that pipeline (two concurrent connect()s
+            // and two cache writes interleaved). Disable the link until we know the tier.
+            ProActiveCard(
+                label = "Checking…",
+                subtitle = "Restoring purchase status",
+                restoreInFlight = true,
+                onRestore = {},
+            )
+        ProEntitlement.Free ->
+            ProUpgradeCard(
+                restoreInFlight = restoreInFlight,
+                onUpgrade = onUpgrade,
+                onRestore = onRestore,
+            )
+        is ProEntitlement.Pro ->
+            when (entitlement.source) {
+                ProSource.Individual ->
+                    ProActiveCard(
+                        label = "Kofipod Pro",
+                        subtitle = "Active · purchased on this device",
+                        restoreInFlight = restoreInFlight,
+                        onRestore = onRestore,
+                    )
+                ProSource.FossBuild ->
+                    ProActiveCard(
+                        label = "Kofipod Pro",
+                        subtitle = "Self-build · all features unlocked",
+                        restoreInFlight = restoreInFlight,
+                        onRestore = onRestore,
+                    )
+            }
+    }
+}
+
+@Composable
+private fun ProUpgradeCard(
+    restoreInFlight: Boolean,
+    onUpgrade: () -> Unit,
+    onRestore: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(c.pink, Color(0xFFC71D7C)),
+                    ),
+                )
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+    ) {
+        Column {
+            Text(
+                "KOFIPOD PRO",
+                color = Color.White.copy(alpha = 0.92f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.5.sp,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Snip, bookmark, and\nsend to your second brain.",
+                color = Color.White,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.ExtraBold,
+                lineHeight = 21.sp,
+            )
+            Spacer(Modifier.height(14.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier =
+                        Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(Color.White)
+                            .clickable(onClick = onUpgrade)
+                            .padding(horizontal = 16.dp, vertical = 9.dp),
+                ) {
+                    Text(
+                        "Upgrade · \$12.99",
+                        color = c.pink,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = if (restoreInFlight) "Restoring…" else "Restore",
+                    color = Color.White.copy(alpha = 0.92f),
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier =
+                        Modifier
+                            .clickable(enabled = !restoreInFlight, onClick = onRestore)
+                            .padding(vertical = 4.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProActiveCard(
+    label: String,
+    subtitle: String,
+    restoreInFlight: Boolean,
+    onRestore: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(c.surface)
+                .border(1.5.dp, c.borderStrong, RoundedCornerShape(16.dp))
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        Brush.linearGradient(colors = listOf(c.purple, c.pink)),
+                    ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "PRO",
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.sp,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    label,
+                    color = c.text,
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+                Spacer(Modifier.width(6.dp))
+                Box(
+                    modifier =
+                        Modifier
+                            .size(6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(c.success),
+                )
+            }
+            Spacer(Modifier.height(2.dp))
+            Text(
+                subtitle,
+                color = c.textMute,
+                fontSize = 11.5.sp,
+            )
+        }
+        Text(
+            text = if (restoreInFlight) "Restoring…" else "Restore",
+            color = c.purple,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.ExtraBold,
+            modifier =
+                Modifier
+                    .clickable(enabled = !restoreInFlight, onClick = onRestore)
+                    .padding(vertical = 4.dp, horizontal = 4.dp),
+        )
+    }
 }

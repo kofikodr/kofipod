@@ -29,4 +29,16 @@ sealed interface Route {
     @Serializable data object AiSetup : Route
 
     @Serializable data class AskGemini(val episodeId: String) : Route
+
+    @Serializable data object Bookmarks : Route
+
+    @Serializable data object LibrarySearch : Route
+
+    @Serializable data class SnippetEditor(val snippetId: String) : Route
+
+    @Serializable data object Connections : Route
+
+    @Serializable data class SmartPlaylistEditor(val playlistId: String? = null) : Route
+
+    @Serializable data class SmartPlaylistDetail(val playlistId: String) : Route
 }

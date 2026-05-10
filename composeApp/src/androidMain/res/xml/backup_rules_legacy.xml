@@ -11,10 +11,13 @@
     * `kofipod_secure` — encrypted store for the user's BYOK Gemini API
       key. The key is per-device; restoring it onto another phone would
       expose the user's quota to a device they no longer control.
+    * `kofipod_entitlement` — last verified Pro entitlement reading.
+      Real entitlement re-verifies via Play Billing on every cold start.
 -->
 <full-backup-content>
     <include domain="database" path="." />
     <include domain="sharedpref" path="." />
     <exclude domain="sharedpref" path="kofipod_local.xml" />
     <exclude domain="sharedpref" path="kofipod_secure.xml" />
+    <exclude domain="sharedpref" path="kofipod_entitlement.xml" />
 </full-backup-content>

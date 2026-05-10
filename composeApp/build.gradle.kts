@@ -89,10 +89,13 @@ kotlin {
                 implementation(libs.androidx.activity.compose)
                 implementation(libs.ktor.client.okhttp)
                 implementation(libs.sqldelight.android.driver)
+                implementation(libs.requery.sqlite.android)
                 implementation(libs.androidx.media3.exoplayer)
                 implementation(libs.androidx.media3.session)
                 implementation(libs.androidx.media3.datasource)
                 implementation(libs.androidx.media3.database)
+                implementation(libs.androidx.media3.transformer)
+                implementation(libs.androidx.media3.effect)
                 implementation(libs.androidx.work.runtime)
                 implementation(libs.androidx.palette)
                 implementation(libs.androidx.security.crypto)
@@ -101,6 +104,17 @@ kotlin {
                 implementation(libs.aptabase)
                 implementation(libs.sentry.kmp)
             }
+        }
+        val androidPlay by creating {
+            dependsOn(androidMain)
+            dependencies {
+                implementation(libs.google.play.billing)
+            }
+        }
+        val androidFoss by creating {
+            dependsOn(androidMain)
+            // No flavor-specific dependencies. The FOSS flavor stays
+            // proprietary-code-free so F-Droid will accept it.
         }
         val iosMain by creating {
             dependsOn(commonMain)
@@ -151,6 +165,24 @@ android {
         versionName = appVersionName
         manifestPlaceholders["appLabel"] = "Kofipod"
     }
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("play") {
+            dimension = "distribution"
+            // play flavor is the revenue product; no applicationIdSuffix so it
+            // matches what's uploaded to Play Console.
+            manifestPlaceholders["appLabel"] = "Kofipod"
+        }
+        create("foss") {
+            dimension = "distribution"
+            // foss flavor unconditionally unlocks Pro and excludes Play Billing.
+            // Use a distinct package so a foss build can be installed alongside
+            // a play build for verification.
+            applicationIdSuffix = ".foss"
+            versionNameSuffix = "-foss"
+            manifestPlaceholders["appLabel"] = "Kofipod (FOSS)"
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -177,9 +209,11 @@ android {
     buildTypes {
         debug {
             // Distinct package so debug installs coexist with a production release on the same device.
+            // Note: we deliberately do NOT override the appLabel placeholder here. Setting it on the
+            // debug build-type silently overrides the per-flavor value, hiding the "(FOSS)" suffix
+            // from the launcher on foss debug. Use the package id suffix to tell debug from release.
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-            manifestPlaceholders["appLabel"] = "Kofipoddbg"
         }
         release {
             isMinifyEnabled = false
@@ -189,11 +223,18 @@ android {
     }
     applicationVariants.all {
         val variant = this
+        // Distinct launcher label per variant so debug installs don't collide visually with
+        // release on the same device. Set here (not in buildTypes.debug) because a buildType
+        // placeholder silently overrides the per-flavor value, which would drop the "(FOSS)"
+        // suffix from foss-debug.
+        val flavorLabel = if (variant.flavorName == "foss") "Kofipod (FOSS)" else "Kofipod"
+        val label = if (variant.buildType.name == "debug") "$flavorLabel debug" else flavorLabel
+        variant.mergedFlavor.manifestPlaceholders["appLabel"] = label
         if (variant.buildType.name == "release") {
             variant.outputs.all {
                 val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
                 output.outputFileName =
-                    "kofipod-${variant.versionName}-${variant.versionCode}-${variant.buildType.name}.apk"
+                    "kofipod-${variant.flavorName}-${variant.versionName}-${variant.versionCode}-${variant.buildType.name}.apk"
             }
         }
     }
@@ -203,6 +244,10 @@ sqldelight {
     databases {
         create("KofipodDatabase") {
             packageName.set("app.kofipod.db")
+            // SQLite 3.24 dialect enables ON CONFLICT DO UPDATE (UPSERT syntax),
+            // required for FTS5-compatible upserts in TranscriptCache and
+            // EpisodeAiSummary. The default 3.18 dialect rejects this syntax.
+            dialect("app.cash.sqldelight:sqlite-3-24-dialect:2.0.2")
         }
     }
 }

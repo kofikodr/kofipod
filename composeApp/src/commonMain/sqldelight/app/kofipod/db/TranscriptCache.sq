@@ -1,0 +1,38 @@
+-- Slice 2 (Pro Library Search): cached transcript text per episode.
+--
+-- The text is captured opportunistically by AiSummaryRepository.runTranscript
+-- — it was already fetched there to feed Gemini, so persisting it costs only
+-- the disk write. The entire row's purpose is to give the LibrarySearchIndex
+-- FTS triggers something to mirror: transcripts are how users find episodes
+-- by topic. fetchedAtMs is informational (no TTL — transcripts are immutable
+-- once published).
+
+CREATE TABLE TranscriptCache (
+    episodeId    TEXT NOT NULL PRIMARY KEY,
+    text         TEXT NOT NULL,
+    fetchedAtMs  INTEGER NOT NULL,
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE
+);
+
+upsert:
+INSERT INTO TranscriptCache (episodeId, text, fetchedAtMs)
+VALUES (?, ?, ?)
+ON CONFLICT(episodeId) DO UPDATE SET
+    text = excluded.text,
+    fetchedAtMs = excluded.fetchedAtMs;
+
+selectByEpisode:
+SELECT * FROM TranscriptCache WHERE episodeId = ?;
+
+-- Slice 7 (Smart Playlists): Task 5 fact aggregation projects over every cached
+-- transcript row to compute the `hasCachedTranscript` signal feeding the
+-- HasCachedTranscript predicate. Cheap because the row is keyed by episodeId and
+-- only carries an integer timestamp + the transcript text we never read here.
+selectAll:
+SELECT * FROM TranscriptCache;
+
+deleteByEpisode:
+DELETE FROM TranscriptCache WHERE episodeId = ?;
+
+deleteAll:
+DELETE FROM TranscriptCache;

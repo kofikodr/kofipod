@@ -7,9 +7,11 @@ import app.kofipod.background.BackupScheduler
 import app.kofipod.backup.PendingRestore
 import app.kofipod.di.androidPlatformModule
 import app.kofipod.di.commonDataModule
+import app.kofipod.di.flavorPlatformModule
 import app.kofipod.diagnostics.DiagnosticsBootstrapper
 import app.kofipod.diagnostics.Telemetry
 import app.kofipod.diagnostics.TelemetryEvent
+import app.kofipod.pro.ProEntitlementRepository
 import app.kofipod.ui.theme.ThemeSystem
 import app.kofipod.update.UpdateInstaller
 import app.kofipod.update.UpdaterCapability
@@ -36,7 +38,7 @@ class KofipodApplication : Application() {
         startKoin {
             androidLogger()
             androidContext(this@KofipodApplication)
-            modules(commonDataModule, androidPlatformModule)
+            modules(commonDataModule, androidPlatformModule, flavorPlatformModule)
         }
         // The downloaded-APK pointer rides Auto Backup but the file itself doesn't —
         // clear it on cold start if the file isn't where the pointer says it is, so a
@@ -59,20 +61,28 @@ class KofipodApplication : Application() {
         // disabled regardless of toggle state.
         val bootstrapper = get<DiagnosticsBootstrapper>(DiagnosticsBootstrapper::class.java)
         bootstrapper.start()
-        // AppOpened must wait until the bootstrapper has actually called
-        // Telemetry.enable() — firing track() too early loses the event
-        // because the SDK isn't initialized yet. The telemetryReady flow
-        // flips only AFTER enable() returns, eliminating the cold-start race.
         val appScope = KoinPlatform.getKoin().get<CoroutineScope>(named("appScope"))
+        // AppOpened must wait until the bootstrapper has actually called
+        // Telemetry.enable() — firing track() too early loses the event because
+        // the SDK isn't initialized yet. The telemetryReady flow flips only
+        // AFTER enable() returns, eliminating the cold-start race.
         val telemetry = get<Telemetry>(Telemetry::class.java)
         appScope.launch {
             // Bound the await: if the bootstrapper never flips telemetryReady
-            // true (disclosure not acknowledged, telemetry toggle off, or
-            // SDK init failed), this coroutine would otherwise suspend for
-            // the process lifetime. 5s is generous — readiness usually
-            // settles in <50ms once prefs are decrypted.
+            // true (disclosure not acknowledged, telemetry toggle off, or SDK
+            // init failed), this coroutine would otherwise suspend for the
+            // process lifetime. 5s is generous — readiness usually settles in
+            // <50ms once prefs are decrypted.
             val ready = withTimeoutOrNull(5_000) { bootstrapper.telemetryReady.first { it } }
             if (ready == true) telemetry.track(TelemetryEvent.AppOpened)
+        }
+        // Kick Pro entitlement reconciliation eagerly. Repository hydrates from
+        // cache first, then refreshes from Play Billing — so paywall-gated UI
+        // sees the right tier within a few hundred ms of process start. Failure
+        // here is non-fatal (UI shows Unknown until the user retries via Settings).
+        val pro = get<ProEntitlementRepository>(ProEntitlementRepository::class.java)
+        appScope.launch {
+            pro.refreshOnStart()
         }
     }
 }

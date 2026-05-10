@@ -1,8 +1,14 @@
 # Kofipod
 
-A personal podcasting player app for Android (Kotlin Multiplatform, iOS to follow). 
+A personal podcasting player app for Android (Kotlin Multiplatform, iOS to follow).
 
-If you're just here to download the app, it's in the [releases section](https://github.com/kofikodr/kofipod/releases). 
+## Install
+
+- **Google Play Store** — search for "Kofipod" once we list. Pro features unlock with a one-time $12.99 purchase ($19.99 family up to 5 accounts).
+- **F-Droid** — once accepted into the F-Droid repo, Kofipod ships as the FOSS flavor with **all Pro features unlocked unconditionally**. F-Droid only accepts apps with no proprietary dependencies; the FOSS flavor excludes Google Play Billing entirely.
+- **Self-build** — clone, run `./gradlew :composeApp:assembleFossDebug`, install. Same FOSS flavor as F-Droid; Pro is unconditional.
+
+We no longer publish pre-built APKs to GitHub Releases. The Play Store binary is the revenue surface; F-Droid + self-build are the no-cost paths.
 
 ## Screenshots
 
@@ -16,7 +22,7 @@ If you're just here to download the app, it's in the [releases section](https://
 
 Kofipod supports Android Auto — your library, folders, and recent episodes show up in the car's media picker, and playback controls work from the head unit.
 
-If you installed Kofipod from the [releases page](https://github.com/kofikodr/kofipod/releases) (i.e. sideloaded), Android Auto will hide it by default. Production head units only show media apps installed from the Play Store unless you opt in to unknown sources. (The Desktop Head Unit emulator skips this check, which is why testing there always works.)
+If you installed the FOSS flavor (F-Droid or self-built APK), Android Auto will hide Kofipod by default. Production head units only show media apps installed from the Play Store unless you opt in to unknown sources. (The Desktop Head Unit emulator skips this check, which is why testing there always works.)
 
 To enable it:
 

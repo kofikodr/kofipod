@@ -1,0 +1,21 @@
+CREATE TABLE SmartPlaylist (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    predicateJson TEXT NOT NULL,
+    createdAt INTEGER NOT NULL
+);
+
+CREATE INDEX SmartPlaylist_createdAt_idx ON SmartPlaylist(createdAt);
+
+selectAll:
+SELECT * FROM SmartPlaylist ORDER BY createdAt ASC;
+
+selectById:
+SELECT * FROM SmartPlaylist WHERE id = ? LIMIT 1;
+
+upsert:
+INSERT OR REPLACE INTO SmartPlaylist(id, name, predicateJson, createdAt)
+VALUES (?, ?, ?, ?);
+
+delete:
+DELETE FROM SmartPlaylist WHERE id = ?;

@@ -19,14 +19,16 @@ Why this shape:
 
 Two non-consumable Google Play Billing v6+ products:
 
-| SKU | Product ID | Price (USD) | Unlocks |
-|---|---|---|---|
-| Kofipod Pro | `kofipod_pro` | **$12.99** | All Pro features for the purchasing Google account |
-| Kofipod Pro Family | `kofipod_pro_family` | **$19.99** | All Pro features for the purchaser's Google Family group (up to 5 accounts) |
+| SKU                    | Product ID               | Price (USD)    | Unlocks |
+|------------------------|--------------------------|----------------|---|
+| Kofipod Pro            | `kofipod_pro`            | **$12.99**     | All Pro features for the purchasing Google account |
+| ~~Kofipod Pro Family~~ | ~~`kofipod_pro_family`~~ | ~~**$19.99**~~ | ~~All Pro features for the purchaser's Google Family group (up to 5 accounts)~~ |
 
 **No subscription. No trial. No ads. No future "Pro 2.0 — buy again."** All v1.0 + v1.1 + future *Pro-tier* features ship as free updates to existing Pro buyers. (A potential later **Cloud** tier — sync, hosted clip pages, hosted AI — would be a separate subscription product, not a re-paywalling of Pro features.)
 
 Restore Purchase happens automatically on app start and via a manual button in Settings. Entitlement is recovered through Play Billing on new devices, not through Auto Backup — this prevents device-clone bypass and removes the ambiguity of "is my purchase tied to my device or my account."
+
+**Note: Family Plan dropped**
 
 ## Build flavors and distribution
 
@@ -239,6 +241,29 @@ The willingness-to-pay wedge — Snipd users specifically cite this as why they 
 
 **Visual treatment is Claude Design's call.** This section lists the jobs each screen does, key elements, and notable states. No layout, palette, or motion prescription.
 
+### Design doc as source of truth — for new features only
+
+The bundled `docs/kofipod-pro-ui-design.html` is the visual reference for every Pro feature listed below (Paywall sheet, Snippet editor, Bookmarks list, Library search, PKM Connections, Export action sheet, Smart Playlist editor) **and for the Pro-related sections of the modified screens** (the Settings → Kofipod Pro section, the Library "Bookmarks" / search entry points, the Episode Detail "Saved" section, the Player Snip + Bookmark icon buttons).
+
+**Use it when:**
+- Implementing any new screen or composable that the design doc covers.
+- Touching a Pro-gated entry point on a modified screen — match the design.
+
+**How to consult this reference (mandatory before implementing any Pro UI):**
+
+The HTML is a self-contained JS bundle — opening the file as plain text shows only the loader scaffolding, not the actual screens. To see the design content you have to render it.
+
+- **Human review:** `open -a "Google Chrome" docs/kofipod-pro-ui-design.html`. Wait for the "Unpacking..." indicator to disappear, then scroll. Each screen tile is labeled `N · Screen name · state` (e.g. `2 · Snippet editor · idle`).
+- **AI agent runs:** before implementing any Pro UI, render the doc with Playwright/Chromium and screenshot every relevant labeled tile (every state of every screen the slice touches). Save screenshots under `/tmp/kofipod-design-<slug>.png` and reference those paths in the slice plan's task descriptions. The `seo-visual` agent and the `general-purpose` agent both have Playwright access.
+- **Plans derived from this spec MUST include a step that captures the relevant design tiles** before starting implementation. A slice that hasn't visually verified its target screens against this reference is incomplete.
+
+Treat captured screenshots like an API contract — every divergence (defer-to-later-slice, cosmetic-only, swapped-for-feasibility) needs a deliberate decision recorded in the slice plan, not silent omission. If the implementation stops short of design fidelity (e.g. waveform widget waiting on a primitive that ships in a later slice), the plan must say so explicitly and call out which design elements are deferred.
+
+**Do NOT use it as a backlog of UI drift:**
+- Existing free-tier surfaces that the design doc happens to depict (e.g. Now-playing transport controls, the Library tile grid, Stats tiles, Episode Detail tab strip styling, Settings rows unrelated to Pro/Connections) may have drifted from current production. **That drift is intentional out-of-scope for the Pro project.** Do not "fix" non-Pro UI to match the design doc as a side effect of implementing a Pro slice. If the design doc and live app disagree on a non-Pro surface, the live app wins.
+
+When in doubt about whether a discrepancy is a "new Pro feature → match design" or "existing free UI drift → leave alone": Pro-gated entry points and net-new screens follow the design; everything else stays as-is. Open a follow-up if a non-Pro UI refresh is genuinely needed — don't fold it into a Pro slice.
+
 ### New screens
 
 1. **Paywall sheet (modal bottom)** — Job: convert the user at the moment they tap a Pro feature.
@@ -356,19 +381,19 @@ Auto Backup rules updated to **include** Bookmark, Snippet, SmartPlaylist, Expor
 
 Authored as guidance for the implementation plan agent. Actual ordering and granularity will be refined there.
 
-| Slice | Scope | Notes |
-|---|---|---|
-| **Pre-0** | Cleanup | Delete `app.kofipod.update` package + UI + DI + tests (see "Removed in this release"). Self-contained commit; emulator gate before Slice 0 starts. |
-| **0** | Pro entitlement plumbing + flavor split | Add `play` / `foss` flavors. `BillingClientPort` expect/actual across `playAndroid` + `fossAndroid` source sets. `ProEntitlementRepository`, Paywall sheet, restore-purchase. Gates a single toy feature for end-to-end validation in both flavors. README update for new distribution policy. |
-| **1** | Bookmarks | Smallest real feature; exercises schema-bump + Pro-gate pattern. |
-| **2** | Library search (FTS5) | Small surface; lights up FTS index for later features. |
-| **3** | Snippets MVP — MP3 only | Editor, render, share. Proves foreground-service pattern without MP4 risk. |
-| **4** | Snippets MP4 (Media3 Transformer) | Highest engineering risk; gets its own slice. Cover bg + waveform overlay + caption overlay. |
-| **5** | PKM exports — Markdown | Universal, zero-auth. Establishes Markdown formatter contract. |
-| **6** | PKM exports — Obsidian + Readwise | SAF folder picker; Readwise OAuth. |
+| Slice        | Scope | Notes |
+|--------------|---|---|
+| **Pre-0**    | Cleanup | Delete `app.kofipod.update` package + UI + DI + tests (see "Removed in this release"). Self-contained commit; emulator gate before Slice 0 starts. |
+| **0**        | Pro entitlement plumbing + flavor split | Add `play` / `foss` flavors. `BillingClientPort` expect/actual across `playAndroid` + `fossAndroid` source sets. `ProEntitlementRepository`, Paywall sheet, restore-purchase. Gates a single toy feature for end-to-end validation in both flavors. README update for new distribution policy. |
+| **1**        | Bookmarks | Smallest real feature; exercises schema-bump + Pro-gate pattern. |
+| **2**        | Library search (FTS5) | Small surface; lights up FTS index for later features. |
+| **3**        | Snippets MVP — MP3 only | Editor, render, share. Proves foreground-service pattern without MP4 risk. |
+| **4**        | Snippets MP4 (Media3 Transformer) | Highest engineering risk; gets its own slice. Cover bg + waveform overlay + caption overlay. |
+| **5**        | PKM exports — Markdown | Universal, zero-auth. Establishes Markdown formatter contract. |
+| **6**        | PKM exports — Obsidian + Readwise | SAF folder picker; Readwise OAuth. |
+| **7**        | Smart Playlists | Predicate model + editor + virtual rows in Library. |
 | **— launch v1.0 —** | | |
-| **7** (v1.1) | Silence Skip | Media3 `AudioProcessor` + per-show override + Stats tile. |
-| **8** (v1.1) | Smart Playlists | Predicate model + editor + virtual rows in Library. |
+| **8** (v1.1) | Silence Skip | Media3 `AudioProcessor` + per-show override + Stats tile. |
 | **9** (v1.1) | PKM — Notion | OAuth + database picker. |
 
 ## Out of scope (v1)
@@ -387,7 +412,7 @@ Authored as guidance for the implementation plan agent. Actual ordering and gran
 - Exact AirPod tap-to-snip mapping on Android: `MediaSession` custom command vs `MediaSession.Callback.onMediaButtonEvent`. Spike in Slice 0.
 - Readwise OAuth: official OAuth vs API token paste. Official OAuth requires a registered redirect URI; API token paste is simpler but slightly worse UX. Decide in Slice 6.
 - Notion database schema: do we let users pick a database, or do we create a "Kofipod Snippets" database on first connect? Decide in Slice 9.
-- Family SKU sharing semantics: confirm Play Billing v6+ Family Sharing actually grants entitlement to family-group accounts on cold start (the v6 docs are ambiguous). Spike in Slice 0.
+- ~~Family SKU sharing semantics: confirm Play Billing v6+ Family Sharing actually grants entitlement to family-group accounts on cold start (the v6 docs are ambiguous). Spike in Slice 0~~.
 
 ## Decision log
 

@@ -409,6 +409,63 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
     }
 
     /**
+     * Free-text transcription from an already-uploaded audio file. Same retry
+     * pattern as [generateFromAudio], but uses [transcriptionGenerationConfig]
+     * (no JSON schema) and decodes the response as plain text via
+     * [extractCandidateText]. Used by Slice 4's snippet caption pipeline,
+     * which needs a single transcript line — not a structured Summary JSON.
+     */
+    suspend fun transcribeFromAudio(
+        apiKey: String,
+        model: GeminiModel,
+        fileUri: String,
+        mimeType: String,
+        prompt: String,
+    ): Result<String> {
+        var attempt = 0
+        while (true) {
+            val response: HttpResponse =
+                runCatching {
+                    client.post("$BASE_URL/v1beta/models/${model.apiId}:generateContent") {
+                        contentType(ContentType.Application.Json)
+                        url { parameters.append("key", apiKey) }
+                        setBody(
+                            GenerateContentRequest(
+                                contents =
+                                    listOf(
+                                        Content(
+                                            listOf(
+                                                Part(fileData = FileData(mimeType = mimeType, fileUri = fileUri)),
+                                                Part(text = prompt),
+                                            ),
+                                        ),
+                                    ),
+                                generationConfig = transcriptionGenerationConfig(),
+                            ),
+                        )
+                    }
+                }.getOrElse {
+                    logTransportFailure("transcribeFromAudio", it)
+                    return Result.failure(AiErrorException(AiError.Network))
+                }
+
+            if (response.status.isSuccess()) {
+                return extractCandidateText(response, "transcribeFromAudio")
+            }
+            val transient = response.status.value in TRANSIENT_5XX
+            if (transient && attempt < GENERATE_MAX_RETRIES) {
+                logHttpFailure("transcribeFromAudio", response.status.value)
+                delay(GENERATE_RETRY_BACKOFF_MS shl attempt)
+                attempt++
+                continue
+            }
+            val bodyText = runCatching { response.bodyAsText() }.getOrNull().orEmpty()
+            logHttpFailure("transcribeFromAudio", response.status.value)
+            return Result.failure(AiErrorException(response.status.toAudioAiError(bodyText)))
+        }
+    }
+
+    /**
      * Best-effort Files API delete. Returns success even on HTTP failures — the
      * caller treats this as a hint, not a guarantee, because Gemini auto-deletes
      * uploaded files after 48h anyway. Transport failures are swallowed too.
@@ -446,6 +503,19 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
             thinkingConfig = ThinkingConfig(thinkingBudget = 0),
             responseMimeType = "application/json",
             responseSchema = SUMMARY_RESPONSE_SCHEMA,
+        )
+
+    /**
+     * Free-text generation config used by [transcribeFromAudio]. No `responseSchema`
+     * — the caller wants plain text, not a structured JSON document. Same
+     * thinking-disabled posture as [summaryGenerationConfig] so token budget
+     * lands on the visible response, not chain-of-thought.
+     */
+    private fun transcriptionGenerationConfig(): GenerationConfig =
+        GenerationConfig(
+            maxOutputTokens = TRANSCRIPTION_MAX_OUTPUT_TOKENS,
+            temperature = TRANSCRIPTION_TEMPERATURE,
+            thinkingConfig = ThinkingConfig(thinkingBudget = 0),
         )
 
     /**
@@ -665,6 +735,12 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         // than the summary path because Q&A wants grounded recall, not flair.
         private const val CHAT_MAX_OUTPUT_TOKENS = 2048
         private const val CHAT_TEMPERATURE = 0.3
+
+        // Snippet caption transcription: we want a single short line of text, not
+        // a structured JSON document — so the token cap is tight and the schema is
+        // absent. Low temperature keeps the output grounded and deterministic.
+        private const val TRANSCRIPTION_MAX_OUTPUT_TOKENS = 256
+        private const val TRANSCRIPTION_TEMPERATURE = 0.2
 
         // Wire role strings expected by Gemini's multi-turn API. Pinned here
         // (not stringified at call sites) so the only sources of truth are

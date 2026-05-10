@@ -43,6 +43,10 @@ import app.kofipod.backup.BackupPickerHost
 import app.kofipod.diagnostics.DiagnosticsCapabilities
 import app.kofipod.diagnostics.DiagnosticsConfigRepository
 import app.kofipod.opml.OpmlPickerHost
+import app.kofipod.pkm.PkmExportCoordinator
+import app.kofipod.pkm.PkmExportResult
+import app.kofipod.pro.PaywallRouter
+import app.kofipod.pro.PaywallState
 import app.kofipod.ui.UiEvent
 import app.kofipod.ui.UiEventBus
 import app.kofipod.ui.nav.DeepLinks
@@ -51,6 +55,9 @@ import app.kofipod.ui.nav.Route
 import app.kofipod.ui.player.MiniPlayer
 import app.kofipod.ui.primitives.KPIcon
 import app.kofipod.ui.primitives.KPIconName
+import app.kofipod.ui.screens.bookmarks.BookmarkComposerSheet
+import app.kofipod.ui.screens.export.ExportActionSheet
+import app.kofipod.ui.screens.paywall.PaywallSheet
 import app.kofipod.ui.theme.LocalKofipodColors
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
@@ -61,6 +68,8 @@ fun AppShell() {
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val bus: UiEventBus = koinInject()
+    val paywallRouter: PaywallRouter = koinInject()
+    val paywall by paywallRouter.state.collectAsState()
     val backupController: BackupController = koinInject()
     val snackbarHostState = remember { SnackbarHostState() }
     // First-composition pass: if the previous process exited via a restore confirm,
@@ -76,6 +85,32 @@ fun AppShell() {
                     // Replace any in-flight snackbar so back-to-back failures don't queue.
                     snackbarHostState.currentSnackbarData?.dismiss()
                     snackbarHostState.showSnackbar(message = event.message)
+                }
+            }
+        }
+    }
+    // PKM (Pro) export results. Copied → confirmation snackbar; Failed → error
+    // snackbar with the underlying message; Shared deliberately stays silent —
+    // the system share sheet is its own UI signal and a snackbar would just
+    // double up on confirmation.
+    val pkmCoordinator: PkmExportCoordinator = koinInject()
+    LaunchedEffect(pkmCoordinator) {
+        pkmCoordinator.results.collect { result ->
+            when (result) {
+                PkmExportResult.Copied -> {
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                    snackbarHostState.showSnackbar(message = "Copied to clipboard")
+                }
+                PkmExportResult.Shared -> {
+                    // No snackbar needed — the system share sheet is its own UI signal.
+                }
+                PkmExportResult.Exported -> {
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                    snackbarHostState.showSnackbar(message = "Exported successfully")
+                }
+                is PkmExportResult.Failed -> {
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                    snackbarHostState.showSnackbar(message = "Export failed: ${result.message}")
                 }
             }
         }
@@ -162,6 +197,26 @@ fun AppShell() {
     // screen triggered the import/export or backup pick. No-ops on iOS.
     OpmlPickerHost()
     BackupPickerHost()
+    // Bookmark quick-add sheet for the Pro feature. Self-gates on its own
+    // BookmarkComposerState — when Hidden, returns before composing.
+    BookmarkComposerSheet()
+    // PKM export sink picker for the Pro feature. Self-gates on
+    // PkmExportCoordinator.pendingRequest — when null, returns before composing.
+    ExportActionSheet(
+        coordinator = koinInject(),
+        connections = koinInject(),
+        onNavigateToConnections = { nav.navigate(Route.Connections) },
+    )
+    // Paywall lives at the shell level — a NavHost destination would render full-screen
+    // and leave a blank background behind the ModalBottomSheet. Hoisting here overlays
+    // the sheet on top of whichever screen triggered it.
+    val visible = paywall as? PaywallState.Visible
+    if (visible != null) {
+        PaywallSheet(
+            triggerKey = visible.triggerKey,
+            onDismiss = { paywallRouter.dismiss() },
+        )
+    }
 
     // First-launch disclosure: gates all diagnostic sends until the user
     // taps "Got it" or "Open Settings". `initial = true` is load-bearing —

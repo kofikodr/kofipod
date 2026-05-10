@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -34,11 +35,18 @@ import kotlin.math.roundToInt
 fun PlayerScreen(
     onBack: () -> Unit,
     onOpenPodcast: (String) -> Unit,
+    onOpenSnippetEditor: (String) -> Unit,
     viewModel: PlayerViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
     val c = LocalKofipodColors.current
     val p = state.player
+    val ent by viewModel.entitlement.collectAsState()
+    val tipDismissed by viewModel.isProTipDismissed.collectAsState()
+
+    LaunchedEffect(viewModel) {
+        viewModel.snippetEditorRoute.collect { id -> onOpenSnippetEditor(id) }
+    }
 
     val scope = rememberCoroutineScope()
     val dragOffset = remember { Animatable(0f) }
@@ -136,13 +144,24 @@ fun PlayerScreen(
             onNext = viewModel::next,
         )
         Spacer(Modifier.height(20.dp))
-        PlayerBottomBar(
+        PlayerActionStrip(
+            entitlement = ent,
             speed = p.speed,
-            isPlaying = p.isPlaying,
             sleepRemainingMs = p.sleepRemainingMs,
-            audioLevels = viewModel.audioLevels,
+            onSnipTapped = viewModel::onSnipTapped,
+            onBookmarkTapped = viewModel::onBookmarkTapped,
             onCycleSpeed = viewModel::cycleSpeed,
             onSetSleep = viewModel::setSleepTimer,
+        )
+        Spacer(Modifier.height(12.dp))
+        PlayerProTipBanner(
+            visible = !tipDismissed,
+            onDismiss = viewModel::dismissProTip,
+        )
+        Spacer(Modifier.height(20.dp))
+        PlayerVisualizerStrip(
+            isPlaying = p.isPlaying,
+            audioLevels = viewModel.audioLevels,
         )
         Spacer(Modifier.height(32.dp))
     }

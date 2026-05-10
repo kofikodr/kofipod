@@ -8,8 +8,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import app.kofipod.background.Notifier
+import app.kofipod.ui.ActivityHolder
 import app.kofipod.ui.nav.DeepLinks
 import app.kofipod.ui.theme.ThemeSystem
+import org.koin.android.ext.android.inject
 
 const val EXTRA_OPEN_PLAYER = "app.kofipod.extra.OPEN_PLAYER"
 const val EXTRA_OPEN_EPISODE_ID = "app.kofipod.extra.OPEN_EPISODE_ID"
@@ -18,6 +20,8 @@ const val EXTRA_OPEN_LIBRARY = "app.kofipod.extra.OPEN_LIBRARY"
 private const val TABLET_SW_DP = 600
 
 class MainActivity : ComponentActivity() {
+    private val activityHolder: ActivityHolder by inject()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Phones lock to portrait; tablets (sw >= 600dp) stay unspecified so the OS can rotate.
         // Set before super.onCreate so there's no brief landscape flash on first draw.
@@ -31,6 +35,16 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         handleDeepLink(intent)
         setContent { App() }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        activityHolder.set(this)
+    }
+
+    override fun onPause() {
+        activityHolder.set(null)
+        super.onPause()
     }
 
     override fun onStop() {

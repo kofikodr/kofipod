@@ -26,6 +26,9 @@
       onto another phone would expose the user's quota to a device they no
       longer control. The user re-pastes their key on the new device if
       they want AI features there.
+    * `kofipod_entitlement` — last verified Pro entitlement reading. Excluded
+      so a device clone / restore cannot resurrect a stale "Pro" state. Real
+      entitlement re-verifies via Play Billing on every cold start.
 -->
 <data-extraction-rules>
     <cloud-backup>
@@ -33,11 +36,13 @@
         <include domain="sharedpref" path="." />
         <exclude domain="sharedpref" path="kofipod_local.xml" />
         <exclude domain="sharedpref" path="kofipod_secure.xml" />
+        <exclude domain="sharedpref" path="kofipod_entitlement.xml" />
     </cloud-backup>
     <device-transfer>
         <include domain="database" path="." />
         <include domain="sharedpref" path="." />
         <exclude domain="sharedpref" path="kofipod_local.xml" />
         <exclude domain="sharedpref" path="kofipod_secure.xml" />
+        <exclude domain="sharedpref" path="kofipod_entitlement.xml" />
     </device-transfer>
 </data-extraction-rules>

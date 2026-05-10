@@ -1,0 +1,30 @@
+-- Slice 6 (Pro PKM): one row per (item, destination) export attempt. Acts as
+-- both an idempotency ledger (skip re-export of the same item to the same
+-- destination) and a retry queue (status IN ('queued','failed')).
+CREATE TABLE ExportLog (
+    itemKind TEXT NOT NULL,
+    itemId TEXT NOT NULL,
+    destinationKind TEXT NOT NULL,
+    externalId TEXT,
+    exportedAt INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    errorMessage TEXT,
+    PRIMARY KEY (itemKind, itemId, destinationKind)
+);
+
+CREATE INDEX ExportLog_status_idx ON ExportLog(status);
+
+selectByKey:
+SELECT * FROM ExportLog
+WHERE itemKind = :itemKind AND itemId = :itemId AND destinationKind = :destinationKind
+LIMIT 1;
+
+selectQueuedOrFailed:
+SELECT * FROM ExportLog WHERE status IN ('queued', 'failed');
+
+upsert:
+INSERT OR REPLACE INTO ExportLog(itemKind, itemId, destinationKind, externalId, exportedAt, status, errorMessage)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+deleteByItem:
+DELETE FROM ExportLog WHERE itemKind = :itemKind AND itemId = :itemId;

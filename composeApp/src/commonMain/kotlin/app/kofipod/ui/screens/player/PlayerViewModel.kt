@@ -3,6 +3,7 @@ package app.kofipod.ui.screens.player
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.kofipod.bookmarks.BookmarkComposer
 import app.kofipod.data.repo.DownloadRepository
 import app.kofipod.data.repo.EpisodeSource
 import app.kofipod.data.repo.PlaybackRepository
@@ -11,9 +12,15 @@ import app.kofipod.db.Episode
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.playback.PlayableEpisode
 import app.kofipod.playback.PlayerState
+import app.kofipod.pro.PaywallRouter
+import app.kofipod.pro.ProEntitlement
+import app.kofipod.pro.ProEntitlementRepository
 import app.kofipod.share.Sharer
+import app.kofipod.snippets.SnippetRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -41,10 +48,30 @@ class PlayerViewModel(
     private val settings: SettingsRepository,
     private val sharer: Sharer,
     private val downloads: DownloadRepository,
+    private val pro: ProEntitlementRepository,
+    private val paywallRouter: PaywallRouter,
+    private val bookmarks: BookmarkComposer,
+    private val snippets: SnippetRepository,
 ) : ViewModel() {
     private val toast = MutableStateFlow<String?>(null)
 
     val audioLevels: StateFlow<FloatArray> = player.audioLevels
+
+    /**
+     * Current Pro entitlement state delegated from [ProEntitlementRepository]. Collected by
+     * [PlayerActionStrip] to conditionally render the PRO badge on each chip.
+     */
+    val entitlement: StateFlow<ProEntitlement> = pro.state
+
+    /**
+     * True once the user has dismissed the NEW coachmark banner at least once.
+     * Defaults to `true` (dismissed) until the first DB read resolves, to prevent
+     * a banner flash on cold start before the preference is known.
+     */
+    val isProTipDismissed: StateFlow<Boolean> =
+        settings.proTipDismissedAt()
+            .map { it != null }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private val episodesForCurrent: StateFlow<List<Episode>> =
@@ -164,6 +191,79 @@ class PlayerViewModel(
 
     fun dismissToast() {
         toast.value = null
+    }
+
+    /**
+     * Pro users get a quick-add composer pre-filled with the current player
+     * position and episode metadata. Free / Unknown users get routed to the
+     * Paywall sheet via [PaywallRouter]. The composer is hoisted at AppShell
+     * (see [BookmarkComposer] KDoc) so navigation away from the player does
+     * not dismiss it.
+     */
+    fun onBookmarkTapped() {
+        when (pro.state.value) {
+            is ProEntitlement.Pro -> {
+                val p = state.value.player
+                val episodeId = p.episodeId ?: return
+                if (p.podcastId.isBlank()) return
+                bookmarks.requestQuickAdd(
+                    episodeId = episodeId,
+                    podcastId = p.podcastId,
+                    episodeTitle = p.title,
+                    podcastTitle = p.podcastTitle,
+                    timestampMs = p.positionMs,
+                )
+            }
+            ProEntitlement.Free,
+            ProEntitlement.Unknown,
+            -> paywallRouter.requestPaywall("paywall_bookmark")
+        }
+    }
+
+    /**
+     * One-shot navigation channel for the freshly-created snippet draft id.
+     * `extraBufferCapacity = 1` keeps `tryEmit` non-suspending while still
+     * dropping repeat taps that fire before [PlayerScreen] collects.
+     */
+    private val _snippetEditorRoute = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val snippetEditorRoute: SharedFlow<String> = _snippetEditorRoute
+
+    /**
+     * Pro-gated. On Pro: build a "snip last 60s" draft via [SnippetRepository]
+     * and emit the new draft id so [PlayerScreen] can navigate to the editor.
+     * On Free / Unknown: open the paywall sheet via [PaywallRouter].
+     */
+    fun onSnipTapped() {
+        when (pro.state.value) {
+            is ProEntitlement.Pro -> {
+                val p = state.value.player
+                val episodeId = p.episodeId ?: return
+                if (p.podcastId.isBlank()) return
+                viewModelScope.launch {
+                    val id =
+                        snippets.createDraftFromPlayer(
+                            episodeId = episodeId,
+                            podcastId = p.podcastId,
+                            playerPositionMs = p.positionMs,
+                            episodeDurationMs = p.durationMs,
+                            episodeTitle = p.title,
+                            nowMs = Clock.System.now().toEpochMilliseconds(),
+                        )
+                    _snippetEditorRoute.tryEmit(id)
+                }
+            }
+            ProEntitlement.Free,
+            ProEntitlement.Unknown,
+            -> paywallRouter.requestPaywall("paywall_snippet")
+        }
+    }
+
+    /**
+     * Persists the current epoch-ms as the dismissal timestamp so the NEW coachmark
+     * is never shown again on this device.
+     */
+    fun dismissProTip() {
+        settings.setProTipDismissedAt(Clock.System.now().toEpochMilliseconds())
     }
 
     private fun flashToast(message: String) {

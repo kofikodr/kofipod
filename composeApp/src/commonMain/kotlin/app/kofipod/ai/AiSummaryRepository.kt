@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.update
@@ -133,6 +134,14 @@ class AiSummaryRepository(
             .asFlow()
             .mapToOneOrNull(Dispatchers.Default)
             .map { row -> row?.toDomain() }
+
+    /**
+     * One-shot read of the cached summary. Returns null if no cached row exists.
+     *
+     * Used by [PkmExportCoordinator] to resolve the summary without subscribing
+     * to the [cachedFor] flow.
+     */
+    suspend fun cachedNow(episodeId: String): AiSummary? = cachedFor(episodeId).firstOrNull()
 
     fun observeFor(episodeId: String): Flow<AiSummaryUiState> {
         val cachedFlow: Flow<DbEpisodeAiSummary?> =
@@ -329,6 +338,11 @@ class AiSummaryRepository(
         jobs.joinAll()
         withContext(ioContext) {
             db.episodeAiSummaryQueries.deleteAll()
+            // Transcripts only land in the cache because the AI pipeline fetched
+            // them; on Disconnect they're part of the AI footprint and must go too.
+            // The AFTER DELETE trigger on TranscriptCache wipes the FTS index rows
+            // automatically — no separate FTS delete needed here.
+            db.transcriptCacheQueries.deleteAll()
             // Disconnect must also wipe pending markers; otherwise the
             // worker would resume a request the user has explicitly opted
             // out of, against a vault that no longer holds a key. We delete
@@ -440,6 +454,16 @@ class AiSummaryRepository(
                 return
             }
         setStage(episodeId, GenerationStage.Formatting, sizeBytes = null)
+        // Persist transcript text opportunistically for FTS-backed Library search.
+        // The text is already in memory from step 3; writing it here costs only
+        // the disk write. We cache BEFORE the disconnect guard because transcript
+        // content is publisher data — it remains useful for search even if the
+        // user's Gemini key has since been revoked.
+        db.transcriptCacheQueries.upsert(
+            episodeId = episodeId,
+            text = transcriptText,
+            fetchedAtMs = clock.now().toEpochMilliseconds(),
+        )
 
         if (aiConfig.currentKey().isNullOrBlank()) {
             // Defence in depth: if the user disconnected during the network

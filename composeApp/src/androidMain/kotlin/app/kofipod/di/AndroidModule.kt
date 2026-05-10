@@ -5,8 +5,10 @@ import app.kofipod.ai.AndroidKeyVault
 import app.kofipod.ai.KeyVault
 import app.kofipod.background.AiSummaryScheduler
 import app.kofipod.background.AndroidAiSummaryScheduler
+import app.kofipod.background.AndroidPkmExportScheduler
 import app.kofipod.background.BackupScheduler
 import app.kofipod.background.Notifier
+import app.kofipod.background.PkmExportScheduler
 import app.kofipod.background.Scheduler
 import app.kofipod.backup.AndroidBackupFilePort
 import app.kofipod.backup.AndroidBackupFolderStore
@@ -31,7 +33,14 @@ import app.kofipod.opml.AndroidOpmlFilePort
 import app.kofipod.opml.OpmlFilePort
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.playback.PlaybackCache
+import app.kofipod.pro.AndroidEntitlementCache
+import app.kofipod.pro.EntitlementCache
 import app.kofipod.share.Sharer
+import app.kofipod.snippets.FileChecker
+import app.kofipod.snippets.PcmDecoder
+import app.kofipod.snippets.SnippetExporter
+import app.kofipod.snippets.SnippetRenderLauncher
+import app.kofipod.ui.ActivityHolder
 import app.kofipod.ui.palette.AndroidPalettePort
 import app.kofipod.ui.palette.PalettePort
 import app.kofipod.ui.screens.settings.AndroidUpdateActionPort
@@ -62,8 +71,36 @@ val androidPlatformModule =
         single { Scheduler(androidContext()) }
         single { BackupScheduler(androidContext()) }
         single<AiSummaryScheduler> { AndroidAiSummaryScheduler(androidContext()) }
+        single<PkmExportScheduler> { AndroidPkmExportScheduler(androidContext()) }
         single { Notifier(androidContext()) }
         single { Sharer(androidContext()) }
+        // Snippets (Slice 3) — Context-bound bindings live alongside Sharer because
+        // they need an Android Context for FileProvider, MediaCodec, and the
+        // foreground service launcher.
+        single { FileChecker() }
+        // Resolver injects the FileCheckerApi interface (commonMain), so Koin
+        // needs an explicit binding mapping the interface to the actual.
+        // Without this, SnippetRenderService crashes at first render with
+        // NoDefinitionFoundException for FileCheckerApi.
+        single<app.kofipod.snippets.FileCheckerApi> { get<FileChecker>() }
+        // PcmDecoder backs the snippet MP4 audio-reactive bars overlay (per-frame
+        // RMS comes from the source audio, not synthetic wiggle). Bound here as
+        // the Android-only actual; iOS gets a NotImplementedError stub.
+        single { PcmDecoder(androidContext()) }
+        single { SnippetExporter(androidContext(), get()) }
+        single { SnippetRenderLauncher(androidContext()) }
+        // PKM (Slice 5 + 6) — platform ports and connection vault.
+        // ClipboardPort and MarkdownTempFilePort are concrete-only `actual class`es
+        // (no expect class interface), so a single binding each is sufficient.
+        // OAuthTokenVaultImpl is the Android actual (EncryptedSharedPreferences); iOS
+        // actual is a no-op in-memory stub. Bound as the interface so commonMain
+        // callers (PkmConnectionRepository) resolve it without platform knowledge.
+        single { app.kofipod.pkm.ClipboardPort(androidContext()) }
+        single { app.kofipod.pkm.MarkdownTempFilePort(androidContext()) }
+        single<app.kofipod.pkm.connections.OAuthTokenVault> {
+            app.kofipod.pkm.connections.OAuthTokenVaultImpl(androidContext())
+        }
+        single { app.kofipod.pkm.sinks.ObsidianFolderWriterImpl(androidContext()) }
         single { ThemeSystem(androidContext()) }
         single<PalettePort> { AndroidPalettePort(androidContext()) }
         single<LocalApkPathStore> { AndroidLocalApkPathStore(androidContext()) }
@@ -71,6 +108,8 @@ val androidPlatformModule =
         single { UpdateInstaller(context = androidContext(), httpClient = get(), repo = get()) }
         single<UpdateActionPort> { AndroidUpdateActionPort(installer = get()) }
         single<KeyVault> { AndroidKeyVault(androidContext()) }
+        single<EntitlementCache> { AndroidEntitlementCache(androidContext()) }
+        single { ActivityHolder() }
         single<DiagnosticsConfigRepository> { AndroidDiagnosticsConfigRepository(androidContext()) }
         single<CrashReporter> { AndroidCrashReporter() }
         single<Telemetry> { AndroidTelemetry(androidContext()) }

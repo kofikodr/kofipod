@@ -6,4 +6,11 @@ expect class Sharer {
         title: String,
         text: String,
     )
+
+    fun shareFile(
+        title: String,
+        path: String,
+        mimeType: String,
+        captionText: String? = null,
+    )
 }

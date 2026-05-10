@@ -21,6 +21,9 @@ import app.kofipod.diagnostics.DiagnosticsConfigRepository
 import app.kofipod.opml.OpmlAction
 import app.kofipod.opml.OpmlController
 import app.kofipod.playback.PlaybackCache
+import app.kofipod.pro.PaywallRouter
+import app.kofipod.pro.ProEntitlement
+import app.kofipod.pro.ProEntitlementRepository
 import app.kofipod.ui.UiEvent
 import app.kofipod.ui.UiEventBus
 import app.kofipod.ui.theme.KofipodThemeMode
@@ -66,6 +69,8 @@ data class SettingsUiState(
     val aiConnected: Boolean = false,
     val aiModel: GeminiModel = GeminiModel.Flash,
     val opmlAction: OpmlAction = OpmlAction.Idle,
+    val proEntitlement: ProEntitlement = ProEntitlement.Unknown,
+    val restoreInFlight: Boolean = false,
     val backupAction: BackupAction = BackupAction.Idle,
     val backupFolderUri: String? = null,
     val backupFolderName: String? = null,
@@ -88,6 +93,8 @@ class SettingsViewModel(
     private val aiConfig: AiConfigRepository,
     private val errors: NetworkErrorHandler,
     private val opml: OpmlController,
+    private val pro: ProEntitlementRepository,
+    private val paywallRouter: PaywallRouter,
     private val backup: BackupController,
     private val folderStore: BackupFolderStore,
     private val diagnostics: DiagnosticsConfigRepository,
@@ -106,6 +113,7 @@ class SettingsViewModel(
             }
         }
 
+    private val purchaseRestoreInFlight = MutableStateFlow(false)
     private val updateActionFlow = MutableStateFlow<UpdateAction>(UpdateAction.Idle)
 
     val state: StateFlow<SettingsUiState> =
@@ -163,7 +171,13 @@ class SettingsViewModel(
             ) { crashes, usage, ack ->
                 DiagnosticsState(crashes, usage, ack)
             },
-        ) { base, aiOpml, backupSlice, diag ->
+            combine(
+                pro.state,
+                purchaseRestoreInFlight,
+            ) { entitlement, restoring ->
+                ProSettingsBlock(entitlement, restoring)
+            },
+        ) { base, aiOpml, backupSlice, diag, proBlock ->
             base.copy(
                 update = aiOpml.updateState,
                 updateAction = aiOpml.action,
@@ -178,6 +192,8 @@ class SettingsViewModel(
                 crashesEnabled = diag.crashesEnabled,
                 usageEnabled = diag.usageEnabled,
                 disclosureAcknowledged = diag.disclosureAcknowledged,
+                proEntitlement = proBlock.entitlement,
+                restoreInFlight = proBlock.restoreInFlight,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -247,6 +263,20 @@ class SettingsViewModel(
     fun importOpml() = opml.importOpml()
 
     fun exportOpml() = opml.exportOpml()
+
+    fun openPaywall() = paywallRouter.requestPaywall("paywall_settings")
+
+    fun tapConnections(onPro: () -> Unit) {
+        if (pro.state.value is ProEntitlement.Pro) onPro() else paywallRouter.requestPaywall("paywall_connections")
+    }
+
+    fun restorePurchase() {
+        viewModelScope.launch {
+            purchaseRestoreInFlight.value = true
+            pro.restorePurchases()
+            purchaseRestoreInFlight.value = false
+        }
+    }
 
     fun chooseBackupFolder() = backup.chooseFolder()
 
@@ -360,4 +390,9 @@ private data class DiagnosticsState(
     val crashesEnabled: Boolean,
     val usageEnabled: Boolean,
     val disclosureAcknowledged: Boolean,
+)
+
+private data class ProSettingsBlock(
+    val entitlement: ProEntitlement,
+    val restoreInFlight: Boolean,
 )

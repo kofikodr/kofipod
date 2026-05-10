@@ -4,6 +4,7 @@ package app.kofipod.ui.screens.detail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.kofipod.ai.AiConfigRepository
+import app.kofipod.bookmarks.BookmarkRepository
 import app.kofipod.data.repo.ChaptersRepository
 import app.kofipod.data.repo.DownloadRepository
 import app.kofipod.data.repo.EpisodeSource
@@ -16,9 +17,16 @@ import app.kofipod.db.PlaybackState
 import app.kofipod.db.Podcast
 import app.kofipod.downloads.DownloadJob
 import app.kofipod.downloads.downloadFileName
+import app.kofipod.pkm.PkmExportCoordinator
+import app.kofipod.pkm.PkmExportRequest
 import app.kofipod.playback.KofipodPlayer
 import app.kofipod.playback.PlayableEpisode
+import app.kofipod.pro.PaywallRouter
+import app.kofipod.pro.ProEntitlement
+import app.kofipod.pro.ProEntitlementRepository
 import app.kofipod.share.Sharer
+import app.kofipod.snippets.FileSizer
+import app.kofipod.snippets.SnippetRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -59,6 +67,12 @@ class EpisodeDetailViewModel(
     private val sharer: Sharer,
     private val chapters: ChaptersRepository,
     aiConfig: AiConfigRepository,
+    private val bookmarkRepo: BookmarkRepository,
+    private val snippetRepo: SnippetRepository,
+    private val fileSizer: FileSizer,
+    private val pkmExport: PkmExportCoordinator,
+    private val paywallRouter: PaywallRouter,
+    private val pro: ProEntitlementRepository,
 ) : ViewModel() {
     private val error = MutableStateFlow<String?>(null)
 
@@ -118,6 +132,33 @@ class EpisodeDetailViewModel(
                 summaryEnabled = summaryEnabled,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EpisodeDetailUiState())
+
+    /**
+     * Per-episode "Saved" list — bookmarks (Slice 1) and snippets (Slice 3) merged into
+     * one newest-first stream. UI switches on [SavedItem] to render each variant.
+     */
+    val saved: StateFlow<List<SavedItem>> =
+        combine(
+            bookmarkRepo.observeForEpisode(episodeId),
+            snippetRepo.observeForEpisode(episodeId),
+        ) { bms, sns ->
+            // fileSizer.sizeOf calls File.length() — a single inode lookup against
+            // the snippet's path under cacheDir/snippets/ (a few microseconds on
+            // internal SSD storage). The combine transform already runs on the
+            // upstream's emission dispatcher (typically IO from the SQLDelight
+            // flows), so no extra dispatcher switching is needed.
+            val snippetItems =
+                sns.map { snippet ->
+                    val sizeBytes =
+                        snippet.lastExportPath
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { fileSizer.sizeOf(it) }
+                            ?: 0L
+                    SavedItem.SnippetItem(snippet, sizeBytes)
+                }
+            (bms.map(SavedItem::BookmarkItem) + snippetItems)
+                .sortedByDescending { it.createdAtMs }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun togglePlay() {
         val s = state.value
@@ -215,6 +256,58 @@ class EpisodeDetailViewModel(
                     episodeNumber = ep.episodeNumber?.toInt(),
                 ),
             )
+        }
+    }
+
+    /**
+     * Seek-or-play behaviour matches [seekToChapter]; bookmarks and chapters share semantics.
+     */
+    fun seekToBookmark(timestampMs: Long) = seekToChapter(timestampMs)
+
+    fun deleteBookmark(id: String) = bookmarkRepo.deleteById(id)
+
+    fun deleteSnippet(id: String) = snippetRepo.deleteById(id)
+
+    /**
+     * Pro-gated. On Pro: open the markdown export sheet for [snippetId].
+     * On Free / Unknown: open the paywall sheet via [PaywallRouter].
+     */
+    fun onSnippetExportRequested(snippetId: String) {
+        when (pro.state.value) {
+            is ProEntitlement.Pro -> pkmExport.show(PkmExportRequest.Snippet(snippetId))
+            ProEntitlement.Free,
+            ProEntitlement.Unknown,
+            -> paywallRouter.requestPaywall("paywall_pkm_export_snippet")
+        }
+    }
+
+    /**
+     * Pro-gated. On Pro: open the markdown export sheet for [bookmarkId].
+     * On Free / Unknown: open the paywall sheet.
+     */
+    fun onBookmarkExportRequested(bookmarkId: String) {
+        when (pro.state.value) {
+            is ProEntitlement.Pro -> pkmExport.show(PkmExportRequest.Bookmark(bookmarkId))
+            ProEntitlement.Free,
+            ProEntitlement.Unknown,
+            -> paywallRouter.requestPaywall("paywall_pkm_export_bookmark")
+        }
+    }
+
+    /**
+     * Pro-gated. On Pro: open the markdown export sheet for the AI summary
+     * cached for this episode. Caller is responsible for only invoking this
+     * when the summary state is Ready (the SummaryCard shows the affordance
+     * conditionally on Ready).
+     *
+     * On Free / Unknown: open the paywall sheet.
+     */
+    fun onAiSummaryExportRequested() {
+        when (pro.state.value) {
+            is ProEntitlement.Pro -> pkmExport.show(PkmExportRequest.AiSummary(episodeId))
+            ProEntitlement.Free,
+            ProEntitlement.Unknown,
+            -> paywallRouter.requestPaywall("paywall_pkm_export_summary")
         }
     }
 

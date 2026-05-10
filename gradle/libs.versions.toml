@@ -12,6 +12,7 @@ androidxPalette = "1.0.0"
 androidxSecurityCrypto = "1.1.0-alpha06"
 androidxDocumentFile = "1.0.1"
 googleIdentity = "1.1.1"
+googlePlayBilling = "8.0.0"
 coil = "3.0.4"
 ktor = "3.0.3"
 sqldelight = "2.0.2"
@@ -26,6 +27,7 @@ junit = "4.13.2"
 podcastindex = "0.4.0"
 ktlintGradle = "12.1.2"
 detekt = "1.23.8"
+requery-sqlite = "3.49.0"
 sentryKmp = "0.15.0"
 sentryAndroidGradle = "6.6.0"
 aptabase = "0.0.8"
@@ -40,6 +42,8 @@ androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", versi
 androidx-media3-session = { module = "androidx.media3:media3-session", version.ref = "androidxMedia3" }
 androidx-media3-datasource = { module = "androidx.media3:media3-datasource", version.ref = "androidxMedia3" }
 androidx-media3-database = { module = "androidx.media3:media3-database", version.ref = "androidxMedia3" }
+androidx-media3-transformer = { module = "androidx.media3:media3-transformer", version.ref = "androidxMedia3" }
+androidx-media3-effect = { module = "androidx.media3:media3-effect", version.ref = "androidxMedia3" }
 androidx-work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "androidxWork" }
 androidx-credentials = { module = "androidx.credentials:credentials", version.ref = "androidxCredentials" }
 androidx-credentials-play-services-auth = { module = "androidx.credentials:credentials-play-services-auth", version.ref = "androidxCredentials" }
@@ -47,6 +51,7 @@ androidx-palette = { module = "androidx.palette:palette-ktx", version.ref = "and
 androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "androidxSecurityCrypto" }
 androidx-documentfile = { module = "androidx.documentfile:documentfile", version.ref = "androidxDocumentFile" }
 google-identity = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleIdentity" }
+google-play-billing = { module = "com.android.billingclient:billing-ktx", version.ref = "googlePlayBilling" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-ktor = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
@@ -59,6 +64,7 @@ sqldelight-android-driver = { module = "app.cash.sqldelight:android-driver", ver
 sqldelight-native-driver = { module = "app.cash.sqldelight:native-driver", version.ref = "sqldelight" }
 sqldelight-sqlite-driver = { module = "app.cash.sqldelight:sqlite-driver", version.ref = "sqldelight" }
 sqldelight-coroutines-extensions = { module = "app.cash.sqldelight:coroutines-extensions", version.ref = "sqldelight" }
+sqldelight-sqlite-3-24-dialect = { module = "app.cash.sqldelight:sqlite-3-24-dialect", version.ref = "sqldelight" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "datetime" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
@@ -69,6 +75,7 @@ koin-compose-viewmodel = { module = "io.insert-koin:koin-compose-viewmodel", ver
 podcastindex-sdk = { module = "io.github.mr3y-the-programmer:podcastindex-sdk-ktor3", version.ref = "podcastindex" }
 sentry-kmp = { module = "io.sentry:sentry-kotlin-multiplatform", version.ref = "sentryKmp" }
 aptabase = { module = "com.github.aptabase:aptabase-kotlin", version.ref = "aptabase" }
+requery-sqlite-android = { module = "com.github.requery:sqlite-android", version.ref = "requery-sqlite" }
 junit = { module = "junit:junit", version.ref = "junit" }
 
 [plugins]

@@ -1,0 +1,21 @@
+-- Slice 3 (Pro Snippets MVP): introduce Snippet table for per-episode clip
+-- drafts. No backfill — table is brand new. Bookmark and TranscriptCache
+-- from earlier slices are untouched.
+CREATE TABLE Snippet (
+    id                TEXT NOT NULL PRIMARY KEY,
+    episodeId         TEXT NOT NULL,
+    podcastId         TEXT NOT NULL,
+    startMs           INTEGER NOT NULL,
+    endMs             INTEGER NOT NULL,
+    title             TEXT,
+    captionOverride   TEXT,
+    createdAtMs       INTEGER NOT NULL,
+    lastExportFormat  TEXT,
+    lastExportPath    TEXT,
+    FOREIGN KEY (episodeId) REFERENCES Episode(id) ON DELETE CASCADE,
+    FOREIGN KEY (podcastId) REFERENCES Podcast(id) ON DELETE CASCADE
+);
+
+CREATE INDEX snippet_byEpisode  ON Snippet(episodeId, startMs);
+CREATE INDEX snippet_byPodcast  ON Snippet(podcastId, createdAtMs);
+CREATE INDEX snippet_byCreated  ON Snippet(createdAtMs);

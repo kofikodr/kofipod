@@ -65,6 +65,7 @@ import app.kofipod.ui.primitives.SectionLabel
 import app.kofipod.ui.theme.LocalKofipodColors
 import app.kofipod.ui.theme.LocalKofipodRadii
 import org.koin.compose.viewmodel.koinViewModel
+import app.kofipod.playlists.SmartPlaylist as SmartPlaylistDomain
 
 @Composable
 fun LibraryScreen(
@@ -73,6 +74,10 @@ fun LibraryScreen(
     onOpenSearch: () -> Unit,
     onOpenStarterPack: () -> Unit,
     onOpenStats: () -> Unit,
+    onOpenBookmarks: () -> Unit,
+    onOpenLibrarySearch: () -> Unit,
+    onOpenSmartPlaylistEditor: (playlistId: String?) -> Unit,
+    onOpenSmartPlaylistDetail: (playlistId: String) -> Unit,
     viewModel: LibraryViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -81,6 +86,7 @@ fun LibraryScreen(
     var newListOpen by remember { mutableStateOf(false) }
     var pendingDeletePodcast by remember { mutableStateOf<Podcast?>(null) }
     var pendingDeleteList by remember { mutableStateOf<PodcastList?>(null) }
+    var pendingDeleteSmartPlaylist by remember { mutableStateOf<SmartPlaylistDomain?>(null) }
 
     val lists: List<PodcastList> = state.groups.mapNotNull { it.list }
     val podcasts: List<Podcast> = state.groups.flatMap { it.podcasts }
@@ -106,6 +112,13 @@ fun LibraryScreen(
             lists.forEach { add(Tile.OfList(it)) }
             if (unfiledPodcasts.isNotEmpty()) add(Tile.Unfiled(unfiledPodcasts))
             if (lists.isEmpty()) add(Tile.NewList)
+            // Smart Playlists rendered after the list/unfiled tiles so the user's own
+            // folder organization stays the primary visual anchor; the "+ New playlist"
+            // CTA only shows once any folder or playlist exists, mirroring NewListTile.
+            state.smartPlaylists.forEach { add(Tile.SmartPlaylist(it.playlist, it.matchedCount)) }
+            if (state.smartPlaylists.isNotEmpty() || state.groups.isNotEmpty()) {
+                add(Tile.NewSmartPlaylist)
+            }
         }
 
     LazyColumn(
@@ -118,6 +131,17 @@ fun LibraryScreen(
                 onNewList = { newListOpen = true },
                 onOpenStats = onOpenStats,
                 statsHasBadge = state.statsHasUnseenTierChange,
+                onOpenBookmarks = {
+                    if (viewModel.onBookmarksTapped()) onOpenBookmarks()
+                },
+            )
+        }
+
+        item {
+            LibrarySearchEntry(
+                onTap = {
+                    if (viewModel.onLibrarySearchTapped()) onOpenLibrarySearch()
+                },
             )
         }
 
@@ -150,6 +174,13 @@ fun LibraryScreen(
                         onOpenList = onOpenList,
                         onLongPressList = { pendingDeleteList = it },
                         onCreateList = { newListOpen = true },
+                        onOpenSmartPlaylistDetail = { id ->
+                            if (viewModel.onSmartPlaylistTapped()) onOpenSmartPlaylistDetail(id)
+                        },
+                        onLongPressSmartPlaylist = { pendingDeleteSmartPlaylist = it },
+                        onCreateSmartPlaylist = {
+                            if (viewModel.onCreateSmartPlaylistTapped()) onOpenSmartPlaylistEditor(null)
+                        },
                     )
                     TileSlot(
                         modifier = Modifier.weight(1f),
@@ -160,6 +191,13 @@ fun LibraryScreen(
                         onOpenList = onOpenList,
                         onLongPressList = { pendingDeleteList = it },
                         onCreateList = { newListOpen = true },
+                        onOpenSmartPlaylistDetail = { id ->
+                            if (viewModel.onSmartPlaylistTapped()) onOpenSmartPlaylistDetail(id)
+                        },
+                        onLongPressSmartPlaylist = { pendingDeleteSmartPlaylist = it },
+                        onCreateSmartPlaylist = {
+                            if (viewModel.onCreateSmartPlaylistTapped()) onOpenSmartPlaylistEditor(null)
+                        },
                     )
                 }
             }
@@ -225,6 +263,19 @@ fun LibraryScreen(
             onDismiss = { pendingDeleteList = null },
         )
     }
+
+    pendingDeleteSmartPlaylist?.let { pl ->
+        ConfirmDialog(
+            title = "Delete playlist?",
+            message = "\"${pl.name}\" will be removed. Episodes themselves are not affected.",
+            confirmLabel = "Delete",
+            onConfirm = {
+                viewModel.deleteSmartPlaylist(pl.id)
+                pendingDeleteSmartPlaylist = null
+            },
+            onDismiss = { pendingDeleteSmartPlaylist = null },
+        )
+    }
 }
 
 private sealed interface Tile {
@@ -233,6 +284,35 @@ private sealed interface Tile {
     data class Unfiled(val podcasts: List<Podcast>) : Tile
 
     data object NewList : Tile
+
+    data class SmartPlaylist(val playlist: SmartPlaylistDomain, val matchedCount: Int) : Tile
+
+    data object NewSmartPlaylist : Tile
+}
+
+@Composable
+private fun LibrarySearchEntry(onTap: () -> Unit) {
+    val c = LocalKofipodColors.current
+    val r = LocalKofipodRadii.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp, bottom = 4.dp)
+            .clip(RoundedCornerShape(r.md))
+            .background(c.surface)
+            .border(1.dp, c.border, RoundedCornerShape(r.md))
+            .clickable(onClick = onTap)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        KPIcon(name = KPIconName.Search, color = c.textMute, size = 18.dp)
+        Spacer(Modifier.width(10.dp))
+        Text(
+            "Search bookmarks, summaries, transcripts",
+            color = c.textMute,
+            fontSize = 14.sp,
+        )
+    }
 }
 
 @Composable
@@ -241,6 +321,7 @@ private fun LibraryHeader(
     onNewList: () -> Unit,
     onOpenStats: () -> Unit,
     statsHasBadge: Boolean,
+    onOpenBookmarks: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Row(
@@ -254,6 +335,21 @@ private fun LibraryHeader(
             fontSize = 32.sp,
             modifier = Modifier.weight(1f),
         )
+        Box(
+            Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(c.bgSubtle)
+                .clickable(onClick = onOpenBookmarks),
+            contentAlignment = Alignment.Center,
+        ) {
+            KPIcon(
+                name = KPIconName.Bookmark,
+                color = c.purple,
+                size = 20.dp,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
         Box(contentAlignment = Alignment.TopEnd) {
             Box(
                 Modifier
@@ -307,6 +403,9 @@ private fun TileSlot(
     onOpenList: (String?) -> Unit,
     onLongPressList: (PodcastList) -> Unit,
     onCreateList: () -> Unit,
+    onOpenSmartPlaylistDetail: (String) -> Unit,
+    onLongPressSmartPlaylist: (SmartPlaylistDomain) -> Unit,
+    onCreateSmartPlaylist: () -> Unit,
 ) {
     when (tile) {
         is Tile.OfList -> {
@@ -330,6 +429,15 @@ private fun TileSlot(
                 onClick = { onOpenList(null) },
             )
         Tile.NewList -> NewListTile(modifier = modifier, onClick = onCreateList)
+        is Tile.SmartPlaylist ->
+            SmartPlaylistTile(
+                modifier = modifier,
+                playlist = tile.playlist,
+                matchedCount = tile.matchedCount,
+                onClick = { onOpenSmartPlaylistDetail(tile.playlist.id) },
+                onLongClick = { onLongPressSmartPlaylist(tile.playlist) },
+            )
+        Tile.NewSmartPlaylist -> NewSmartPlaylistTile(modifier = modifier, onClick = onCreateSmartPlaylist)
         null -> Box(modifier = modifier.aspectRatio(1f)) // balances odd-count rows
     }
 }
@@ -619,6 +727,44 @@ private fun NewListTile(
             Spacer(Modifier.height(8.dp))
             Text(
                 "New list",
+                color = c.textSoft,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+            )
+        }
+    }
+}
+
+/**
+ * Dashed-border CTA tile mirroring [NewListTile] but labelled "New playlist" with the
+ * Sparkle glyph so it visually clusters with the populated [SmartPlaylistTile]s above.
+ */
+@Composable
+private fun NewSmartPlaylistTile(
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    val r = LocalKofipodRadii.current
+
+    Box(
+        modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(r.md))
+            .dashedBorder(color = c.borderStrong, cornerRadius = r.md)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            KPIcon(
+                name = KPIconName.Sparkle,
+                color = c.textSoft,
+                size = 26.dp,
+                strokeWidth = 2.2f,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "New playlist",
                 color = c.textSoft,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp,

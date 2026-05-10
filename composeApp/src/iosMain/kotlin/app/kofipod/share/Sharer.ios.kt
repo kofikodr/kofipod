@@ -8,4 +8,13 @@ actual class Sharer {
     ) {
         // TODO: present UIActivityViewController with [title, text]
     }
+
+    actual fun shareFile(
+        title: String,
+        path: String,
+        mimeType: String,
+        captionText: String?,
+    ) {
+        // iOS: not implemented in this slice.
+    }
 }

@@ -6,6 +6,8 @@ import app.kofipod.ai.KeyVault
 import app.kofipod.background.AiSummaryScheduler
 import app.kofipod.background.BackupScheduler
 import app.kofipod.background.IosAiSummaryScheduler
+import app.kofipod.background.IosPkmExportScheduler
+import app.kofipod.background.PkmExportScheduler
 import app.kofipod.backup.BackupFilePort
 import app.kofipod.backup.BackupFolderStore
 import app.kofipod.backup.DbFileBytes
@@ -22,6 +24,10 @@ import app.kofipod.network.IosNetworkMonitor
 import app.kofipod.network.NetworkMonitor
 import app.kofipod.opml.IosOpmlFilePort
 import app.kofipod.opml.OpmlFilePort
+import app.kofipod.pro.BillingClientPort
+import app.kofipod.pro.EntitlementCache
+import app.kofipod.pro.IosBillingClientPort
+import app.kofipod.pro.IosEntitlementCache
 import app.kofipod.ui.palette.IosPalettePort
 import app.kofipod.ui.palette.PalettePort
 import app.kofipod.ui.screens.settings.IosUpdateActionPort
@@ -44,7 +50,17 @@ val iosPlatformModule =
         single<LocalApkPathStore> { IosLocalApkPathStore() }
         single { UpdateChecker() }
         single<KeyVault> { IosKeyVaultStub() }
+        single<BillingClientPort> { IosBillingClientPort() }
+        single<EntitlementCache> { IosEntitlementCache() }
         single<AiSummaryScheduler> { IosAiSummaryScheduler() }
+        single<PkmExportScheduler> { IosPkmExportScheduler() }
+        // PKM (Slice 6) — iOS stubs to keep the Koin graph parity with Android.
+        // Obsidian / OAuth vault are non-functional on iOS in v1.0; the actuals
+        // throw / use an in-memory map respectively.
+        single<app.kofipod.pkm.connections.OAuthTokenVault> {
+            app.kofipod.pkm.connections.OAuthTokenVaultImpl()
+        }
+        single { app.kofipod.pkm.sinks.ObsidianFolderWriterImpl() }
         single { BackupScheduler() }
         single<OpmlFilePort> { IosOpmlFilePort() }
         single<BackupFilePort> { IosBackupFilePort() }
