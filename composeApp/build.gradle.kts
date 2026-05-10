@@ -1,4 +1,3 @@
-import com.codingfeline.buildkonfig.compiler.FieldSpec.Type.BOOLEAN
 import com.codingfeline.buildkonfig.compiler.FieldSpec.Type.INT
 import com.codingfeline.buildkonfig.compiler.FieldSpec.Type.STRING
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
@@ -172,6 +171,10 @@ android {
             // play flavor is the revenue product; no applicationIdSuffix so it
             // matches what's uploaded to Play Console.
             manifestPlaceholders["appLabel"] = "Kofipod"
+            // Play Store policy forbids self-updaters. Hard-coded here (not via
+            // local.properties) so the play AAB is incapable of ever offering
+            // a GitHub-Releases sideload install, regardless of build env.
+            buildConfigField("boolean", "UPDATER_ENABLED", "false")
         }
         create("foss") {
             dimension = "distribution"
@@ -181,6 +184,9 @@ android {
             applicationIdSuffix = ".foss"
             versionNameSuffix = "-foss"
             manifestPlaceholders["appLabel"] = "Kofipod (FOSS)"
+            // GitHub Releases is the primary distribution channel for foss;
+            // the in-app updater polls and offers the latest APK.
+            buildConfigField("boolean", "UPDATER_ENABLED", "true")
         }
     }
     compileOptions {
@@ -270,10 +276,8 @@ buildkonfig {
         buildConfigField(INT, "VERSION_CODE", appVersionCode.toString())
         buildConfigField(STRING, "SENTRY_DSN", readSecret("SENTRY_DSN"))
         buildConfigField(STRING, "APTABASE_APP_KEY", readSecret("APTABASE_APP_KEY"))
-        // Sideload-update channel (GitHub Releases). Default true for the GitHub
-        // build; flip to "false" via local.properties or env when packaging the
-        // Play Store flavor (Play forbids self-updaters).
-        buildConfigField(BOOLEAN, "UPDATER_ENABLED", readSecret("UPDATER_ENABLED").ifBlank { "true" })
+        // Sideload-update channel is now flavor-scoped via AGP buildConfigField
+        // in the play/foss product flavor blocks (see UpdaterCapability).
         // SHA-256 of the reviewer unlock code (lower-case hex, 64 chars). Empty
         // string disables the Settings → tap-version-7× unlock affordance.
         buildConfigField(STRING, "REVIEWER_UNLOCK_HASH", readSecret("REVIEWER_UNLOCK_HASH"))
