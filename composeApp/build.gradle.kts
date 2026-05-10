@@ -155,10 +155,10 @@ val keystoreProps = Properties().apply {
 }
 
 android {
-    namespace = "app.kofipod"
+    namespace = "com.kofikodr.kofipod"
     compileSdk = 35
     defaultConfig {
-        applicationId = "app.kofipod"
+        applicationId = "com.kofikodr.kofipod"
         minSdk = 26
         targetSdk = 35
         versionCode = appVersionCode
@@ -243,7 +243,7 @@ android {
 sqldelight {
     databases {
         create("KofipodDatabase") {
-            packageName.set("app.kofipod.db")
+            packageName.set("com.kofikodr.kofipod.db")
             // SQLite 3.24 dialect enables ON CONFLICT DO UPDATE (UPSERT syntax),
             // required for FTS5-compatible upserts in TranscriptCache and
             // EpisodeAiSummary. The default 3.18 dialect rejects this syntax.
@@ -261,7 +261,7 @@ fun readSecret(name: String): String {
 }
 
 buildkonfig {
-    packageName = "app.kofipod.config"
+    packageName = "com.kofikodr.kofipod.config"
     defaultConfigs {
         buildConfigField(STRING, "PODCAST_INDEX_KEY", readSecret("PODCAST_INDEX_KEY"))
         buildConfigField(STRING, "PODCAST_INDEX_SECRET", readSecret("PODCAST_INDEX_SECRET"))
@@ -274,6 +274,9 @@ buildkonfig {
         // build; flip to "false" via local.properties or env when packaging the
         // Play Store flavor (Play forbids self-updaters).
         buildConfigField(BOOLEAN, "UPDATER_ENABLED", readSecret("UPDATER_ENABLED").ifBlank { "true" })
+        // SHA-256 of the reviewer unlock code (lower-case hex, 64 chars). Empty
+        // string disables the Settings → tap-version-7× unlock affordance.
+        buildConfigField(STRING, "REVIEWER_UNLOCK_HASH", readSecret("REVIEWER_UNLOCK_HASH"))
     }
 }
 

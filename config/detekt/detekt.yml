@@ -46,6 +46,6 @@ style:
       - value: 'com.android.billingclient.**'
         reason: 'Play Billing is play-flavor-only. Scope to androidPlay/, never commonMain.'
       - value: 'io.sentry.**'
-        reason: 'Wrap behind app.kofipod.diagnostics expect/actual; do not import io.sentry.* from commonMain.'
+        reason: 'Wrap behind com.kofikodr.kofipod.diagnostics expect/actual; do not import io.sentry.* from commonMain.'
       - value: 'com.aptabase.**'
         reason: 'Android-only telemetry SDK. Scope to androidMain.'

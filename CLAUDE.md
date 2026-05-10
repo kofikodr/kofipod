@@ -4,7 +4,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Kofipod — a personal podcasting app built with Kotlin Multiplatform + Compose Multiplatform. Android is the primary target; iOS targets (`iosX64`, `iosArm64`, `iosSimulatorArm64`) compile but are not the focus. Single Gradle module: `:composeApp`. Package root: `app.kofipod`.
+Kofipod — a personal podcasting app built with Kotlin Multiplatform + Compose Multiplatform. Android is the primary target; iOS targets (`iosX64`, `iosArm64`, `iosSimulatorArm64`) compile but are not the focus. Single Gradle module: `:composeApp`. Package root: `com.kofikodr.kofipod`.
+
+### License & open-source posture
+
+Kofipod is **open source under GPL-3.0-or-later**. The public repository is at **https://github.com/kofikodr/kofipod**. New source files MUST start with `// SPDX-License-Identifier: GPL-3.0-or-later`.
+
+GPL-3.0 is **strong copyleft**: any code linked into the app — including transitive dependencies — must be license-compatible with GPL-3.0. When adding a dependency, check its license:
+
+- ✅ Compatible: GPL-3.0, LGPL-3.0, Apache-2.0, MIT, BSD (2/3-clause), MPL-2.0
+- ❌ Incompatible: Apache-1.x, GPL-2.0-only (without "or later"), proprietary/commercial-only, anything with a "no commercial use" or "no derivatives" clause, SSPL, BUSL
+- ⚠️ Case-by-case: anything not in the standard SPDX list — flag for human review before adding
+
+Do NOT add proprietary, source-available-but-non-libre, or "all-rights-reserved" code anywhere in the repo. The `foss` flavor is shipped to F-Droid-style distribution channels that audit for libre purity, so the bar is the same across `commonMain`, `androidMain`, `androidPlay`, and `androidFoss`.
+
+### Distribution flavors (`play` vs `foss`)
+
+The app ships in two product flavors, both built from this repo (see `flavorDimensions += "distribution"` in `composeApp/build.gradle.kts`):
+
+- **`play`** — Play Store revenue build. `applicationId = com.kofikodr.kofipod`, no suffix; this is what's uploaded to Play Console. Includes Play Billing (`androidPlay/`) for the Pro upgrade. App label: `Kofipod`.
+- **`foss`** — libre build, intended for F-Droid / sideload distribution. `applicationId = com.kofikodr.kofipod.foss` (suffix lets play and foss installs coexist on the same device for verification). `versionName` carries `-foss`. **Pro is unconditionally unlocked** and Play Billing is excluded — `androidFoss/` provides a no-op `BillingClientPort`. App label: `Kofipod (FOSS)`.
+
+Source-set rules:
+- Play Billing imports (`com.android.billingclient.*`) are **forbidden in `commonMain` and `androidFoss`** — detekt enforces this. They live only in `androidPlay/`.
+- Anything in `commonMain` or `androidMain` ships in **both** flavors, so it must be GPL-compatible and must not reach into Play Billing types directly.
+- Flavor-specific actuals/bindings (e.g., `BillingClientPort`) follow the expect/actual or interface-+-DI-binding pattern and are wired in the flavor-specific source set.
+
+When the user says "the app", default to discussing both flavors unless a Play-only feature (billing, Play Console listing) is in scope.
 
 ## Commands
 
@@ -14,7 +40,7 @@ All commands use the wrapper (`./gradlew`). Gradle is installed via SDKMAN (`~/.
 - Compile-only (fastest green check): `./gradlew :composeApp:compileDebugKotlinAndroid`
 - Install to attached device/emulator: `./gradlew :composeApp:installDebug`
 - Common unit tests (JVM): `./gradlew :composeApp:testDebugUnitTest`
-- Single test class: `./gradlew :composeApp:testDebugUnitTest --tests "app.kofipod.screenshots.TokensSnapshots"`
+- Single test class: `./gradlew :composeApp:testDebugUnitTest --tests "com.kofikodr.kofipod.screenshots.TokensSnapshots"`
 - Paparazzi snapshot verify: `./gradlew :composeApp:verifyPaparazziDebug`
 - Paparazzi record/update baselines: `./gradlew :composeApp:recordPaparazziDebug`
 - iOS compile (frameworks only, from Mac): `./gradlew :composeApp:compileKotlinIosSimulatorArm64`
@@ -25,7 +51,7 @@ Android SDK lives at `~/Library/Android/sdk/`; `adb`/`emulator` are at `~/Librar
 
 ## Secrets / BuildKonfig
 
-`composeApp/build.gradle.kts` reads three values through `readSecret()` (local.properties → env var → empty) and exposes them via `app.kofipod.config.BuildKonfig`:
+`composeApp/build.gradle.kts` reads three values through `readSecret()` (local.properties → env var → empty) and exposes them via `com.kofikodr.kofipod.config.BuildKonfig`:
 
 - `PODCAST_INDEX_KEY`, `PODCAST_INDEX_SECRET` — required for Podcast Index API calls.
 - `USER_AGENT` — hardcoded default.
@@ -34,23 +60,29 @@ Copy `local.properties.template` and `keystore.properties.template` before first
 
 ## Backup
 
-User data (SQLDelight DB + SharedPreferences) backs up via Android Auto Backup, which uploads silently to the user's Google account, doesn't count against Drive quota, and survives full device wipes / new-device setup. Configured by `composeApp/src/androidMain/res/xml/backup_rules.xml` (API 31+) and `backup_rules_legacy.xml` (API 23–30). The whole `database` and `sharedpref` domains are included; `kofipod_secure.xml` (encrypted Gemini key) and `kofipod_local.xml` (device-local pointers) are explicitly excluded. Audio downloads under `files/downloads/`, the streaming cache under `cache/media/`, and the updater APK under `files/updates/` live outside any included domain so Auto Backup skips them by default.
+Two independent backup mechanisms run side by side:
+
+**1. SAF backup (user-driven, primary).** Code under `com.kofikodr.kofipod.backup/` (commonMain) + `androidMain/.../backup/`. The user picks any folder via Storage Access Framework (Drive, Dropbox, local Files, etc.) in **Settings → Backup folder**. Once a folder is set, the section surfaces **Back up now** and **Restore from backup…** rows. The scheduler (`BackupScheduler`) registers a periodic 24h `BackupWorker` (charging + unmetered) that no-ops when no folder is set. Backup format: `.kpbak` (a zip with `manifest.json` + `kofipod.db`, MIME `application/x-kofipod-backup`). The manifest carries app version, DB schema version, timestamp, size, and SHA-256 of the DB bytes — restore validates the SHA and refuses schemas newer than the current build (`Manifest.kt` → `DB_SCHEMA_VERSION`). The DB file inside the zip is package-name-agnostic (just SQLite), so a `.kpbak` is portable across `applicationId` changes — that's how the `app.kofipod` → `com.kofikodr.kofipod` rename migrated user data without `adb`. SAF backups include only the SQLDelight DB; SharedPreferences are not in scope (encrypted Gemini key + local pointers stay device-bound).
+
+**2. Android Auto Backup (Google's transparent fallback).** Configured by `composeApp/src/androidMain/res/xml/backup_rules.xml` (API 31+) and `backup_rules_legacy.xml` (API 23–30). Uploads silently to the user's Google account, doesn't count against Drive quota, survives full device wipes / new-device setup, runs on Google's schedule (~daily, charging + Wi-Fi + idle). The whole `database` and `sharedpref` domains are included; `kofipod_secure.xml` (encrypted Gemini key), `kofipod_local.xml` (device-local pointers), and `kofipod_entitlement.xml` (cached Pro entitlement) are explicitly excluded. Audio downloads under `files/downloads/`, the streaming cache under `cache/media/`, and the updater APK under `files/updates/` live outside any included domain so Auto Backup skips them by default.
 
 Auto Backup operates at the **file/domain level**, not the table level — there is no way to exclude a single SQLite table while keeping the rest of the DB. So every table inside `KofipodDatabase` rides along, including `EpisodeAiSummary`, `DiscussSession`, `DiscussMessage`, and `AudioUploadCache`. That's intentional and fine (they're small and non-sensitive); just know that to keep something out of backup you must either move it into its own file/domain or wipe it via a `BackupAgent` callback.
 
-Per-app cap is **25 MB compressed**; growth-watch tables are `Episode` (one row per episode across every subscribed show — easily the largest), `DiscussMessage`, `ListeningSession`, and `EpisodeAiSummary`. There is no in-app sign-in, no OAuth client to maintain, and no `GOOGLE_SERVER_CLIENT_ID`. Trade-off: no in-app "Back up now" button — backup runs on Google's schedule (charging + Wi-Fi + idle, roughly once per day).
+Per-app Auto Backup cap is **25 MB compressed**; growth-watch tables are `Episode` (one row per episode across every subscribed show — easily the largest), `DiscussMessage`, `ListeningSession`, and `EpisodeAiSummary`. There is no in-app sign-in, no OAuth client to maintain, and no `GOOGLE_SERVER_CLIENT_ID`.
+
+**When to use which.** Auto Backup is the safety net (zero user effort, package-bound, can't be migrated across `applicationId`). SAF backup is the explicit/portable path: surfaces a "Back up now" button, restore is user-confirmed (`AlertDialog` warns "Replace all data?" before restore), and the resulting file is portable to any device or new applicationId. Both mechanisms read the same source-of-truth DB; they don't coordinate.
 
 ## Architecture
 
 ### Source sets
 
-- `commonMain/kotlin/app/kofipod` — all shared logic and UI.
+- `commonMain/kotlin/com/kofikodr/kofipod` — all shared logic and UI.
 - `androidMain` — Android actuals: `DatabaseFactory`, `KofipodPlayer` (Media3), download/foreground services, notification permission composable.
 - `iosMain` — iOS actuals (some features stubbed as TODO; iOS is secondary).
 - `commonTest` — Compose UI tests.
 - `test` — Paparazzi JVM snapshot tests (Android-variant baselines live in `composeApp/src/test/snapshots/images/`).
 
-### Layered packages under `app.kofipod`
+### Layered packages under `com.kofikodr.kofipod`
 
 - `ui/` — Compose screens (`ui/screens/{search,library,detail,downloads,settings,player,scheduler}`), shared `primitives/`, `theme/` (tokens + `KofipodTheme`), `nav/` (typed `Route` sealed class used with Navigation Compose), `shell/AppShell.kt` (bottom nav chrome), `player/`, `permission/`.
 - `data/` — `api/` (Podcast Index wrapper via `podcastindex-sdk`), `db/` (SQLDelight `DatabaseFactory` expect/actual + `buildDatabase`), `net/buildHttpClient` (Ktor), `repo/` (repositories exposing Flows over DAOs and the API).
@@ -64,7 +96,7 @@ Per-app cap is **25 MB compressed**; growth-watch tables are `Episode` (one row 
 
 ### Data / schema
 
-SQLDelight database name: `KofipodDatabase`, package `app.kofipod.db`. Schema files under `composeApp/src/commonMain/sqldelight/app/kofipod/db/`:
+SQLDelight database name: `KofipodDatabase`, package `com.kofikodr.kofipod.db`. Schema files under `composeApp/src/commonMain/sqldelight/com/kofikodr/kofipod/db/`:
 
 - Tables: `Podcast.sq`, `Episode.sq`, `EpisodeChapter.sq`, `EpisodeAiSummary.sq`, `PendingAiOperation.sq`, `AudioUploadCache.sq`, `DiscussSession.sq`, `DiscussMessage.sq`, `PodcastList.sq`, `Download.sq`, `PlaybackState.sq`, `RecentPodcastView.sq`, `SyncMeta.sq`.
 - Migrations in `migrations/` — current schema version is **15**. Add a new `N.sqm` file rather than editing existing tables. Dev installs auto-migrate; if a migration ever fails on an emulator, uninstall and reinstall to rebuild from `Schema.create`.
@@ -92,7 +124,7 @@ The detail screen's episode list was tuned for scroll-during-playback. Do not me
 
 ### AI features
 
-BYOK (bring-your-own-key) Gemini integration. Lives entirely in `app.kofipod.ai/`:
+BYOK (bring-your-own-key) Gemini integration. Lives entirely in `com.kofikodr.kofipod.ai/`:
 
 - `GeminiClient.kt` — Ktor wrapper over `generativelanguage.googleapis.com`. Pure HTTP shim: `validate`, `generateFromText`, the Files API primitives (`uploadAudio`, `pollUntilActive`, `generateFromAudio`, `deleteFile`), and the multi-turn `chat` surface. Structured-output decoding (`responseMimeType: application/json` + `responseSchema` → `AiSummaryJson` / `DiscussAnswerJson`) lives here too. Orchestration of the audio pipeline does **not** — `summariseAudio` was removed in favour of `AudioUploadCoordinator`.
 - `AudioUploadCoordinator.kt` — owns "give me a Gemini Files API URI for this episode's audio." Both `AiSummaryRepository` and `DiscussRepository` go through `acquire(...)`, which checks the shared `AudioUploadCache` table and either reuses a non-expired URI (within Gemini's 48h Files API TTL minus a 1h safety margin) or runs the upload via the `AudioUploader` seam. Per-episode `Mutex` collapses concurrent calls to one upload.
@@ -134,7 +166,8 @@ Any change that adds a dependency to a `ViewModel` constructor must also update 
 - Kotlin Multiplatform, Compose Multiplatform, Compose Compiler (Kotlin plugin), AGP via `libs.versions.toml`.
 - `compileSdk` 35, `minSdk` 26, `targetSdk` 35, JVM target 17, Java source/target 17.
 - Release `isMinifyEnabled = false`. `packaging` strips common META-INF noise.
-- License: GPL-3.0-or-later. New source files carry `// SPDX-License-Identifier: GPL-3.0-or-later` at the top.
+
+(License + flavor model: see "License & open-source posture" and "Distribution flavors" under the Project section above.)
 
 ## Specs / plans
 

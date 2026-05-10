@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+package com.kofikodr.kofipod.pro
+
+import android.content.Context
+import androidx.core.content.edit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+/**
+ * SharedPreferences-backed entitlement cache. The file name is referenced by
+ * `backup_rules.xml` + `backup_rules_legacy.xml` exclude rules — keep it in sync.
+ */
+class AndroidEntitlementCache(context: Context) : EntitlementCache {
+    private val prefs = context.applicationContext.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
+
+    override suspend fun read(): ProEntitlement? =
+        withContext(Dispatchers.IO) {
+            // Reviewer-unlock flag overrides any billing reading. A reviewer who entered
+            // the code on this device should not be downgraded to Free by a Play Billing
+            // "no purchase found" answer on the next cold start.
+            if (prefs.getBoolean(KEY_REVIEWER_UNLOCK, false)) {
+                return@withContext ProEntitlement.Pro(ProSource.ReviewerUnlock)
+            }
+            val raw = prefs.getString(KEY_TIER, null) ?: return@withContext null
+            when (raw) {
+                "free" -> ProEntitlement.Free
+                // "pro_family" is read as Individual: the Family tier was dropped before
+                // any user could have purchased it, but if a stale entry survives a rebuild
+                // it should still grant Pro rather than read as null and force a re-query.
+                "pro_individual", "pro_family" -> ProEntitlement.Pro(ProSource.Individual)
+                "pro_foss" -> ProEntitlement.Pro(ProSource.FossBuild)
+                else -> null
+            }
+        }
+
+    override suspend fun write(entitlement: ProEntitlement) {
+        if (entitlement is ProEntitlement.Unknown) return
+        val raw =
+            when (entitlement) {
+                ProEntitlement.Unknown -> return
+                ProEntitlement.Free -> "free"
+                is ProEntitlement.Pro ->
+                    when (entitlement.source) {
+                        ProSource.Individual -> "pro_individual"
+                        ProSource.FossBuild -> "pro_foss"
+                        // ReviewerUnlock state is durable ONLY via KEY_REVIEWER_UNLOCK.
+                        // No-op so the tier column never holds the reviewer value, even
+                        // if a future port impl mistakenly emits Pro(ReviewerUnlock)
+                        // through the billing path — preventing a latent durable Pro
+                        // grant that would survive setReviewerUnlocked(false).
+                        ProSource.ReviewerUnlock -> return
+                    }
+            }
+        withContext(Dispatchers.IO) {
+            prefs.edit { putString(KEY_TIER, raw) }
+        }
+    }
+
+    override suspend fun isReviewerUnlocked(): Boolean =
+        withContext(Dispatchers.IO) {
+            prefs.getBoolean(KEY_REVIEWER_UNLOCK, false)
+        }
+
+    override suspend fun setReviewerUnlocked(unlocked: Boolean) {
+        withContext(Dispatchers.IO) {
+            prefs.edit {
+                if (unlocked) putBoolean(KEY_REVIEWER_UNLOCK, true) else remove(KEY_REVIEWER_UNLOCK)
+            }
+        }
+    }
+
+    override suspend fun clear() {
+        withContext(Dispatchers.IO) {
+            prefs.edit {
+                remove(KEY_TIER)
+                remove(KEY_REVIEWER_UNLOCK)
+            }
+        }
+    }
+
+    companion object {
+        const val FILE_NAME = "kofipod_entitlement"
+        private const val KEY_TIER = "tier"
+        private const val KEY_REVIEWER_UNLOCK = "reviewer_unlock"
+    }
+}

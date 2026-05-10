@@ -1,0 +1,57 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+package com.kofikodr.kofipod.ui.screens.library
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.kofikodr.kofipod.data.net.NetworkErrorHandler
+import com.kofikodr.kofipod.data.repo.DiscoverySource
+import com.kofikodr.kofipod.domain.PodcastSummary
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+data class StarterPackUiState(
+    val loading: Boolean = true,
+    val picks: List<PodcastSummary> = emptyList(),
+    val error: String? = null,
+)
+
+class StarterPackViewModel(
+    private val discovery: DiscoverySource,
+    private val errors: NetworkErrorHandler,
+) : ViewModel() {
+    private val _state = MutableStateFlow(StarterPackUiState())
+    val state: StateFlow<StarterPackUiState> = _state.asStateFlow()
+
+    init {
+        refresh()
+    }
+
+    fun refresh() {
+        _state.value = _state.value.copy(loading = true, error = null)
+        viewModelScope.launch {
+            runCatching { discovery.trending(limit = PACK_SIZE) }
+                .onSuccess { picks ->
+                    _state.value = StarterPackUiState(loading = false, picks = picks)
+                }
+                .onFailure { e ->
+                    val hasCache = _state.value.picks.isNotEmpty()
+                    _state.value =
+                        _state.value.copy(
+                            loading = false,
+                            error =
+                                errors.handle(
+                                    e,
+                                    hasCachedData = hasCache,
+                                    fallback = "Couldn't load trending podcasts",
+                                ),
+                        )
+                }
+        }
+    }
+
+    companion object {
+        const val PACK_SIZE = 12
+    }
+}

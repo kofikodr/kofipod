@@ -16,5 +16,14 @@ SENTRY_AUTH_TOKEN=
 # A-EU-XXXXXXXXXX
 APTABASE_APP_KEY=
 
+# Reviewer unlock SHA-256 hash. Used by the hidden Settings → tap-version-7×
+# affordance to grant Pro for Play Store / sideload review without a real
+# purchase. Compute with:
+#   printf '%s' '<your-secret-code>' | shasum -a 256 | awk '{print $1}'
+# Leave blank to disable the reviewer unlock affordance entirely.
+# The plaintext code lives nowhere in this repo — back it up separately
+# (password manager) and paste it into Play Console "App access" notes.
+REVIEWER_UNLOCK_HASH=
+
 # Android SDK location (set by Android Studio, usually not needed for CI)
 # sdk.dir=/Users/you/Library/Android/sdk
