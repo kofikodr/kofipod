@@ -115,6 +115,8 @@ fun PlayerScreen(
             imageUrl = p.artworkUrl,
             podcastTitle = p.podcastTitle,
             episodeNumber = p.episodeNumber,
+            isPlaying = p.isPlaying,
+            audioLevels = viewModel.audioLevels,
         )
         Spacer(Modifier.height(20.dp))
         PlayerHeader(
@@ -158,11 +160,6 @@ fun PlayerScreen(
         PlayerProTipBanner(
             visible = !tipDismissed,
             onDismiss = viewModel::dismissProTip,
-        )
-        Spacer(Modifier.height(20.dp))
-        PlayerVisualizerStrip(
-            isPlaying = p.isPlaying,
-            audioLevels = viewModel.audioLevels,
         )
         Spacer(Modifier.height(32.dp))
     }
