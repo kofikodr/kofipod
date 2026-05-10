@@ -47,11 +47,14 @@ class TabletSizeTest {
     }
 
     @Test
-    fun `exactly 600 dp width is treated as phone`() {
+    fun `width 599 dp is phone`() {
+        // Strict "< 600 dp" per spec §2 — 599.dp is the last phone width.
+        assertNull(classifyTabletSize(599.dp, 1000.dp))
+    }
+
+    @Test
+    fun `width 600 dp is tablet`() {
         // Strict "< 600 dp" per spec §2 — 600.dp is the first tablet width.
-        // Implementation note: 600.dp itself is NOT a phone, only strictly less is.
-        // This test pins the boundary: 600.dp should be tablet, 599.dp should be phone.
-        assertNull(classifyTabletSize(599.dp, 800.dp))
         // 600.dp width with portrait orientation, smaller=600 < 900 -> Tablet8Port.
         assertEquals(TabletSize.Tablet8Port, classifyTabletSize(600.dp, 1000.dp))
     }

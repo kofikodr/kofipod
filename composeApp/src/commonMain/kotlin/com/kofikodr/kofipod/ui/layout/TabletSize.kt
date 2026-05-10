@@ -7,6 +7,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 
 /**
  * Rail presentation mode for tablet layouts. See spec §3.
@@ -57,10 +58,10 @@ internal fun classifyTabletSize(
     maxWidth: Dp,
     maxHeight: Dp,
 ): TabletSize? {
-    if (maxWidth.value < 600f) return null
+    if (maxWidth < 600.dp) return null
     val smaller = if (maxWidth <= maxHeight) maxWidth else maxHeight
     val isLandscape = maxWidth > maxHeight
-    val isTenInch = smaller.value >= 900f
+    val isTenInch = smaller >= 900.dp
     return when {
         isTenInch && isLandscape -> TabletSize.Tablet10Land
         isTenInch -> TabletSize.Tablet10Port
@@ -80,12 +81,12 @@ internal fun classifyTabletSize(
 @Composable
 fun WithTabletSize(
     modifier: Modifier = Modifier,
-    content: @Composable (TabletSize?) -> Unit,
+    content: @Composable () -> Unit,
 ) {
     BoxWithConstraints(modifier = modifier) {
         val size = classifyTabletSize(maxWidth, maxHeight)
         CompositionLocalProvider(LocalTabletSize provides size) {
-            content(size)
+            content()
         }
     }
 }
