@@ -105,12 +105,20 @@ class KofipodPlaybackService : MediaLibraryService() {
         // DefaultDataSource delegates to the right scheme: file:// → FileDataSource,
         // http(s):// → DefaultHttpDataSource. Without it, CacheDataSource would send
         // file:// URIs (from downloaded episodes) to DefaultHttpDataSource and fail.
-        val upstreamFactory = DefaultDataSource.Factory(this, DefaultHttpDataSource.Factory())
+        val defaultFactory = DefaultDataSource.Factory(this, DefaultHttpDataSource.Factory())
         val cacheDataSourceFactory =
             CacheDataSource.Factory()
                 .setCache(playbackCache.cache)
-                .setUpstreamDataSourceFactory(upstreamFactory)
+                .setUpstreamDataSourceFactory(defaultFactory)
                 .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        // Route file:// URIs straight through DefaultDataSource (→ FileDataSource) so the
+        // streaming SimpleCache isn't asked to re-cache bytes that already exist on disk
+        // under files/downloads/. Anything else (http, https, content, …) keeps the
+        // CacheDataSource wrapper for cross-session streaming reuse. Why: a downloaded
+        // episode is the source of truth; piping it through CacheDataSource would copy
+        // every played byte into cache/media/, doubling disk and evicting actually-useful
+        // streamed spans.
+        val mediaDataSourceFactory = SchemeAwareDataSource.Factory(defaultFactory, cacheDataSourceFactory)
         val audioAttributes =
             AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
@@ -119,7 +127,7 @@ class KofipodPlaybackService : MediaLibraryService() {
         val player =
             ExoPlayer.Builder(this, renderersFactory)
                 .setLoadControl(AdaptiveLoadControl(networkMonitor))
-                .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
+                .setMediaSourceFactory(DefaultMediaSourceFactory(mediaDataSourceFactory))
                 .setSeekForwardIncrementMs(skipForwardMs)
                 .setSeekBackIncrementMs(skipBackMs)
                 // handleAudioFocus = true: ExoPlayer requests focus on play (pausing other media

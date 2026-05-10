@@ -30,12 +30,31 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.kofipod.ui.theme.LocalKofipodColors
 
+/**
+ * Fraction (0..1) of the scrubber to render as "buffered ahead". Returns 1f for local
+ * media — the entire file is on disk, so the buffered indicator should show full from
+ * the moment playback starts (ExoPlayer's bufferedPosition for progressive sources only
+ * reflects what's been pulled into the sample buffer, which lags far behind the actual
+ * on-disk availability).
+ */
+internal fun bufferedFraction(
+    durationMs: Long,
+    bufferedMs: Long,
+    isLocalSource: Boolean,
+): Float =
+    when {
+        isLocalSource -> 1f
+        durationMs > 0 -> (bufferedMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+        else -> 0f
+    }
+
 @Composable
 internal fun PlayerScrubber(
     positionMs: Long,
     durationMs: Long,
     bufferedMs: Long,
     onSeek: (Long) -> Unit,
+    isLocalSource: Boolean = false,
 ) {
     val c = LocalKofipodColors.current
     var dragFraction by remember { mutableStateOf<Float?>(null) }
@@ -43,8 +62,7 @@ internal fun PlayerScrubber(
         dragFraction ?: run {
             if (durationMs > 0) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
         }
-    val bufferedFraction =
-        if (durationMs > 0) (bufferedMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+    val bufferedFraction = bufferedFraction(durationMs, bufferedMs, isLocalSource)
     Column(Modifier.fillMaxWidth()) {
         Box(Modifier.fillMaxWidth().height(48.dp)) {
             Box(
