@@ -10,6 +10,7 @@ import com.kofikodr.kofipod.downloads.DownloadJob
 import com.kofikodr.kofipod.downloads.DownloadProgress
 import com.kofikodr.kofipod.network.NetworkMonitor
 import com.kofikodr.kofipod.network.NetworkType
+import com.kofikodr.kofipod.snippets.FileCheckerApi
 import com.kofikodr.kofipod.testing.inMemoryDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -59,6 +60,117 @@ class DownloadRepositoryTest {
             assertEquals("file:///path/ep-done.mp3", repo.localUriFor("ep-done"))
             assertNull(repo.localUriFor("ep-pending"))
             assertNull(repo.localUriFor("ep-missing"))
+        }
+
+    @Test
+    fun localPathFor_selfHeals_whenLocalFileMissing() =
+        runHarnessTest(fileChecker = FakeFileChecker(existing = emptySet())) {
+            db.downloadQueries.upsert(
+                episodeId = "ep-orphan",
+                state = "Completed",
+                localPath = "/path/ep-orphan.mp3",
+                downloadedBytes = 1_000L,
+                totalBytes = 1_000L,
+                source = "Manual",
+                startedAt = null,
+                completedAt = 1L,
+                errorMessage = null,
+            )
+
+            // File is missing → self-heal returns null AND wipes the row.
+            assertNull(repo.localPathFor("ep-orphan"))
+            assertNull(
+                db.downloadQueries.selectByEpisode("ep-orphan").executeAsOneOrNull(),
+                "stale Download row should be deleted on missing-file detection",
+            )
+            assertEquals(
+                listOf("ep-orphan"),
+                engine.deleted,
+                "engine.delete must run alongside the row wipe to clean any partial state",
+            )
+        }
+
+    @Test
+    fun resolvedSourceUrl_fallsBackToStream_whenDownloadedFileMissing() =
+        runHarnessTest(fileChecker = FakeFileChecker(existing = emptySet())) {
+            seedEpisode("ep-stream-fallback", mime = "audio/mpeg")
+            db.downloadQueries.upsert(
+                episodeId = "ep-stream-fallback",
+                state = "Completed",
+                localPath = "/gone/ep-stream-fallback.mp3",
+                downloadedBytes = 1L,
+                totalBytes = 1L,
+                source = "Manual",
+                startedAt = null,
+                completedAt = 1L,
+                errorMessage = null,
+            )
+
+            val resolved = repo.resolvedSourceUrl("ep-stream-fallback", "https://example.com/stream.mp3")
+
+            assertEquals(
+                "https://example.com/stream.mp3",
+                resolved,
+                "resolver must fall through to the streaming URL when the local file is gone",
+            )
+            assertNull(
+                db.downloadQueries.selectByEpisode("ep-stream-fallback").executeAsOneOrNull(),
+                "self-heal must wipe the stale row even when reached through resolvedSourceUrl",
+            )
+            assertEquals(
+                listOf("ep-stream-fallback"),
+                engine.deleted,
+                "engine.delete must fire as part of the same self-heal",
+            )
+        }
+
+    @Test
+    fun localPathFor_doesNotTouch_nonCompletedRowWithLocalPath() =
+        runHarnessTest(fileChecker = FakeFileChecker(existing = emptySet())) {
+            // A Queued row with a stray localPath (e.g. crashed mid-download) must not be
+            // collateral damage of the self-heal — only Completed rows are claimed by the
+            // resolver in the first place. The SQL filter (`WHERE state = 'Completed'`)
+            // already excludes this row; the test pins that contract so a future query
+            // edit can't silently widen the blast radius.
+            db.downloadQueries.upsert(
+                episodeId = "ep-queued",
+                state = "Queued",
+                localPath = "/in-flight/ep-queued.mp3.part",
+                downloadedBytes = 1L,
+                totalBytes = 100L,
+                source = "Manual",
+                startedAt = 1L,
+                completedAt = null,
+                errorMessage = null,
+            )
+
+            assertNull(repo.localPathFor("ep-queued"))
+            assertEquals(
+                "Queued",
+                stateOf("ep-queued"),
+                "non-Completed rows must survive a localPathFor lookup intact",
+            )
+            assertTrue(engine.deleted.isEmpty(), "self-heal must not delete in-flight rows")
+        }
+
+    @Test
+    fun localPathFor_returnsPath_whenFileExistsOnDisk() =
+        runHarnessTest(fileChecker = FakeFileChecker(existing = setOf("/real/ep-here.mp3"))) {
+            db.downloadQueries.upsert(
+                episodeId = "ep-here",
+                state = "Completed",
+                localPath = "/real/ep-here.mp3",
+                downloadedBytes = 1_000L,
+                totalBytes = 1_000L,
+                source = "Manual",
+                startedAt = null,
+                completedAt = 1L,
+                errorMessage = null,
+            )
+
+            assertEquals("/real/ep-here.mp3", repo.localPathFor("ep-here"))
+            assertEquals("file:///real/ep-here.mp3", repo.localUriFor("ep-here"))
+            assertTrue(engine.deleted.isEmpty(), "extant file must not trigger any cleanup")
         }
 
     @Test
@@ -320,6 +432,7 @@ class DownloadRepositoryTest {
     private fun runHarnessTest(
         network: NetworkType = NetworkType.Wifi,
         wifiOnly: Boolean = false,
+        fileChecker: FileCheckerApi = AlwaysExistsFileChecker,
         block: suspend Harness.() -> Unit,
     ) = runTest {
         val dispatcher = UnconfinedTestDispatcher(testScheduler)
@@ -333,7 +446,16 @@ class DownloadRepositoryTest {
                 override val type: StateFlow<NetworkType> = networkFlow.asStateFlow()
             }
         val testScope = TestScope(dispatcher)
-        val repo = DownloadRepository(db, engine, settings, monitor, testScope, com.kofikodr.kofipod.diagnostics.NoOpTelemetry)
+        val repo =
+            DownloadRepository(
+                db,
+                engine,
+                settings,
+                monitor,
+                testScope,
+                com.kofikodr.kofipod.diagnostics.NoOpTelemetry,
+                fileChecker,
+            )
 
         val harness = Harness(db, repo, engine, settings, testScope, networkFlow)
         try {
@@ -341,6 +463,14 @@ class DownloadRepositoryTest {
         } finally {
             testScope.cancel()
         }
+    }
+
+    private class FakeFileChecker(private val existing: Set<String>) : FileCheckerApi {
+        override fun exists(path: String): Boolean = path in existing
+    }
+
+    private object AlwaysExistsFileChecker : FileCheckerApi {
+        override fun exists(path: String): Boolean = true
     }
 
     private class RecordingDownloadEngine : DownloadEngineApi {

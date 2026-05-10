@@ -12,6 +12,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.datasource.DefaultDataSource
@@ -167,6 +168,34 @@ class KofipodPlaybackService : MediaLibraryService() {
                     reason: Int,
                 ) {
                     lastSampleEpisodeId = null
+                }
+
+                // Safety net for the bad-restore class of bug: a downloaded `file://` URI
+                // can resolve cleanly through DownloadRepository (DB says Completed) yet
+                // fail at FileDataSource.open() because the file is gone. Without this,
+                // ExoPlayer surfaces the failure as a stuck STATE_BUFFERING with no
+                // visible error and no recovery — the symptom the user originally hit
+                // after a bad backup-restore. The primary defence is the existence check
+                // in DownloadRepository.localPathFor(); this listener catches the rare
+                // race where a file disappears between the resolver check and open().
+                override fun onPlayerError(error: PlaybackException) {
+                    val item = player.currentMediaItem ?: return
+                    val uri = item.localConfiguration?.uri ?: return
+                    if (uri.scheme != "file") return
+                    val episodeId = item.mediaId.removePrefix(MEDIA_ID_EPISODE_PREFIX)
+                    if (episodeId.isBlank()) return
+                    // Confirm we have a streaming fallback BEFORE wiping the download row —
+                    // otherwise a bad-restore that lost both the file AND the episode row
+                    // would leave us with a dead media item and no recovery (the same
+                    // silent stall the fix is meant to prevent).
+                    val episode = episodes.episodeNow(episodeId) ?: return
+                    if (episode.enclosureUrl.isBlank()) return
+                    downloads.delete(episodeId)
+                    val streamItem = item.buildUpon().setUri(episode.enclosureUrl).build()
+                    val resumeAt = player.currentPosition.coerceAtLeast(0L)
+                    player.setMediaItem(streamItem, resumeAt)
+                    player.prepare()
+                    player.play()
                 }
             },
         )

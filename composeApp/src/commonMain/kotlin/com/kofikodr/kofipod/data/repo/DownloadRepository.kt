@@ -14,6 +14,7 @@ import com.kofikodr.kofipod.downloads.DownloadProgress
 import com.kofikodr.kofipod.downloads.downloadFileName
 import com.kofikodr.kofipod.network.NetworkMonitor
 import com.kofikodr.kofipod.network.NetworkType
+import com.kofikodr.kofipod.snippets.FileCheckerApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -85,6 +86,7 @@ class DownloadRepository(
     private val network: NetworkMonitor,
     scope: CoroutineScope,
     private val telemetry: com.kofikodr.kofipod.diagnostics.Telemetry,
+    private val fileChecker: FileCheckerApi,
 ) {
     init {
         engine.events.onEach { p ->
@@ -152,8 +154,22 @@ class DownloadRepository(
     fun forEpisodeFlow(episodeId: String): Flow<Download?> =
         db.downloadQueries.selectByEpisode(episodeId).asFlow().mapToOneOrNull(Dispatchers.Default)
 
-    /** Raw filesystem path for the completed local file for [episodeId], or null. */
-    fun localPathFor(episodeId: String): String? = db.downloadQueries.localPathFor(episodeId).executeAsOneOrNull()?.localPath
+    /**
+     * Raw filesystem path for the completed local file for [episodeId], or null.
+     *
+     * Self-heals against the bad-restore class of bug: a `Download` row can claim
+     * `state='Completed'` with a `localPath`, while the actual audio file is gone
+     * (external deletion, restored DB without restored files, OS storage pruning).
+     * If the DB returns a path but the file isn't on disk, the orphaned row is
+     * wiped here so the resolver falls through to the streaming URL instead of
+     * handing ExoPlayer a dangling `file://` URI that stalls playback silently.
+     */
+    fun localPathFor(episodeId: String): String? {
+        val path = db.downloadQueries.localPathFor(episodeId).executeAsOneOrNull()?.localPath ?: return null
+        if (fileChecker.exists(path)) return path
+        delete(episodeId)
+        return null
+    }
 
     /** Full [Download] row for [episodeId], or null when no row exists. */
     fun rowFor(episodeId: String): Download? = db.downloadQueries.selectByEpisode(episodeId).executeAsOneOrNull()
