@@ -39,4 +39,16 @@ class KofipodNavigationRailTest {
         val stats = TABS_TABLET.first { it.route == Route.Stats }
         assertSame(stats, nextSelection(currentRoute = null, tapped = stats))
     }
+
+    @Test
+    fun `Stats rail destination maps to Route Stats and uses Chart icon`() {
+        // Task 1.5 lock-in: Stats is promoted to the tablet rail as a top-level
+        // destination (the phone bottom bar still excludes it). If a future
+        // refactor reuses TABS_TABLET for both phone and tablet, or swaps the
+        // Stats icon, this test forces the change to be intentional.
+        val stats = TABS_TABLET.first { it.label == "Stats" }
+        assertEquals(Route.Stats, stats.route)
+        assertEquals(Route.Stats::class.qualifiedName!!, stats.routeKey)
+        assertEquals(com.kofikodr.kofipod.ui.primitives.KPIconName.Chart, stats.icon)
+    }
 }
