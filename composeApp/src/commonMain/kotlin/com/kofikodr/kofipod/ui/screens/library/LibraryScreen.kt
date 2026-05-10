@@ -23,6 +23,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -194,9 +198,32 @@ internal fun LibraryContent(
     onLongPressList: (PodcastList) -> Unit,
     onLongPressSmartPlaylist: (SmartPlaylistDomain) -> Unit,
     onImportOpml: () -> Unit,
-    // TODO(tablet-phase-2.2/2.3): branch on size for tablet layouts
-    @Suppress("UNUSED_PARAMETER") size: TabletSize?,
+    size: TabletSize?,
 ) {
+    // Tablet portraits get the new single-column layout (header + folder row +
+    // adaptive grid). Phone (size == null) and tablet landscapes (8L / 10L) fall
+    // through to today's body — Task 2.3 will swap landscapes for master-detail.
+    if (size == TabletSize.Tablet8Port || size == TabletSize.Tablet10Port) {
+        LibraryContentTabletSingle(
+            state = state,
+            onOpenPodcast = onOpenPodcast,
+            onOpenList = onOpenList,
+            onOpenSearch = onOpenSearch,
+            onOpenStarterPack = onOpenStarterPack,
+            onOpenBookmarks = onOpenBookmarks,
+            onOpenStats = onOpenStats,
+            onOpenLibrarySearch = onOpenLibrarySearch,
+            onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
+            onNewList = onNewList,
+            onLongPressPodcast = onLongPressPodcast,
+            onLongPressList = onLongPressList,
+            onLongPressSmartPlaylist = onLongPressSmartPlaylist,
+            onImportOpml = onImportOpml,
+            size = size,
+        )
+        return
+    }
+
     val c = LocalKofipodColors.current
 
     val lists: List<PodcastList> = state.groups.mapNotNull { it.list }
@@ -319,6 +346,283 @@ internal fun LibraryContent(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Tablet portrait (8"P / 10"P) layout for the Library: a single LazyVerticalGrid whose
+ * top rows span the full width (header, in-library search, optional Folders horizontal
+ * scroll) and whose trailing rows render subscriptions as adaptive grid tiles.
+ *
+ * One outer grid (with `GridItemSpan(maxLineSpan)` spanning items for non-grid sections)
+ * avoids nested LazyColumn/LazyVerticalGrid scroll containers.
+ */
+@Composable
+private fun LibraryContentTabletSingle(
+    state: LibraryUiState,
+    onOpenPodcast: (String) -> Unit,
+    onOpenList: (String?) -> Unit,
+    onOpenSearch: () -> Unit,
+    onOpenStarterPack: () -> Unit,
+    onOpenBookmarks: () -> Unit,
+    onOpenStats: () -> Unit,
+    onOpenLibrarySearch: () -> Unit,
+    onOpenSmartPlaylistDetail: (String) -> Unit,
+    onNewList: () -> Unit,
+    onLongPressPodcast: (Podcast) -> Unit,
+    onLongPressList: (PodcastList) -> Unit,
+    onLongPressSmartPlaylist: (SmartPlaylistDomain) -> Unit,
+    onImportOpml: () -> Unit,
+    size: TabletSize,
+) {
+    val c = LocalKofipodColors.current
+
+    val lists: List<PodcastList> = state.groups.mapNotNull { it.list }
+    val podcasts: List<Podcast> = state.groups.flatMap { it.podcasts }
+    val unfiledPodcasts = podcasts.filter { it.listId == null }
+    val isEmpty = lists.isEmpty() && podcasts.isEmpty()
+
+    val cardWidth = if (size == TabletSize.Tablet10Port) 320.dp else 260.dp
+    val gridMinTile = cardWidth
+
+    val sortedPodcasts =
+        podcasts.sortedByDescending { it.addedAt }
+
+    // Identify which podcasts roll up into a folder/group that has new content. The
+    // existing groupsWithNew set is keyed by listId; we surface the same NEW badge on
+    // the per-podcast tile by checking whether the podcast's listId is in the set.
+    val podcastsWithNew: Set<String> =
+        buildSet {
+            sortedPodcasts.forEach { p ->
+                if (p.listId in state.groupsWithNew || (p.listId == null && null in state.groupsWithNew)) {
+                    add(p.id)
+                }
+            }
+        }
+
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = gridMinTile),
+        modifier = Modifier.fillMaxSize().background(c.bg),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 24.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            LibraryHeader(
+                showAddButton = lists.isNotEmpty(),
+                onNewList = onNewList,
+                onOpenStats = onOpenStats,
+                statsHasBadge = state.statsHasUnseenTierChange,
+                onOpenBookmarks = onOpenBookmarks,
+            )
+        }
+
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            LibrarySearchEntry(onTap = onOpenLibrarySearch)
+        }
+
+        if (isEmpty) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                LibraryEmptyState(
+                    onFindPodcast = onOpenSearch,
+                    onCreateList = onNewList,
+                    onOpenStarterPack = onOpenStarterPack,
+                    onImportOpml = onImportOpml,
+                )
+            }
+            return@LazyVerticalGrid
+        }
+
+        if (lists.isNotEmpty() || unfiledPodcasts.isNotEmpty() || state.smartPlaylists.isNotEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                SectionLabel(title = "Folders", topSpacing = 18.dp)
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    items(lists.size) { idx ->
+                        val list = lists[idx]
+                        val members = podcasts.filter { it.listId == list.id }
+                        TabletFolderCard(
+                            width = cardWidth,
+                            title = list.name,
+                            subtitle = "${members.size} SHOWS",
+                            hasNew = list.id in state.groupsWithNew,
+                            onClick = { onOpenList(list.id) },
+                            onLongClick = { onLongPressList(list) },
+                        )
+                    }
+                    if (unfiledPodcasts.isNotEmpty()) {
+                        item {
+                            TabletFolderCard(
+                                width = cardWidth,
+                                title = "Unfiled",
+                                subtitle = "${unfiledPodcasts.size} SHOWS",
+                                hasNew = null in state.groupsWithNew,
+                                onClick = { onOpenList(null) },
+                                onLongClick = null,
+                            )
+                        }
+                    }
+                    items(state.smartPlaylists.size) { idx ->
+                        val tile = state.smartPlaylists[idx]
+                        SmartPlaylistTile(
+                            modifier = Modifier.width(cardWidth).height(120.dp),
+                            playlist = tile.playlist,
+                            matchedCount = tile.matchedCount,
+                            onClick = { onOpenSmartPlaylistDetail(tile.playlist.id) },
+                            onLongClick = { onLongPressSmartPlaylist(tile.playlist) },
+                        )
+                    }
+                }
+            }
+        }
+
+        if (sortedPodcasts.isNotEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                SectionLabel(title = "Subscriptions", topSpacing = 22.dp)
+            }
+            items(sortedPodcasts.size) { idx ->
+                val p = sortedPodcasts[idx]
+                SubscriptionGridTile(
+                    podcast = p,
+                    hasNew = p.id in podcastsWithNew,
+                    onClick = { onOpenPodcast(p.id) },
+                    onLongClick = { onLongPressPodcast(p) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Folder card used in the tablet portrait Folders horizontal-scroll row. Fixed
+ * `width` (260 dp on 8"P / 320 dp on 10"P), 120 dp tall, rounded surface with the
+ * folder glyph, name, "N SHOWS" subtitle, and an optional NEW dot.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TabletFolderCard(
+    width: Dp,
+    title: String,
+    subtitle: String,
+    hasNew: Boolean,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
+) {
+    val c = LocalKofipodColors.current
+    val r = LocalKofipodRadii.current
+    val clickModifier =
+        if (onLongClick != null) {
+            Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+        } else {
+            Modifier.clickable(onClick = onClick)
+        }
+    Box(
+        Modifier
+            .width(width)
+            .height(120.dp)
+            .clip(RoundedCornerShape(r.md))
+            .background(c.surface)
+            .border(1.dp, c.border, RoundedCornerShape(r.md))
+            .then(clickModifier)
+            .padding(14.dp),
+    ) {
+        KPIcon(
+            name = KPIconName.Folder,
+            color = c.purple,
+            size = 22.dp,
+            modifier = Modifier.align(Alignment.TopStart),
+        )
+        if (hasNew) {
+            NewDot(
+                ringColor = c.surface,
+                modifier = Modifier.align(Alignment.TopEnd),
+            )
+        }
+        Column(Modifier.align(Alignment.BottomStart)) {
+            Text(
+                title,
+                color = c.text,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                subtitle,
+                color = c.textMute,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 0.6.sp,
+            )
+        }
+    }
+}
+
+/**
+ * Subscription grid tile rendered inside the tablet `LazyVerticalGrid`. Square-ish
+ * surface with artwork, title (up to 2 lines), author (1 line muted), and an
+ * optional NEW badge in the top-right.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SubscriptionGridTile(
+    podcast: Podcast,
+    hasNew: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    val r = LocalKofipodRadii.current
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(r.md))
+            .background(c.surface)
+            .border(1.dp, c.border, RoundedCornerShape(r.md))
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(12.dp),
+    ) {
+        Box(Modifier.fillMaxWidth()) {
+            KofipodArtwork(
+                size = 96.dp,
+                seed = podcast.id.hashCode(),
+                label = podcast.title,
+                radius = 12.dp,
+                model = podcast.artworkUrl.ifBlank { null },
+                contentDescription = podcast.title,
+            )
+            if (hasNew) {
+                NewDot(
+                    ringColor = c.surface,
+                    modifier = Modifier.align(Alignment.TopEnd),
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            podcast.title,
+            color = c.text,
+            fontWeight = FontWeight.Bold,
+            fontSize = 15.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (podcast.author.isNotBlank()) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                podcast.author,
+                color = c.textMute,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
