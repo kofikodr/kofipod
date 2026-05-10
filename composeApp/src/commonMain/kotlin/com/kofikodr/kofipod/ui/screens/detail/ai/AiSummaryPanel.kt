@@ -42,6 +42,7 @@ import com.kofikodr.kofipod.ui.primitives.KPButtonStyle
 import com.kofikodr.kofipod.ui.primitives.KPIcon
 import com.kofikodr.kofipod.ui.primitives.KPIconName
 import com.kofikodr.kofipod.ui.screens.detail.formatMb
+import com.kofikodr.kofipod.ui.screens.detail.formatMbProgress
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
 import kotlinx.datetime.Clock
 import org.koin.compose.viewmodel.koinViewModel
@@ -208,13 +209,37 @@ private fun GeneratingCard(
             CancelButton(onCancel)
         }
         Spacer(Modifier.height(14.dp))
+        // Preparing row gets a determinate progress bar + "X.X / Y.Y MB" label
+        // when the chunked uploader is reporting back; otherwise it falls back
+        // to the indeterminate bar + size-only label (transcript runs, cache
+        // hits, and the brief window before the first chunk lands). Only this
+        // row uses the live byte count — Analysing/Formatting are not tied to
+        // a measurable byte stream.
+        val preparingActive = state.stage == GenerationStage.Preparing
+        val uploadFraction =
+            if (
+                preparingActive &&
+                state.uploadedBytes != null &&
+                state.sizeBytes != null &&
+                state.sizeBytes > 0L
+            ) {
+                (state.uploadedBytes.toFloat() / state.sizeBytes.toFloat()).coerceIn(0f, 1f)
+            } else {
+                null
+            }
         StageRow(
             label = labels.preparing,
             indicator = stageIndicator(state.stage, GenerationStage.Preparing),
-            // Surfaced only on the upload (Preparing) row, matching the mock.
             // Falls back silently if we don't have a size to show — transcript
             // path leaves the right-hand column empty rather than printing "—".
-            trailing = state.sizeBytes?.let { formatMb(it) }.orEmpty(),
+            trailing =
+                when {
+                    state.sizeBytes == null -> ""
+                    state.uploadedBytes != null && preparingActive ->
+                        formatMbProgress(state.uploadedBytes, state.sizeBytes)
+                    else -> formatMb(state.sizeBytes)
+                },
+            determinateProgress = uploadFraction,
         )
         Spacer(Modifier.height(10.dp))
         StageRow(
@@ -281,6 +306,11 @@ private fun StageRow(
     label: String,
     indicator: StageIndicator,
     trailing: String,
+    // Non-null → render a determinate bar pinned to this fraction (0..1).
+    // Null → fall back to the indeterminate Material bar so the row still
+    // pulses while we wait for the first signal (cache hits, transcript
+    // runs, the moment between a stage flip and the first byte landing).
+    determinateProgress: Float? = null,
 ) {
     val c = LocalKofipodColors.current
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -301,16 +331,34 @@ private fun StageRow(
             )
             if (indicator == StageIndicator.Active) {
                 Spacer(Modifier.height(6.dp))
-                LinearProgressIndicator(
-                    color = c.pink,
-                    trackColor = c.pinkSoft,
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .height(3.dp)
-                            .clip(RoundedCornerShape(999.dp))
-                            .testTag("aiPanelGeneratingProgress"),
-                )
+                if (determinateProgress != null) {
+                    // Determinate variant — uses the lambda overload so the
+                    // bar avoids a recomposition on every repaint, and so a
+                    // future smoothing animation can replace the lambda
+                    // without touching the rest of the row.
+                    LinearProgressIndicator(
+                        progress = { determinateProgress },
+                        color = c.pink,
+                        trackColor = c.pinkSoft,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(3.dp)
+                                .clip(RoundedCornerShape(999.dp))
+                                .testTag("aiPanelGeneratingProgress"),
+                    )
+                } else {
+                    LinearProgressIndicator(
+                        color = c.pink,
+                        trackColor = c.pinkSoft,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(3.dp)
+                                .clip(RoundedCornerShape(999.dp))
+                                .testTag("aiPanelGeneratingProgress"),
+                    )
+                }
             }
         }
         if (trailing.isNotEmpty()) {

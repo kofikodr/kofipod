@@ -24,6 +24,20 @@ internal fun formatMb(bytes: Long): String {
     return "${mb.toInt()} MB"
 }
 
+/**
+ * Renders a chunked-upload progress label: "12 / 180 MB". The total uses the
+ * existing [formatMb] format so the eventual "180 MB" label matches the size
+ * shown elsewhere on the screen byte-for-byte. Uploaded count rounds down so
+ * the displayed numerator never overshoots the denominator mid-upload.
+ */
+internal fun formatMbProgress(
+    uploadedBytes: Long,
+    totalBytes: Long,
+): String {
+    val uploadedMb = (uploadedBytes / (1024.0 * 1024.0)).toInt()
+    return "$uploadedMb / ${formatMb(totalBytes)}"
+}
+
 internal fun episodeMetaLine(
     publishedAt: Long,
     durationSec: Int,

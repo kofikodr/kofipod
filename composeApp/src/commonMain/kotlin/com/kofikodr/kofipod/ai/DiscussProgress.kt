@@ -14,6 +14,13 @@ package com.kofikodr.kofipod.ai
 data class DiscussProgress(
     val stage: DiscussProgressStage,
     val sizeBytes: Long? = null,
+    /**
+     * Cumulative bytes confirmed by the Files API for the in-flight chunked
+     * upload. Mirrors [GenerationProgress.uploadedBytes]. Null when the stage
+     * is [DiscussProgressStage.Analysing], on cache hits, and before the
+     * first chunk lands.
+     */
+    val uploadedBytes: Long? = null,
 )
 
 enum class DiscussProgressStage {

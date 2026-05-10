@@ -78,12 +78,12 @@ class DiscussRepository(
     // (we don't, but the option's there) without fingerprinting the user.
     private val idGen: () -> String = ::defaultId,
     // Mirrors AiSummaryRepository's gate: false on iOS where
-    // openLocalFileChannel is stubbed. Today this only matters as a hard
+    // openFileRange is stubbed. Today this only matters as a hard
     // belt-and-braces — iOS has no downloads feature, so observeFor's
     // `hasDownloadedAudio` would already be false. Keeping the guard
     // co-located with the Summary repo's pattern means a future iOS-side
     // download feature won't accidentally enable Discuss audio without
-    // the corresponding actual implementation of openLocalFileChannel.
+    // the corresponding actual implementation of openFileRange.
     private val audioFallbackEnabled: Boolean = audioFallbackSupported(),
 ) {
     /** episodeId → in-flight marker. A second [send] for the same id while one is running is dropped. */
@@ -514,12 +514,32 @@ class DiscussRepository(
                         // upload. Cache hits don't fire onStage, so the panel
                         // stays on the regular in-flight indicator.
                         uploadProgress.update {
+                            // Preserve uploadedBytes across stage flips so
+                            // the bubble doesn't lose its progress display
+                            // mid-transition.
+                            val prior = it[episodeId]?.uploadedBytes
                             it +
                                 (
                                     episodeId to
                                         DiscussProgress(
                                             stage = stage.toDiscussProgressStage(),
                                             sizeBytes = ready.sizeBytes,
+                                            uploadedBytes = prior,
+                                        )
+                                )
+                        }
+                    },
+                    onUploadProgress = { bytes ->
+                        // Pin to Uploading while bytes flow — the coordinator
+                        // only fires Analysing AFTER the upload finalises.
+                        uploadProgress.update {
+                            it +
+                                (
+                                    episodeId to
+                                        DiscussProgress(
+                                            stage = DiscussProgressStage.Uploading,
+                                            sizeBytes = ready.sizeBytes,
+                                            uploadedBytes = bytes,
                                         )
                                 )
                         }

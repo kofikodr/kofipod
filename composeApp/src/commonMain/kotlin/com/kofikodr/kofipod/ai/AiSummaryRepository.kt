@@ -169,6 +169,7 @@ class AiSummaryRepository(
                     sourceKind = transient.runningKind,
                     stage = live?.stage ?: GenerationStage.Preparing,
                     sizeBytes = live?.sizeBytes,
+                    uploadedBytes = live?.uploadedBytes,
                 )
             }
             if (transient.error != null) return@combine AiSummaryUiState.Error(transient.error)
@@ -434,14 +435,14 @@ class AiSummaryRepository(
         // No upload payload size to surface here — transcripts are typically
         // tiny and a HEAD probe to learn Content-Length is more code than the
         // cue is worth. The panel hides the right-side size column on null.
-        setStage(episodeId, GenerationStage.Preparing, sizeBytes = null)
+        setStage(episodeId, GenerationStage.Preparing, sizeBytes = null, uploadedBytes = null)
         val transcriptText: String =
             transcripts.fetch(transcriptUrl).getOrElse { throwable ->
                 surface(episodeId, throwable.toAiError())
                 return
             }
 
-        setStage(episodeId, GenerationStage.Analysing, sizeBytes = null)
+        setStage(episodeId, GenerationStage.Analysing, sizeBytes = null, uploadedBytes = null)
         val prompt = AiPrompts.episodeSummaryPrompt(localeTag = currentLocaleTag())
         val structured: AiSummaryJson =
             summariser.generateFromText(
@@ -453,7 +454,7 @@ class AiSummaryRepository(
                 surface(episodeId, throwable.toAiError())
                 return
             }
-        setStage(episodeId, GenerationStage.Formatting, sizeBytes = null)
+        setStage(episodeId, GenerationStage.Formatting, sizeBytes = null, uploadedBytes = null)
         // Persist transcript text opportunistically for FTS-backed Library search.
         // The text is already in memory from step 3; writing it here costs only
         // the disk write. We cache BEFORE the disconnect guard because transcript
@@ -519,14 +520,32 @@ class AiSummaryRepository(
         // Initial stage; the coordinator will flip us to Analysing as soon as
         // the upload finalises. We seed Preparing here so the panel renders
         // the size cue immediately, even before the first byte goes out.
-        setStage(episodeId, GenerationStage.Preparing, sizeBytes = sizeBytes)
+        setStage(episodeId, GenerationStage.Preparing, sizeBytes = sizeBytes, uploadedBytes = null)
         val acquired =
             coordinator
                 .acquire(
                     apiKey = key,
                     episode = episode,
                     download = downloadSnap,
-                    onStage = { stage -> setStage(episodeId, stage, sizeBytes = sizeBytes) },
+                    onStage = { stage ->
+                        // Preserve the live uploadedBytes so the bar doesn't
+                        // reset to "0 / Y" the moment the stage flips.
+                        val uploaded = progress.value[episodeId]?.uploadedBytes
+                        setStage(episodeId, stage, sizeBytes = sizeBytes, uploadedBytes = uploaded)
+                    },
+                    onUploadProgress = { bytes ->
+                        // Always Preparing while bytes are flowing — the
+                        // coordinator only fires Analysing AFTER the upload
+                        // finalises. Pin the stage explicitly so a stale
+                        // Analysing call from a prior run can't be revived
+                        // by an out-of-order callback.
+                        setStage(
+                            episodeId,
+                            GenerationStage.Preparing,
+                            sizeBytes = sizeBytes,
+                            uploadedBytes = bytes,
+                        )
+                    },
                 ).getOrElse { throwable ->
                     surface(episodeId, throwable.toAiError())
                     return
@@ -535,7 +554,7 @@ class AiSummaryRepository(
         // via onStage; on a cache hit it didn't fire onStage at all so the
         // panel is still on Preparing — flip to Analysing here so the user
         // sees forward motion regardless of the cache outcome.
-        if (acquired.fromCache) setStage(episodeId, GenerationStage.Analysing, sizeBytes = sizeBytes)
+        if (acquired.fromCache) setStage(episodeId, GenerationStage.Analysing, sizeBytes = sizeBytes, uploadedBytes = null)
         val structured: AiSummaryJson =
             audio.summariseFromAudio(
                 apiKey = key,
@@ -547,7 +566,7 @@ class AiSummaryRepository(
                 surface(episodeId, throwable.toAiError())
                 return
             }
-        setStage(episodeId, GenerationStage.Formatting, sizeBytes = sizeBytes)
+        setStage(episodeId, GenerationStage.Formatting, sizeBytes = sizeBytes, uploadedBytes = null)
 
         if (aiConfig.currentKey().isNullOrBlank()) {
             // Same disconnect-during-pipeline guard as the transcript path.
@@ -581,8 +600,9 @@ class AiSummaryRepository(
         episodeId: String,
         stage: GenerationStage,
         sizeBytes: Long?,
+        uploadedBytes: Long?,
     ) {
-        progress.update { it + (episodeId to GenerationProgress(stage, sizeBytes)) }
+        progress.update { it + (episodeId to GenerationProgress(stage, sizeBytes, uploadedBytes)) }
     }
 
     private fun pickSource(

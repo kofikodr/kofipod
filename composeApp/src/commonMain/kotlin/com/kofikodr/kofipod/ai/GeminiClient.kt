@@ -3,6 +3,7 @@ package com.kofikodr.kofipod.ai
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.headers
@@ -19,6 +20,7 @@ import io.ktor.http.isSuccess
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.ByteWriteChannel
 import io.ktor.utils.io.copyAndClose
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -124,8 +126,16 @@ data class UploadedFile(
  *
  * The API key is passed at request scope (the `?key=` query param), never persisted
  * into the client, so the same instance survives a key rotation without rebuild.
+ *
+ * @param openRange seam over [openFileRange] used by the chunked resumable
+ *   upload path. Production wires the real platform actual; tests inject a
+ *   lambda over an in-memory `ByteArray` so they can assert chunk-by-chunk
+ *   wire shape without a real file on disk.
  */
-class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummariser, ChatSummariser {
+class GeminiClient(
+    private val client: HttpClient,
+    private val openRange: (path: String, offset: Long, length: Long) -> ByteReadChannel = ::openFileRange,
+) : KeyValidator, TextSummariser, ChatSummariser {
     /**
      * Issues a 4-token completion request. Returns [Result.success] on HTTP 200 and
      * [Result.failure] wrapping an [AiError] otherwise.
@@ -140,6 +150,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         val response: HttpResponse =
             runCatching {
                 client.post("$BASE_URL/v1beta/models/${model.apiId}:generateContent") {
+                    timeout { requestTimeoutMillis = METADATA_REQUEST_TIMEOUT_MS }
                     contentType(ContentType.Application.Json)
                     url { parameters.append("key", apiKey) }
                     setBody(
@@ -186,6 +197,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         val response: HttpResponse =
             runCatching {
                 client.post("$BASE_URL/v1beta/models/${model.apiId}:generateContent") {
+                    timeout { requestTimeoutMillis = GENERATE_REQUEST_TIMEOUT_MS }
                     contentType(ContentType.Application.Json)
                     url { parameters.append("key", apiKey) }
                     setBody(
@@ -208,31 +220,48 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
     }
 
     /**
-     * Resumable upload to the Files API. Done in two HTTP round-trips per Google's
-     * resumable protocol:
+     * Resumable chunked upload to the Files API. Wire protocol per Google's
+     * resumable spec:
      *
      *  1. `POST /upload/v1beta/files?uploadType=resumable&key=…` with the metadata
      *     body — Gemini replies with the upload URL in the `X-Goog-Upload-URL`
      *     header. We never write that URL to a log; it's a single-use bearer.
-     *  2. `PUT <uploadUrl>` streaming the audio bytes (`upload, finalize`
-     *     command). Body is parsed as `{"file": UploadedFile}`.
+     *  2. For each [chunkSize]-byte slice of the file: `PUT <uploadUrl>` with
+     *     `X-Goog-Upload-Command: upload` (or `upload, finalize` on the last
+     *     chunk) and `X-Goog-Upload-Offset: <bytes>`. The slice is re-read
+     *     from [openRange] so a transient failure can resume from the
+     *     server-confirmed offset without re-streaming earlier chunks.
+     *  3. On a transport failure or transient HTTP error mid-chunk, send a
+     *     `X-Goog-Upload-Command: query` PUT to read the server's
+     *     `X-Goog-Upload-Size-Received` header — that's the resume offset.
+     *
+     * Up to [UPLOAD_MAX_RETRIES] attempts per chunk with exponential backoff;
+     * a successful query that advances the offset resets the per-chunk
+     * counter (real progress was made) so a flaky tunnel doesn't burn the
+     * budget on chunks the server already has. There's no overall wall-clock
+     * cap — the user's "Cancel" button is the right deadline.
      *
      * The returned [UploadedFile] is typically `state == "PROCESSING"` — call
      * [pollUntilActive] before passing the URI to [generateFromAudio].
      *
-     * The audio bytes are read from [fileChannel] — a fresh channel per call,
-     * since Ktor will drain it. We never log the file path or any byte content.
+     * @param onProgress invoked after each accepted chunk (or after a query
+     *   advances the offset) with the cumulative byte count the server has
+     *   confirmed. Fires monotonically; receivers can plot it directly as
+     *   `received / sizeBytes`.
      */
     suspend fun uploadAudio(
         apiKey: String,
-        fileChannel: ByteReadChannel,
+        localPath: String,
         mimeType: String,
         sizeBytes: Long,
         displayName: String,
+        onProgress: (uploadedBytes: Long) -> Unit = {},
+        chunkSize: Int = UPLOAD_CHUNK_SIZE,
     ): Result<UploadedFile> {
         val startResponse: HttpResponse =
             runCatching {
                 client.post("$BASE_URL/upload/v1beta/files") {
+                    timeout { requestTimeoutMillis = METADATA_REQUEST_TIMEOUT_MS }
                     url {
                         parameters.append("key", apiKey)
                         parameters.append("uploadType", "resumable")
@@ -259,40 +288,137 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
             startResponse.headers["X-Goog-Upload-URL"]
                 ?: return Result.failure(AiErrorException(AiError.Unknown(startResponse.status.value)))
 
-        val finalizeResponse: HttpResponse =
-            runCatching {
-                client.put(uploadUrl) {
-                    headers {
-                        append("X-Goog-Upload-Command", "upload, finalize")
-                        append("X-Goog-Upload-Offset", "0")
-                    }
-                    setBody(
-                        object : OutgoingContent.WriteChannelContent() {
-                            override val contentLength = sizeBytes
-                            override val contentType = ContentType.parse(mimeType)
+        // Empty-file upload would hang the loop (offset never advances). Treat
+        // it as the kind of upstream bug we can't recover from and surface a
+        // clear failure rather than silently sending a finalize PUT with zero
+        // bytes — Gemini would reject that anyway.
+        if (sizeBytes <= 0L) {
+            return Result.failure(AiErrorException(AiError.Unknown(null)))
+        }
 
-                            override suspend fun writeTo(channel: ByteWriteChannel) {
-                                fileChannel.copyAndClose(channel)
-                            }
-                        },
-                    )
+        var offset = 0L
+        var attempt = 0
+        var finalResponse: HttpResponse? = null
+        while (offset < sizeBytes) {
+            val chunkLen = minOf(chunkSize.toLong(), sizeBytes - offset)
+            val isFinal = (offset + chunkLen) >= sizeBytes
+            val command = if (isFinal) "upload, finalize" else "upload"
+            val chunkOffset = offset
+
+            // Request timeout is intentionally NOT set on the chunk PUT —
+            // socket-inactivity (configured globally) is the right stall
+            // detector for an upload that may take minutes on a slow link.
+            val response: HttpResponse? =
+                runCatching {
+                    client.put(uploadUrl) {
+                        headers {
+                            append("X-Goog-Upload-Command", command)
+                            append("X-Goog-Upload-Offset", chunkOffset.toString())
+                        }
+                        setBody(
+                            object : OutgoingContent.WriteChannelContent() {
+                                override val contentLength = chunkLen
+                                override val contentType = ContentType.parse(mimeType)
+
+                                override suspend fun writeTo(channel: ByteWriteChannel) {
+                                    openRange(localPath, chunkOffset, chunkLen).copyAndClose(channel)
+                                }
+                            },
+                        )
+                    }
+                }.onFailure {
+                    // runCatching catches Throwable, including CancellationException —
+                    // re-throw so a Cancel tap (or clearAll) propagates immediately
+                    // instead of falling through into 16s of retry backoff.
+                    if (it is CancellationException) throw it
+                }.getOrElse { throwable ->
+                    logTransportFailure("uploadAudio.chunk[$chunkOffset]", throwable)
+                    null
                 }
-            }.getOrElse {
-                logTransportFailure("uploadAudio.finalize", it)
-                return Result.failure(AiErrorException(AiError.Network))
+
+            if (response != null && response.status.isSuccess()) {
+                offset += chunkLen
+                attempt = 0
+                onProgress(offset)
+                if (isFinal) finalResponse = response
+                continue
             }
 
-        if (!finalizeResponse.status.isSuccess()) {
-            logHttpFailure("uploadAudio.finalize", finalizeResponse.status.value)
-            return Result.failure(AiErrorException(finalizeResponse.status.toAiError()))
+            // Non-transient HTTP failure → fail fast (a 401 won't get better
+            // by retrying; surface it so the user can fix the key).
+            if (response != null && !response.status.isTransient()) {
+                logHttpFailure("uploadAudio.chunk[$chunkOffset]", response.status.value)
+                return Result.failure(AiErrorException(response.status.toAiError()))
+            }
+            if (response != null) {
+                logHttpFailure("uploadAudio.chunk[$chunkOffset]", response.status.value)
+            }
+
+            attempt++
+            if (attempt > UPLOAD_MAX_RETRIES) {
+                return Result.failure(AiErrorException(AiError.Network))
+            }
+            delay(UPLOAD_RETRY_BACKOFF_MS shl (attempt - 1))
+
+            // Ask the server how far it actually got — a chunk that failed
+            // mid-stream may still have landed bytes. If the server reports
+            // forward progress, jump to that offset and reset the per-chunk
+            // budget (we made real progress, even if our PUT didn't finish).
+            val queried = queryUploadOffset(uploadUrl)
+            if (queried != null && queried > offset) {
+                offset = queried
+                attempt = 0
+                onProgress(offset)
+            }
         }
-        return runCatching { finalizeResponse.body<FileEnvelope>().file }
+
+        val response =
+            finalResponse
+                ?: return Result.failure(AiErrorException(AiError.Unknown(null)))
+        return runCatching { response.body<FileEnvelope>().file }
             .map { Result.success(it) }
             .getOrElse {
                 logParseFailure("uploadAudio.finalize", it)
-                Result.failure(AiErrorException(AiError.Unknown(finalizeResponse.status.value)))
+                Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
             }
     }
+
+    /**
+     * Issues a zero-body `query` PUT to learn the server's confirmed offset
+     * for a resumable upload session. Returns null if the query itself fails
+     * (transport or non-2xx) or the response is missing the size header — in
+     * either case the caller falls back to retrying the chunk from the same
+     * offset, which is safe (the server is idempotent on resumable PUTs).
+     */
+    private suspend fun queryUploadOffset(uploadUrl: String): Long? {
+        val response: HttpResponse =
+            runCatching {
+                client.put(uploadUrl) {
+                    timeout { requestTimeoutMillis = METADATA_REQUEST_TIMEOUT_MS }
+                    headers { append("X-Goog-Upload-Command", "query") }
+                    setBody(EmptyBody)
+                }
+            }.onFailure {
+                // Same cancellation-rethrow rule as the chunk PUT — see uploadAudio.
+                if (it is CancellationException) throw it
+            }.getOrElse {
+                logTransportFailure("uploadAudio.query", it)
+                return null
+            }
+        if (!response.status.isSuccess()) {
+            logHttpFailure("uploadAudio.query", response.status.value)
+            return null
+        }
+        return response.headers["X-Goog-Upload-Size-Received"]?.toLongOrNull()
+    }
+
+    /**
+     * Whether [this] HTTP status is worth retrying on the upload path. Pulled
+     * out so the upload loop and any future chunked-content surface stay
+     * aligned. 408 Request Timeout joins the 5xx set because OkHttp / URLSession
+     * can surface a per-chunk read stall as 408 from a stale upstream.
+     */
+    private fun HttpStatusCode.isTransient(): Boolean = value in TRANSIENT_5XX || value == 408
 
     /**
      * Polls `GET /v1beta/{name}?key=…` until the file's `state` flips from
@@ -319,6 +445,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
             val response: HttpResponse =
                 runCatching {
                     client.get("$BASE_URL/v1beta/$name") {
+                        timeout { requestTimeoutMillis = METADATA_REQUEST_TIMEOUT_MS }
                         url { parameters.append("key", apiKey) }
                     }
                 }.getOrElse {
@@ -370,6 +497,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
             val response: HttpResponse =
                 runCatching {
                     client.post("$BASE_URL/v1beta/models/${model.apiId}:generateContent") {
+                        timeout { requestTimeoutMillis = GENERATE_REQUEST_TIMEOUT_MS }
                         contentType(ContentType.Application.Json)
                         url { parameters.append("key", apiKey) }
                         setBody(
@@ -427,6 +555,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
             val response: HttpResponse =
                 runCatching {
                     client.post("$BASE_URL/v1beta/models/${model.apiId}:generateContent") {
+                        timeout { requestTimeoutMillis = GENERATE_REQUEST_TIMEOUT_MS }
                         contentType(ContentType.Application.Json)
                         url { parameters.append("key", apiKey) }
                         setBody(
@@ -476,6 +605,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
     ): Result<Unit> {
         runCatching {
             client.delete("$BASE_URL/v1beta/$name") {
+                timeout { requestTimeoutMillis = METADATA_REQUEST_TIMEOUT_MS }
                 url { parameters.append("key", apiKey) }
             }
         }.onFailure {
@@ -635,6 +765,7 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         val response: HttpResponse =
             runCatching {
                 client.post("$BASE_URL/v1beta/models/${model.apiId}:generateContent") {
+                    timeout { requestTimeoutMillis = GENERATE_REQUEST_TIMEOUT_MS }
                     contentType(ContentType.Application.Json)
                     url { parameters.append("key", apiKey) }
                     setBody(
@@ -760,6 +891,39 @@ class GeminiClient(private val client: HttpClient) : KeyValidator, TextSummarise
         private const val GENERATE_RETRY_BACKOFF_MS = 2_000L
         private val TRANSIENT_5XX = setOf(500, 502, 503, 504)
 
+        // Per-call request-timeout overrides. The HTTP client itself has
+        // request-timeout disabled and relies on socket-inactivity as the
+        // stall detector — see AiHttpClient for the rationale. These values
+        // re-introduce a wall-clock cap on the calls where the request body
+        // is small and a hung response is the failure mode (inference,
+        // metadata round-trips). The chunked upload PUT deliberately gets NO
+        // request timeout — it can take minutes on a slow link.
+        //
+        // 5 minutes covers the longest observed Flash inference on a
+        // transcript-length input by a comfortable margin without leaving
+        // the UI hung indefinitely on a wedged connection.
+        private const val GENERATE_REQUEST_TIMEOUT_MS = 5L * 60 * 1000
+
+        // Short, fixed-cost calls. 30s is generous against transient
+        // upstream slowness without making an obviously-stuck call cost
+        // the user minutes of waiting.
+        private const val METADATA_REQUEST_TIMEOUT_MS = 30_000L
+
+        // Resumable upload chunk size. Multiple of 256KB (Google's documented
+        // requirement) and the published sweet spot for throughput vs resume
+        // granularity. A 100 MB episode lands in 13 chunks; a 300 MB one in
+        // 38. A failed chunk only wastes that many bytes on retry, not the
+        // whole upload.
+        private const val UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024
+
+        // Per-chunk retry budget. 5 attempts with exponential backoff (1s,
+        // 2s, 4s, 8s, 16s) gives ~31s of total wait against a flaky link
+        // before we surface AiError.Network — and a successful query that
+        // advances the offset resets the counter, so a tunnel that's
+        // genuinely making progress doesn't drain the budget.
+        private const val UPLOAD_MAX_RETRIES = 5
+        private const val UPLOAD_RETRY_BACKOFF_MS = 1_000L
+
         // Diagnostic log tag. Filterable via `adb logcat -s Kofipod-AI:V`. We
         // never log the request body, response body, or API key — only the
         // throwable's class name and (for HTTP failures) the status code.
@@ -862,6 +1026,16 @@ private data class StartUploadFile(
 /** Wraps an [UploadedFile] inside a `{"file": …}` envelope, as the upload PUT response does. */
 @Serializable
 private data class FileEnvelope(val file: UploadedFile)
+
+/**
+ * Zero-byte body for the resumable-upload `query` PUT. Ktor's default body
+ * derivation would surface `null` here as a `NullBody` and produce a request
+ * without a `Content-Length` header — Google's resumable endpoint requires
+ * `Content-Length: 0` on a query, so we send an explicit empty content.
+ */
+private object EmptyBody : OutgoingContent.NoContent() {
+    override val contentLength: Long = 0L
+}
 
 @Serializable
 private data class GenerationConfig(

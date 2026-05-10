@@ -143,14 +143,15 @@ val commonDataModule =
         // synchronous fake and exercise the coordinator without the network.
         single<AudioUploader> {
             val gemini = get<GeminiClient>()
-            AudioUploader { apiKey, channel, mimeType, sizeBytes, displayName ->
+            AudioUploader { apiKey, localPath, mimeType, sizeBytes, displayName, onProgress ->
                 gemini
                     .uploadAudio(
                         apiKey = apiKey,
-                        fileChannel = channel,
+                        localPath = localPath,
                         mimeType = mimeType,
                         sizeBytes = sizeBytes,
                         displayName = displayName,
+                        onProgress = onProgress,
                     ).fold(
                         onSuccess = { uploaded -> gemini.pollUntilActive(apiKey, uploaded.name) },
                         onFailure = { Result.failure(it) },

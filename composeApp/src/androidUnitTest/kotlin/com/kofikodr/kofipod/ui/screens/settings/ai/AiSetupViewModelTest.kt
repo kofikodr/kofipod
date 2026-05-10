@@ -522,11 +522,10 @@ class AiSetupViewModelTest {
     ): com.kofikodr.kofipod.ai.AudioUploadCoordinator =
         com.kofikodr.kofipod.ai.AudioUploadCoordinator(
             uploader =
-                com.kofikodr.kofipod.ai.AudioUploader { _, _, _, _, _ ->
+                com.kofikodr.kofipod.ai.AudioUploader { _, _, _, _, _, _ ->
                     error("AiSetupViewModelTest must not exercise the audio uploader")
                 },
             db = db,
-            openFile = { io.ktor.utils.io.ByteReadChannel.Empty },
             ioContext = testDispatcher,
         )
 

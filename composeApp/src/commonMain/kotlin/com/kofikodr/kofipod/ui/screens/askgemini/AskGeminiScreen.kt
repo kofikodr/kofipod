@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -55,6 +56,7 @@ import com.kofikodr.kofipod.ui.primitives.KPIconName
 import com.kofikodr.kofipod.ui.screens.detail.ai.AiPillChip
 import com.kofikodr.kofipod.ui.screens.detail.ai.SendBubble
 import com.kofikodr.kofipod.ui.screens.detail.ai.SuggestionCard
+import com.kofikodr.kofipod.ui.screens.detail.formatMbProgress
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
@@ -576,22 +578,62 @@ private fun UploadProgressBubble(progress: DiscussProgress) {
     val c = LocalKofipodColors.current
     val label =
         when (progress.stage) {
-            DiscussProgressStage.Uploading -> "Uploading audio…"
+            DiscussProgressStage.Uploading -> {
+                // Surface byte-level progress when the chunked uploader has
+                // reported in. The numerator rounds down so the displayed
+                // progress never overshoots the denominator mid-upload.
+                val uploaded = progress.uploadedBytes
+                val total = progress.sizeBytes
+                if (uploaded != null && total != null && total > 0L) {
+                    "Uploading audio… ${formatMbProgress(uploaded, total)}"
+                } else {
+                    "Uploading audio…"
+                }
+            }
             DiscussProgressStage.Analysing -> "Analysing audio…"
         }
+    val fraction =
+        if (
+            progress.stage == DiscussProgressStage.Uploading &&
+            progress.uploadedBytes != null &&
+            progress.sizeBytes != null &&
+            progress.sizeBytes > 0L
+        ) {
+            (progress.uploadedBytes.toFloat() / progress.sizeBytes.toFloat()).coerceIn(0f, 1f)
+        } else {
+            null
+        }
     Row {
-        Row(
+        Column(
             Modifier
                 .clip(RoundedCornerShape(18.dp))
                 .background(c.surface)
                 .border(1.dp, c.border, RoundedCornerShape(18.dp))
                 .padding(horizontal = 14.dp, vertical = 12.dp)
                 .testTag("askGeminiUploadProgress"),
-            verticalAlignment = Alignment.CenterVertically,
         ) {
-            KPIcon(name = KPIconName.Sparkle, color = c.pink, size = 14.dp)
-            Spacer(Modifier.width(8.dp))
-            Text(label, color = c.textSoft, fontSize = 13.sp, lineHeight = 18.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                KPIcon(name = KPIconName.Sparkle, color = c.pink, size = 14.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(label, color = c.textSoft, fontSize = 13.sp, lineHeight = 18.sp)
+            }
+            // Bar only when we have a real fraction — Analysing and the
+            // first-tick window keep the bubble at its original height so
+            // the chat doesn't jitter on every stage flip.
+            if (fraction != null) {
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { fraction },
+                    color = c.pink,
+                    trackColor = c.pinkSoft,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(3.dp)
+                            .clip(RoundedCornerShape(999.dp))
+                            .testTag("askGeminiUploadProgressBar"),
+                )
+            }
         }
     }
 }

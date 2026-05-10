@@ -4,7 +4,6 @@ package com.kofikodr.kofipod.ai
 import com.kofikodr.kofipod.db.Download
 import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.db.KofipodDatabase
-import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -13,18 +12,25 @@ import kotlinx.datetime.Clock
 import kotlin.coroutines.CoroutineContext
 
 /**
- * Seam over the Files API "upload + poll until ACTIVE" pair so the coordinator
- * can be unit-tested without standing up Ktor's MockEngine. Production
- * binding is a thin lambda that calls [GeminiClient.uploadAudio] and then
- * [GeminiClient.pollUntilActive].
+ * Seam over the Files API "chunked upload + poll until ACTIVE" pair so the
+ * coordinator can be unit-tested without standing up Ktor's MockEngine
+ * (whose internal dispatcher doesn't compose with `runTest`'s virtual
+ * scheduler). Production binding is a thin lambda that calls
+ * [GeminiClient.uploadAudio] and then [GeminiClient.pollUntilActive].
+ *
+ * @param onProgress invoked monotonically with the cumulative byte count
+ *   the server has confirmed for the upload portion. Reaches `sizeBytes`
+ *   when the last chunk lands; `pollUntilActive` does not fire it. UI
+ *   layers translate this into a progress bar on the "Uploading audio" row.
  */
 fun interface AudioUploader {
     suspend fun upload(
         apiKey: String,
-        channel: ByteReadChannel,
+        localPath: String,
         mimeType: String,
         sizeBytes: Long,
         displayName: String,
+        onProgress: (uploadedBytes: Long) -> Unit,
     ): Result<UploadedFile>
 }
 
@@ -52,7 +58,6 @@ fun interface AudioUploader {
 class AudioUploadCoordinator(
     private val uploader: AudioUploader,
     private val db: KofipodDatabase,
-    private val openFile: (String) -> ByteReadChannel = ::openLocalFileChannel,
     private val clock: Clock = Clock.System,
     private val ttlMs: Long = DEFAULT_TTL_MS,
     private val ioContext: CoroutineContext = Dispatchers.Default,
@@ -79,12 +84,17 @@ class AudioUploadCoordinator(
      *   [GenerationStage.Analysing] after upload finalises and polling
      *   begins. **Not invoked on cache hits** — the caller's UI uses this
      *   to decide whether to render the staged progress card.
+     * @param onUploadProgress monotonic byte count of upload bytes the
+     *   server has confirmed. Fires only on a fresh upload (cache hits
+     *   skip it). UI receivers render this as `received / sizeBytes` on
+     *   the Preparing row's progress bar.
      */
     suspend fun acquire(
         apiKey: String,
         episode: Episode,
         download: Download,
         onStage: (GenerationStage) -> Unit = {},
+        onUploadProgress: (uploadedBytes: Long) -> Unit = {},
     ): Result<AcquiredAudioFile> {
         val mimeType = episode.enclosureMimeType.ifBlank { DEFAULT_AUDIO_MIME }
         val fingerprint = download.downloadedBytes.toString()
@@ -109,6 +119,7 @@ class AudioUploadCoordinator(
                 sizeBytes = download.downloadedBytes,
                 fingerprint = fingerprint,
                 onStage = onStage,
+                onUploadProgress = onUploadProgress,
             )
         }
     }
@@ -159,21 +170,23 @@ class AudioUploadCoordinator(
         sizeBytes: Long,
         fingerprint: String,
         onStage: (GenerationStage) -> Unit,
+        onUploadProgress: (uploadedBytes: Long) -> Unit,
     ): Result<AcquiredAudioFile> {
         onStage(GenerationStage.Preparing)
-        val channel = openFile(localPath)
-        // The uploader handles the upload + active-state poll as one suspend
-        // call so the coordinator only sees the final ACTIVE [UploadedFile].
-        // Stage flips to Analysing as soon as the upload's done — production
-        // wiring (CommonModule) interleaves the two calls and fires Analysing
-        // between them; tests are free to fire it whenever they like.
+        // The uploader handles the chunked upload + active-state poll as one
+        // suspend call so the coordinator only sees the final ACTIVE
+        // [UploadedFile]. Stage flips to Analysing as soon as the upload's
+        // done — production wiring (CommonModule) interleaves the two calls
+        // and fires Analysing between them; tests are free to fire it
+        // whenever they like.
         val active =
             uploader.upload(
                 apiKey = apiKey,
-                channel = channel,
+                localPath = localPath,
                 mimeType = mimeType,
                 sizeBytes = sizeBytes,
                 displayName = "kofipod-$episodeId",
+                onProgress = onUploadProgress,
             ).getOrElse { return Result.failure(it) }
         onStage(GenerationStage.Analysing)
 

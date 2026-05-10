@@ -119,7 +119,7 @@ class AiSummaryRepositoryTest {
     @Test
     fun observeFor_returnsIdleNull_whenAudioFallbackDisabled_onIosLikePlatform() =
         runTest {
-            // iOS does not yet wire `openLocalFileChannel`. The repo must NOT
+            // iOS does not yet wire `openFileRange`. The repo must NOT
             // surface Idle(Audio) on platforms where the pipeline can't run —
             // otherwise the user gets a Generate button that always fails.
             val (repo, db) = build(initialKey = "k", audioFallbackEnabled = false)
@@ -313,6 +313,47 @@ class AiSummaryRepositoryTest {
                 "Audio fingerprint must be the decimal byte count — drives stale detection on re-download",
             )
             assertEquals(false, ready.stale, "Freshly-persisted audio summary must NOT be stale")
+        }
+
+    @Test
+    fun generate_audioPath_surfacesUploadedBytes_inGeneratingState() =
+        runTest {
+            // The chunked upload calls back per-chunk with a cumulative byte
+            // count; the repository must forward those into the Generating
+            // state's `uploadedBytes` so the panel can render a real progress
+            // bar. This is the load-bearing wire from coordinator → repo →
+            // UI; without it the bar would never advance past zero on long
+            // episodes.
+            val sizeBytes = 9_876_543L
+            val firstTick = sizeBytes / 4
+            // Park the uploader after firing one chunk so the test can read
+            // the live state mid-pipeline. A CompletableDeferred that the
+            // test never completes wedges the upload deliberately — the test
+            // still finishes because we cancel via the repo's `cancel()`
+            // affordance below.
+            val gate = CompletableDeferred<Result<UploadedFile>>()
+            val uploader =
+                StubAudioUploader(handler = { call ->
+                    call.onProgress(firstTick)
+                    gate.await()
+                })
+            val (repo, db) = build(initialKey = "k", uploader = uploader)
+            insertEpisode(db, episodeId = "ep1", transcriptUrl = "", durationSec = 1800L)
+            insertCompletedDownload(db, episodeId = "ep1", localPath = "/tmp/ep1.mp3", downloadedBytes = sizeBytes)
+
+            repo.generate("ep1")
+            advanceUntilIdle()
+
+            val mid = repo.observeFor("ep1").first()
+            val generating = assertIs<AiSummaryUiState.Generating>(mid, "Pipeline must be parked in Generating, got $mid")
+            assertEquals(GenerationStage.Preparing, generating.stage, "Live byte tick must keep stage on Preparing")
+            assertEquals(sizeBytes, generating.sizeBytes, "Total size must travel through unchanged")
+            assertEquals(firstTick, generating.uploadedBytes, "First chunk's byte count must reach the UI state")
+
+            // Tear down the parked job so the test scope completes.
+            repo.cancel("ep1")
+            gate.complete(Result.failure(AiErrorException(AiError.Network)))
+            advanceUntilIdle()
         }
 
     @Test
@@ -958,7 +999,6 @@ class AiSummaryRepositoryTest {
             AudioUploadCoordinator(
                 uploader = uploader,
                 db = db,
-                openFile = { io.ktor.utils.io.ByteReadChannel.Empty },
                 ioContext = testDispatcher,
             )
         val repo =
@@ -1131,12 +1171,13 @@ private class StubAudioUploader(
 
     override suspend fun upload(
         apiKey: String,
-        channel: io.ktor.utils.io.ByteReadChannel,
+        localPath: String,
         mimeType: String,
         sizeBytes: Long,
         displayName: String,
+        onProgress: (uploadedBytes: Long) -> Unit,
     ): Result<UploadedFile> {
-        val call = StubUploadCall(apiKey, mimeType, sizeBytes, displayName)
+        val call = StubUploadCall(apiKey, mimeType, sizeBytes, displayName, onProgress)
         calls += call
         return handler(call)
     }
@@ -1147,6 +1188,7 @@ private data class StubUploadCall(
     val mimeType: String,
     val sizeBytes: Long,
     val displayName: String,
+    val onProgress: (Long) -> Unit,
 )
 
 private class DbDownloadSource(private val db: KofipodDatabase) : DownloadSource {

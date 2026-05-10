@@ -20,6 +20,13 @@ enum class GenerationStage { Preparing, Analysing, Formatting }
 internal data class GenerationProgress(
     val stage: GenerationStage,
     val sizeBytes: Long?,
+    /**
+     * Cumulative bytes the Files API has confirmed for the in-flight chunked
+     * upload. `null` when the pipeline isn't on the audio path, hasn't started
+     * uploading yet, or is on a cache hit (no fresh upload in progress).
+     * Reaches [sizeBytes] just before the stage flips to [GenerationStage.Analysing].
+     */
+    val uploadedBytes: Long? = null,
 )
 
 /**
@@ -108,6 +115,14 @@ sealed interface AiSummaryUiState {
         val sourceKind: AiSourceKind,
         val stage: GenerationStage = GenerationStage.Preparing,
         val sizeBytes: Long? = null,
+        /**
+         * Confirmed-uploaded byte count for an audio-path Generating state.
+         * Surfaces a determinate progress bar on the "Uploading audio" row
+         * when both this and [sizeBytes] are non-null. Null on transcript
+         * runs, on cache hits, and during the first tick before any chunk
+         * has landed (the row falls back to the size-only label).
+         */
+        val uploadedBytes: Long? = null,
     ) : AiSummaryUiState
 
     /**
