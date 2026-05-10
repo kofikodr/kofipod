@@ -529,7 +529,7 @@ val commonDataModule =
                 player = get(),
             )
         }
-        viewModel { DownloadsViewModel(get()) }
+        viewModel { DownloadsViewModel(get(), get()) }
         viewModel { SchedulerInfoViewModel(get()) }
         viewModel { (podcastId: String) ->
             PodcastDetailViewModel(podcastId, get(), get(), get(), get(), get(), get(), get(), get(), get())

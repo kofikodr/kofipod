@@ -49,8 +49,6 @@ import org.koin.compose.viewmodel.koinViewModel
 import kotlin.math.max
 import kotlin.math.min
 
-/** Default auto-download cap shown in the hero card when Settings doesn't override it. */
-private const val DEFAULT_CAP_GB: Double = 3.0
 private const val BYTES_PER_GB: Double = 1024.0 * 1024.0 * 1024.0
 private const val BYTES_PER_MB: Double = 1024.0 * 1024.0
 
@@ -63,8 +61,8 @@ fun DownloadsScreen(
     val c = LocalKofipodColors.current
 
     val usedBytes: Long = state.completed.sumOf { it.totalBytes.coerceAtLeast(0L) }
-    val capGb: Double = DEFAULT_CAP_GB
-    val capBytes: Long = (capGb * BYTES_PER_GB).toLong()
+    val capBytes: Long = state.capBytes
+    val capGb: Double = capBytes.toDouble() / BYTES_PER_GB
     val fraction: Float =
         if (capBytes > 0) {
             (usedBytes.toDouble() / capBytes.toDouble()).toFloat().coerceIn(0f, 1f)
