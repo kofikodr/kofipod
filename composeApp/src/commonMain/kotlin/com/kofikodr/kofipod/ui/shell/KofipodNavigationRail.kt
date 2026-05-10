@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navOptions
@@ -59,8 +60,17 @@ fun KofipodNavigationRail(
         currentRoute = currentRoute,
         mode = size.railMode,
         onSelect = { destination ->
-            nav.popBackStack()
-            nav.navigate(destination.route, navOptions { launchSingleTop = true })
+            // Spec §3: pop to start destination — intentionally differs from the phone BottomNav (AppShell.kt:~266) until that is updated separately.
+            nav.navigate(
+                destination.route,
+                navOptions {
+                    popUpTo(nav.graph.findStartDestination().id) {
+                        saveState = true
+                    }
+                    launchSingleTop = true
+                    restoreState = true
+                },
+            )
         },
         modifier = modifier,
     )
