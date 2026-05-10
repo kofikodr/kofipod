@@ -124,7 +124,6 @@ private fun androidx.compose.foundation.lazy.LazyListScope.topPodcastItems(
     items(list.size) { i ->
         TopPodcastRow(
             entry = list[i],
-            rank = i + 1,
             onClick = { onOpenPodcast(list[i].podcastId) },
             showDivider = i < list.lastIndex,
         )
@@ -826,7 +825,6 @@ private fun CompletedRing(
 @Composable
 private fun TopPodcastRow(
     entry: TopPodcast,
-    rank: Int,
     onClick: () -> Unit,
     showDivider: Boolean,
 ) {
@@ -834,55 +832,42 @@ private fun TopPodcastRow(
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(LocalKofipodRadii.current.md))
-            .background(c.surface)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .clickable(onClick = onClick),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(c.purpleTint),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    "$rank",
-                    color = c.purple,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                )
-            }
-            Spacer(Modifier.width(10.dp))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             KofipodArtwork(
-                size = 40.dp,
+                size = 44.dp,
                 seed = entry.podcastId.hashCode(),
                 model = entry.artworkUrl?.ifBlank { null },
                 label = entry.podcastTitle,
                 contentDescription = entry.podcastTitle,
-                radius = 8.dp,
+                radius = 10.dp,
             )
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    entry.podcastTitle.ifBlank { "Untitled podcast" },
-                    color = c.text,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                )
-                Text(
-                    formatHoursMinutes(entry.seconds),
-                    color = c.textMute,
-                    fontSize = 12.sp,
-                )
-            }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                entry.podcastTitle.ifBlank { "Untitled podcast" },
+                color = c.text,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(12.dp))
             KPIcon(name = KPIconName.ChevronRight, color = c.textMute, size = 16.dp)
         }
         if (showDivider) {
-            Spacer(Modifier.height(6.dp))
-            Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(c.border),
+            )
         }
     }
 }
