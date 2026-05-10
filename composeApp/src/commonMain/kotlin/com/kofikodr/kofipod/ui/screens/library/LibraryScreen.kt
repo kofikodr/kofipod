@@ -178,9 +178,8 @@ fun LibraryScreen(
  * unchanged; the `size` parameter is a placeholder for Tasks 2.2 / 2.3 which will
  * branch on tablet portrait / master-detail variants.
  */
-@Suppress("UnusedParameter")
 @Composable
-private fun LibraryContent(
+internal fun LibraryContent(
     state: LibraryUiState,
     onOpenPodcast: (String) -> Unit,
     onOpenList: (String?) -> Unit,
@@ -196,7 +195,7 @@ private fun LibraryContent(
     onLongPressSmartPlaylist: (SmartPlaylistDomain) -> Unit,
     onImportOpml: () -> Unit,
     // TODO(tablet-phase-2.2/2.3): branch on size for tablet layouts
-    size: TabletSize?,
+    @Suppress("UNUSED_PARAMETER") size: TabletSize?,
 ) {
     val c = LocalKofipodColors.current
 
