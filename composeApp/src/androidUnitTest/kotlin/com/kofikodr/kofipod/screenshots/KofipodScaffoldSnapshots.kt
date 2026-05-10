@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
+import com.android.resources.Density
 import com.android.resources.ScreenOrientation
 import com.kofikodr.kofipod.ui.layout.LocalTabletSize
 import com.kofikodr.kofipod.ui.layout.TabletSize
@@ -34,19 +35,29 @@ class KofipodScaffoldSnapshots {
     @get:Rule
     val paparazzi =
         Paparazzi(
-            // 1400 x 1000 dp at xdpi/ydpi 160 = 1 px per dp.
-            // Paparazzi treats screenWidth/screenHeight as the device's native
-            // portrait dimensions and swaps them when orientation = LANDSCAPE.
-            // So portrait (1000, 1400) rotated lands at 1400 x 1000 dp on screen.
+            // 1400 x 1000 dp at density MEDIUM (160 dpi) = 1 px per dp.
+            // PIXEL_5's default density is XXHIGH (~440 dpi); without overriding it,
+            // Compose computes dp from `density` (not xdpi/ydpi) and the rendered
+            // viewport shrinks. Resetting to MEDIUM keeps 1 px = 1 dp.
+            // Set screenWidth/screenHeight directly to the landscape dimensions —
+            // Paparazzi renders the PNG at the screenWidth x screenHeight values
+            // regardless of ScreenOrientation, so the orientation field is just
+            // metadata for resource qualifiers (land/port) here.
             deviceConfig =
                 DeviceConfig.PIXEL_5.copy(
-                    screenWidth = 1000,
-                    screenHeight = 1400,
+                    screenWidth = 1400,
+                    screenHeight = 1000,
                     xdpi = 160,
                     ydpi = 160,
+                    density = Density.MEDIUM,
                     orientation = ScreenOrientation.LANDSCAPE,
                 ),
             theme = "android:Theme.Material.Light.NoActionBar",
+            // useDeviceResolution = true makes Paparazzi render the PNG at the
+            // device's actual pixel dimensions. The default applies an internal
+            // 1000px maxRenderSize cap (downscaling to ~1000x714 here), which
+            // breaks the spec-mandated 1400x1000 px baseline.
+            useDeviceResolution = true,
         )
 
     @Test

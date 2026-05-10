@@ -31,10 +31,15 @@ import com.kofikodr.kofipod.ui.player.MiniPlayer
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
 
 /**
- * Top-level app chrome. Picks between the phone layout (Scaffold with bottom bar + mini player)
- * and the tablet layout (Row(rail, Column(content, dockedMiniPlayer))) based on
- * [LocalTabletSize]. The phone branch is the existing AppShell Scaffold body moved
- * wholesale; behavior is unchanged for phones.
+ * App-level scaffold that renders either the phone bottom-bar layout or the tablet
+ * rail-plus-docked-mini-player layout based on [LocalTabletSize].
+ *
+ * Phone path is selected when `LocalTabletSize.current == null`. To activate the
+ * tablet path on real devices, wrap the app shell in `WithTabletSize` (done in
+ * Task 1.6 of `docs/superpowers/plans/2026-05-11-tablet-phase-01-foundation.md`).
+ * Without that wrapper the CompositionLocal default is null and the phone path
+ * is always chosen — by design for this task; the tablet branch is exercised
+ * via Paparazzi snapshots that inject [LocalTabletSize] directly.
  *
  * Tablet branch currently uses placeholder rail + docked mini-player composables.
  * Tasks 1.3 and 1.4 of the tablet Phase 1 plan replace them with real components.
@@ -67,6 +72,7 @@ fun KofipodScaffold(
     }
 }
 
+/** Phone branch: Material Scaffold with bottom mini-player + bottom navigation bar. */
 @Composable
 private fun PhoneScaffold(
     nav: NavHostController,
@@ -108,6 +114,7 @@ private fun PhoneScaffold(
     }
 }
 
+/** Tablet branch: leading navigation rail beside a column of content + docked mini-player. */
 @Composable
 private fun TabletScaffold(
     snackbarHostState: SnackbarHostState,
