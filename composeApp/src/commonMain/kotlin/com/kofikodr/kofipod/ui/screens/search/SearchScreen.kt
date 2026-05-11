@@ -61,6 +61,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kofikodr.kofipod.domain.PodcastSummary
+import com.kofikodr.kofipod.ui.layout.LocalTabletSize
+import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.primitives.KPChip
 import com.kofikodr.kofipod.ui.primitives.KPChipTone
 import com.kofikodr.kofipod.ui.primitives.KPIcon
@@ -81,7 +83,6 @@ fun SearchScreen(
     viewModel: SearchViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
-    val c = LocalKofipodColors.current
 
     // Surface "out of reshuffles" as a transient toast string, consumed by the rendering below.
     var toastText by remember { mutableStateOf<String?>(null) }
@@ -94,6 +95,41 @@ fun SearchScreen(
         }
     }
 
+    SearchContent(
+        state = state,
+        toastText = toastText,
+        onToastDone = { toastText = null },
+        onQueryChange = viewModel::setQuery,
+        onTabSelect = viewModel::setTab,
+        onReshuffle = viewModel::reshuffle,
+        onLoadMore = viewModel::loadMore,
+        onPickTopic = viewModel::setQuery,
+        onOpenPodcast = onOpenPodcast,
+        size = LocalTabletSize.current,
+    )
+}
+
+/**
+ * Stateless Search body. Phone (`size == null`) renders today's single-column layout
+ * unchanged. Tablet branches are intentionally not implemented yet — Tasks 3.2 / 3.3
+ * / 3.5 will add tablet-portrait, tablet-landscape master-detail, and Discover-hero
+ * variants respectively. `internal` so Paparazzi tests can construct it directly.
+ */
+@Composable
+internal fun SearchContent(
+    state: SearchUiState,
+    toastText: String?,
+    onToastDone: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onTabSelect: (SearchTab) -> Unit,
+    onReshuffle: () -> Unit,
+    onLoadMore: () -> Unit,
+    onPickTopic: (String) -> Unit,
+    onOpenPodcast: (String) -> Unit,
+    @Suppress("UNUSED_PARAMETER") size: TabletSize?,
+) {
+    // TODO(tablet-phase-3.2/3.3/3.5): branch on size for tablet layouts.
+    val c = LocalKofipodColors.current
     Box(Modifier.fillMaxSize().background(c.bg)) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             Spacer(Modifier.height(24.dp))
@@ -112,11 +148,11 @@ fun SearchScreen(
             Spacer(Modifier.height(16.dp))
             SearchBar(
                 value = state.query,
-                onValueChange = viewModel::setQuery,
-                onClear = { viewModel.setQuery("") },
+                onValueChange = onQueryChange,
+                onClear = { onQueryChange("") },
             )
             Spacer(Modifier.height(14.dp))
-            TabRow(current = state.tab, onSelect = viewModel::setTab)
+            TabRow(current = state.tab, onSelect = onTabSelect)
             Spacer(Modifier.height(16.dp))
 
             when {
@@ -151,13 +187,13 @@ fun SearchScreen(
                                     items = state.recommendations,
                                     inlineLoading = state.recsLoading,
                                     inlineQuip = state.recsLoadingQuip,
-                                    onReshuffle = viewModel::reshuffle,
+                                    onReshuffle = onReshuffle,
                                     onOpenPodcast = onOpenPodcast,
                                 )
                             EmptyQueryContent.ColdStart ->
                                 SearchEmptyState(
                                     categories = state.popularCategories,
-                                    onPickTopic = viewModel::setQuery,
+                                    onPickTopic = onPickTopic,
                                 )
                         }
                     }
@@ -178,14 +214,14 @@ fun SearchScreen(
                         }
                         if (state.hasMore) {
                             item(key = "load-more") {
-                                LoadMoreRow(loading = state.loadingMore, onClick = viewModel::loadMore)
+                                LoadMoreRow(loading = state.loadingMore, onClick = onLoadMore)
                             }
                         }
                     }
                 }
             }
         }
-        SearchToast(text = toastText, onDone = { toastText = null })
+        SearchToast(text = toastText, onDone = onToastDone)
     }
 }
 
