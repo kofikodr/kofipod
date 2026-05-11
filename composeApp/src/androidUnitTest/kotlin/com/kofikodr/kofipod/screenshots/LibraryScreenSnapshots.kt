@@ -204,6 +204,7 @@ private fun LibraryHarness(
                     onOpenList = {},
                     onOpenSearch = {},
                     onOpenStarterPack = {},
+                    onOpenBookmarks = {},
                     onOpenLibrarySearch = {},
                     onOpenSmartPlaylistDetail = {},
                     onNewList = {},
