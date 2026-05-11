@@ -103,6 +103,17 @@ fun SearchScreen(
         }
     }
 
+    val tabletSize = LocalTabletSize.current
+    // Task 3.4 — single source of truth for "what does tapping a result mean here?"
+    // Phone + portraits navigate; landscapes select the master-detail preview. The
+    // size-aware decision lives in [routeSearchResultTap]; SearchScreen just consumes it.
+    val onResultTap: (String) -> Unit = { podcastId ->
+        when (val action = routeSearchResultTap(tabletSize, podcastId)) {
+            is SearchResultTapAction.Navigate -> onOpenPodcast(action.podcastId)
+            is SearchResultTapAction.Select -> viewModel.selectSearchResult(action.podcastId)
+        }
+    }
+
     SearchContent(
         state = state,
         toastText = toastText,
@@ -113,13 +124,11 @@ fun SearchScreen(
         onLoadMore = viewModel::loadMore,
         onPickTopic = viewModel::setQuery,
         onOpenPodcast = onOpenPodcast,
+        onResultTap = onResultTap,
         selectedSearchResultId = selectedSearchResultId,
         selectedRecentEpisodes = selectedRecentEpisodes,
-        onSelectSearchResult = viewModel::selectSearchResult,
-        // Task 3.4 will wire this to SubscriptionRepository.subscribe(...). For now
-        // the button is present in the preview pane but the click is a no-op.
-        onSubscribe = {},
-        size = LocalTabletSize.current,
+        onSubscribe = viewModel::subscribe,
+        size = tabletSize,
     )
 }
 
@@ -131,8 +140,10 @@ fun SearchScreen(
  * route to [SearchContentTabletMasterDetail] — master = scope tabs + results column,
  * detail = [SearchPreviewPane] for the selected result.
  *
- * `selectedSearchResultId` / `selectedRecentEpisodes` / `onSelectSearchResult` /
- * `onSubscribe` are only consumed by the landscape branch but are accepted on every
+ * Result-tap routing is decided one level up in [SearchScreen] via [routeSearchResultTap]
+ * and passed in as a single [onResultTap] lambda — leaf composables don't need to know
+ * which size they're rendering for. `selectedSearchResultId` / `selectedRecentEpisodes`
+ * / `onSubscribe` are only consumed by the landscape branch but are accepted on every
  * call so the public `SearchScreen` doesn't have to fork its argument list per form
  * factor. `internal` so Paparazzi tests can construct it directly.
  */
@@ -148,9 +159,9 @@ internal fun SearchContent(
     onPickTopic: (String) -> Unit,
     onOpenPodcast: (String) -> Unit,
     size: TabletSize?,
+    onResultTap: (String) -> Unit = onOpenPodcast,
     selectedSearchResultId: String? = null,
     selectedRecentEpisodes: List<Episode> = emptyList(),
-    onSelectSearchResult: (String?) -> Unit = {},
     onSubscribe: (String) -> Unit = {},
 ) {
     when (size) {
@@ -165,6 +176,7 @@ internal fun SearchContent(
                 onLoadMore = onLoadMore,
                 onPickTopic = onPickTopic,
                 onOpenPodcast = onOpenPodcast,
+                onResultTap = onResultTap,
                 size = size,
             )
         }
@@ -187,9 +199,9 @@ internal fun SearchContent(
                 onLoadMore = onLoadMore,
                 onPickTopic = onPickTopic,
                 onOpenPodcast = onOpenPodcast,
+                onResultTap = onResultTap,
                 selectedSummary = selectedSummary,
                 selectedRecentEpisodes = selectedRecentEpisodes,
-                onSelectSearchResult = onSelectSearchResult,
                 onSubscribe = onSubscribe,
             )
         }
@@ -204,6 +216,7 @@ internal fun SearchContent(
                 onLoadMore = onLoadMore,
                 onPickTopic = onPickTopic,
                 onOpenPodcast = onOpenPodcast,
+                onResultTap = onResultTap,
             )
     }
 }
@@ -219,6 +232,7 @@ private fun SearchContentPhone(
     onLoadMore: () -> Unit,
     onPickTopic: (String) -> Unit,
     onOpenPodcast: (String) -> Unit,
+    onResultTap: (String) -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Box(Modifier.fillMaxSize().background(c.bg)) {
@@ -231,6 +245,7 @@ private fun SearchContentPhone(
                 onLoadMore = onLoadMore,
                 onPickTopic = onPickTopic,
                 onOpenPodcast = onOpenPodcast,
+                onResultTap = onResultTap,
             )
         }
         SearchToast(text = toastText, onDone = onToastDone)
@@ -260,6 +275,7 @@ private fun SearchContentTabletSingle(
     onLoadMore: () -> Unit,
     onPickTopic: (String) -> Unit,
     onOpenPodcast: (String) -> Unit,
+    onResultTap: (String) -> Unit,
     @Suppress("UNUSED_PARAMETER") size: TabletSize,
 ) {
     val c = LocalKofipodColors.current
@@ -283,6 +299,7 @@ private fun SearchContentTabletSingle(
                     onLoadMore = onLoadMore,
                     onPickTopic = onPickTopic,
                     onOpenPodcast = onOpenPodcast,
+                    onResultTap = onResultTap,
                 )
             }
         }
@@ -311,9 +328,9 @@ private fun SearchContentTabletMasterDetail(
     onLoadMore: () -> Unit,
     onPickTopic: (String) -> Unit,
     onOpenPodcast: (String) -> Unit,
+    onResultTap: (String) -> Unit,
     selectedSummary: PodcastSummary?,
     selectedRecentEpisodes: List<Episode>,
-    onSelectSearchResult: (String?) -> Unit,
     onSubscribe: (String) -> Unit,
 ) {
     val c = LocalKofipodColors.current
@@ -333,7 +350,7 @@ private fun SearchContentTabletMasterDetail(
                         onLoadMore = onLoadMore,
                         onPickTopic = onPickTopic,
                         onOpenPodcast = onOpenPodcast,
-                        onResultTap = { onSelectSearchResult(it) },
+                        onResultTap = onResultTap,
                         selectedResultId = selectedSummary?.id,
                     )
                 }
@@ -499,10 +516,11 @@ private fun SearchPreviewEpisodeRow(
  * switch — identical across form factors. Layout differences (padding, max-width
  * cap, chrome) live in the wrappers.
  *
- * `onResultTap` lets phone / portraits route to navigation (`onOpenPodcast`) while
- * landscapes route to selection (`onSelectSearchResult`). `onOpenPodcast` is still
- * accepted because the "For you" recommendations row inside the empty-state always
- * navigates — selection only applies to the typed-query results list.
+ * `onResultTap` lets phone / portraits route to navigation while landscapes route to
+ * selection — the decision is made one level up in [SearchScreen] via
+ * [routeSearchResultTap]. `onOpenPodcast` is still accepted because the "For you"
+ * recommendations row inside the empty-state always navigates — selection only applies
+ * to the typed-query results list.
  */
 @Composable
 private fun SearchBodyContent(

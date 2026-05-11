@@ -182,7 +182,6 @@ private fun SearchHarness(
                 size = size,
                 selectedSearchResultId = selectedSearchResultId,
                 selectedRecentEpisodes = selectedRecentEpisodes,
-                onSelectSearchResult = {},
                 onSubscribe = {},
             )
         }

@@ -10,6 +10,7 @@ import com.kofikodr.kofipod.data.recommend.RecommendationsSource
 import com.kofikodr.kofipod.data.recommend.ReshuffleResult
 import com.kofikodr.kofipod.data.repo.CategoriesSource
 import com.kofikodr.kofipod.data.repo.EpisodeSource
+import com.kofikodr.kofipod.data.repo.LibraryRepository
 import com.kofikodr.kofipod.data.repo.SearchSource
 import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.domain.PodcastSummary
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.datetime.Clock
 import kotlin.random.Random
 
 enum class SearchTab { All, Title, Person }
@@ -60,6 +62,7 @@ class SearchViewModel(
     categories: CategoriesSource,
     private val recommendations: RecommendationsSource,
     private val episodes: EpisodeSource,
+    private val library: LibraryRepository,
     private val appScope: CoroutineScope,
     private val errors: NetworkErrorHandler,
     private val telemetry: com.kofikodr.kofipod.diagnostics.Telemetry,
@@ -102,6 +105,20 @@ class SearchViewModel(
 
     fun selectSearchResult(podcastId: String?) {
         _selectedSearchResultId.value = podcastId
+    }
+
+    /**
+     * Task 3.4 — Subscribe wiring for the tablet-landscape preview pane's "Subscribe"
+     * CTA. Resolves the [PodcastSummary] from the current results list (the only place
+     * the preview pane can be opened from) and persists it via [LibraryRepository.savePodcast].
+     * No-op if the id no longer matches a row (e.g. results changed mid-tap). Visual
+     * loading / "Subscribed" toggle is out of scope for this task — the button stays a
+     * flat KPButton until a follow-up slice surfaces subscription state.
+     */
+    fun subscribe(podcastId: String) {
+        val summary = _state.value.results.firstOrNull { it.id == podcastId } ?: return
+        val now = Clock.System.now().toEpochMilliseconds()
+        library.savePodcast(summary, listId = null, now = now)
     }
 
     init {

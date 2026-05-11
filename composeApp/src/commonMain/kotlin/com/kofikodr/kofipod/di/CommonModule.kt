@@ -454,6 +454,7 @@ val commonDataModule =
                 categories = get(),
                 recommendations = get<RecommendationsSource>(),
                 episodes = get(),
+                library = get(),
                 appScope = get(org.koin.core.qualifier.named("appScope")),
                 errors = get(),
                 telemetry = get(),
