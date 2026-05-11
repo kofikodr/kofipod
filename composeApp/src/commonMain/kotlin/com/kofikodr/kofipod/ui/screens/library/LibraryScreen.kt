@@ -76,6 +76,7 @@ fun LibraryScreen(
     onOpenList: (String?) -> Unit,
     onOpenSearch: () -> Unit,
     onOpenStarterPack: () -> Unit,
+    onOpenBookmarks: () -> Unit,
     onOpenLibrarySearch: () -> Unit,
     onOpenSmartPlaylistEditor: (playlistId: String?, initialName: String?) -> Unit,
     onOpenSmartPlaylistDetail: (playlistId: String) -> Unit,
@@ -94,6 +95,9 @@ fun LibraryScreen(
         onOpenList = onOpenList,
         onOpenSearch = onOpenSearch,
         onOpenStarterPack = onOpenStarterPack,
+        onOpenBookmarks = {
+            if (viewModel.onBookmarksTapped()) onOpenBookmarks()
+        },
         onOpenLibrarySearch = {
             if (viewModel.onLibrarySearchTapped()) onOpenLibrarySearch()
         },
@@ -184,6 +188,7 @@ internal fun LibraryContent(
     onOpenList: (String?) -> Unit,
     onOpenSearch: () -> Unit,
     onOpenStarterPack: () -> Unit,
+    onOpenBookmarks: () -> Unit,
     onOpenLibrarySearch: () -> Unit,
     onOpenSmartPlaylistDetail: (String) -> Unit,
     onNewList: () -> Unit,
@@ -200,6 +205,7 @@ internal fun LibraryContent(
             onOpenList = onOpenList,
             onOpenSearch = onOpenSearch,
             onOpenStarterPack = onOpenStarterPack,
+            onOpenBookmarks = onOpenBookmarks,
             onOpenLibrarySearch = onOpenLibrarySearch,
             onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
             onNewList = onNewList,
@@ -220,6 +226,7 @@ internal fun LibraryContent(
             onOpenList = onOpenList,
             onOpenSearch = onOpenSearch,
             onOpenStarterPack = onOpenStarterPack,
+            onOpenBookmarks = onOpenBookmarks,
             onOpenLibrarySearch = onOpenLibrarySearch,
             onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
             onNewList = onNewList,
@@ -272,6 +279,7 @@ internal fun LibraryContent(
             LibraryHeader(
                 showAddButton = lists.isNotEmpty(),
                 onNewList = onNewList,
+                onOpenBookmarks = onOpenBookmarks,
             )
         }
 
@@ -394,6 +402,7 @@ internal fun LibrarySearchEntry(onTap: () -> Unit) {
 internal fun LibraryHeader(
     showAddButton: Boolean,
     onNewList: () -> Unit,
+    onOpenBookmarks: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Row(
@@ -407,7 +416,22 @@ internal fun LibraryHeader(
             fontSize = 32.sp,
             modifier = Modifier.weight(1f),
         )
+        Box(
+            Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(c.bgSubtle)
+                .clickable(onClick = onOpenBookmarks),
+            contentAlignment = Alignment.Center,
+        ) {
+            KPIcon(
+                name = KPIconName.Bookmark,
+                color = c.purple,
+                size = 20.dp,
+            )
+        }
         if (showAddButton) {
+            Spacer(Modifier.width(10.dp))
             Box(
                 Modifier
                     .size(44.dp)

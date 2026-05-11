@@ -65,6 +65,7 @@ internal fun LibraryContentTabletSingle(
     onOpenList: (String?) -> Unit,
     onOpenSearch: () -> Unit,
     onOpenStarterPack: () -> Unit,
+    onOpenBookmarks: () -> Unit,
     onOpenLibrarySearch: () -> Unit,
     onOpenSmartPlaylistDetail: (String) -> Unit,
     onNewList: () -> Unit,
@@ -111,6 +112,7 @@ internal fun LibraryContentTabletSingle(
             LibraryHeader(
                 showAddButton = true,
                 onNewList = onNewList,
+                onOpenBookmarks = onOpenBookmarks,
             )
         }
 
@@ -241,6 +243,7 @@ internal fun LibraryContentTabletMasterDetail(
     onOpenList: (String?) -> Unit,
     onOpenSearch: () -> Unit,
     onOpenStarterPack: () -> Unit,
+    onOpenBookmarks: () -> Unit,
     onOpenLibrarySearch: () -> Unit,
     onOpenSmartPlaylistDetail: (String) -> Unit,
     onNewList: () -> Unit,
@@ -268,6 +271,7 @@ internal fun LibraryContentTabletMasterDetail(
                     onOpenList = onOpenList,
                     onOpenSearch = onOpenSearch,
                     onOpenStarterPack = onOpenStarterPack,
+                    onOpenBookmarks = onOpenBookmarks,
                     onOpenLibrarySearch = onOpenLibrarySearch,
                     onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
                     onNewList = onNewList,
@@ -304,6 +308,7 @@ internal fun LibraryContentTabletMasterDetail(
             onOpenList = onOpenList,
             onOpenSearch = onOpenSearch,
             onOpenStarterPack = onOpenStarterPack,
+            onOpenBookmarks = onOpenBookmarks,
             onOpenLibrarySearch = onOpenLibrarySearch,
             onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
             onNewList = onNewList,
@@ -325,6 +330,7 @@ internal fun LibraryContentTabletMasterDetail(
                 onOpenList = onOpenList,
                 onOpenSearch = onOpenSearch,
                 onOpenStarterPack = onOpenStarterPack,
+                onOpenBookmarks = onOpenBookmarks,
                 onOpenLibrarySearch = onOpenLibrarySearch,
                 onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
                 onNewList = onNewList,

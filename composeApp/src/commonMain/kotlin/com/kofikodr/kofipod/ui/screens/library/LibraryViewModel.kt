@@ -119,6 +119,12 @@ class LibraryViewModel(
     fun importOpml() = opml.importOpml()
 
     /**
+     * Returns true when the caller should navigate to the Bookmarks screen.
+     * Returns false (and opens the paywall) when the user is Free or Unknown.
+     */
+    fun onBookmarksTapped(): Boolean = gate("paywall_bookmark")
+
+    /**
      * Returns true when the caller should navigate to the Library search screen.
      * Returns false (and opens the paywall) when the user is Free or Unknown.
      * Distinct trigger key so future conversion analytics can attribute paywall
