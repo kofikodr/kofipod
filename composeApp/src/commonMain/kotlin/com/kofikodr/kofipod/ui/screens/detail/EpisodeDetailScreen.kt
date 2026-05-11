@@ -189,15 +189,17 @@ internal fun EpisodeDetailContent(
     }
 
     if (hostMode == HostMode.MasterDetailPane) {
-        // Host (Podcast detail master-detail) owns padding, background and the
-        // back/share affordances. We still own scroll: the embedded body
-        // (artwork strip, description, AI tabs, bookmarks/snippets) is taller
-        // than the right pane on real episodes, so without a scroll container
-        // its tail would clip silently.
+        // Host (Podcast detail master-detail) owns background and the
+        // back/share affordances. We still own scroll + content padding:
+        // the embedded body (artwork strip, description, AI tabs,
+        // bookmarks/snippets) is taller than the right pane on real episodes
+        // and without horizontal padding the title and description run flush
+        // against the master/detail divider.
         Column(
             Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 16.dp),
         ) {
             content()
         }
