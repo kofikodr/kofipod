@@ -10,16 +10,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -39,7 +37,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kofikodr.kofipod.db.Podcast
@@ -93,8 +90,11 @@ internal fun LibraryContentTabletSingle(
     val unfiledPodcasts = podcasts.filter { it.listId == null }
     val isEmpty = lists.isEmpty() && podcasts.isEmpty()
 
-    val cardWidth = if (size == TabletSize.Tablet10Port) 320.dp else 260.dp
-    val gridCellMin = if (size == TabletSize.Tablet10Port) 300.dp else 260.dp
+    // Folders are square tiles in the same vertical grid as the recently-opened
+    // rows below — matches the phone IA so the master pane scrolls up/down only
+    // (no nested horizontal folder strip). `gridCellMin` controls tiles-per-row:
+    // 8" / landscape master ≈ 2 cols, 10" portrait ≈ 3 cols.
+    val gridCellMin = if (size == TabletSize.Tablet10Port) 220.dp else 200.dp
 
     // Only sort/take when the Recently opened section is actually about to render;
     // master-detail callers pass `showRecentlyOpened = false` and would otherwise
@@ -146,66 +146,53 @@ internal fun LibraryContentTabletSingle(
             item(span = { GridItemSpan(maxLineSpan) }) {
                 SectionLabel(title = "Folders", topSpacing = 18.dp)
             }
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(lists.size) { idx ->
-                        val list = lists[idx]
-                        val members = podcasts.filter { it.listId == list.id }
-                        val sel = FolderSelection.OfList(list.id)
-                        TabletFolderCard(
-                            width = cardWidth,
-                            title = list.name,
-                            members = members,
-                            seed = list.id.hashCode(),
-                            hasNew = list.id in state.groupsWithNew,
-                            selected = selectedFolder == sel,
-                            onClick = {
-                                if (onSelectFolder != null) onSelectFolder(sel) else onOpenList(list.id)
-                            },
-                            onLongClick = { onLongPressList(list) },
-                        )
-                    }
-                    if (unfiledPodcasts.isNotEmpty()) {
-                        item {
-                            TabletFolderCard(
-                                width = cardWidth,
-                                title = "Unfiled",
-                                members = unfiledPodcasts,
-                                seed = UNFILED_SEED,
-                                hasNew = null in state.groupsWithNew,
-                                selected = selectedFolder == FolderSelection.Unfiled,
-                                onClick = {
-                                    if (onSelectFolder != null) onSelectFolder(FolderSelection.Unfiled) else onOpenList(null)
-                                },
-                                onLongClick = null,
-                            )
-                        }
-                    }
-                    // Inline "+ New list" card — mirrors phone's NewListTile while
-                    // no user-defined lists exist. Once any list is created, the
-                    // affordance is the header "+" alone.
-                    if (lists.isEmpty()) {
-                        item {
-                            TabletNewListCard(
-                                width = cardWidth,
-                                onClick = onNewList,
-                            )
-                        }
-                    }
-                    items(state.smartPlaylists.size) { idx ->
-                        val tile = state.smartPlaylists[idx]
-                        SmartPlaylistFolderCard(
-                            width = cardWidth,
-                            playlist = tile.playlist,
-                            matchedCount = tile.matchedCount,
-                            onClick = { onOpenSmartPlaylistDetail(tile.playlist.id) },
-                            onLongClick = { onLongPressSmartPlaylist(tile.playlist) },
-                        )
-                    }
+            items(lists.size) { idx ->
+                val list = lists[idx]
+                val members = podcasts.filter { it.listId == list.id }
+                val sel = FolderSelection.OfList(list.id)
+                TabletFolderCard(
+                    title = list.name,
+                    members = members,
+                    seed = list.id.hashCode(),
+                    hasNew = list.id in state.groupsWithNew,
+                    selected = selectedFolder == sel,
+                    onClick = {
+                        if (onSelectFolder != null) onSelectFolder(sel) else onOpenList(list.id)
+                    },
+                    onLongClick = { onLongPressList(list) },
+                )
+            }
+            if (unfiledPodcasts.isNotEmpty()) {
+                item {
+                    TabletFolderCard(
+                        title = "Unfiled",
+                        members = unfiledPodcasts,
+                        seed = UNFILED_SEED,
+                        hasNew = null in state.groupsWithNew,
+                        selected = selectedFolder == FolderSelection.Unfiled,
+                        onClick = {
+                            if (onSelectFolder != null) onSelectFolder(FolderSelection.Unfiled) else onOpenList(null)
+                        },
+                        onLongClick = null,
+                    )
                 }
+            }
+            // Inline "+ New list" card — mirrors phone's NewListTile while no
+            // user-defined lists exist. Once any list is created, the
+            // affordance is the header "+" alone.
+            if (lists.isEmpty()) {
+                item {
+                    TabletNewListCard(onClick = onNewList)
+                }
+            }
+            items(state.smartPlaylists.size) { idx ->
+                val tile = state.smartPlaylists[idx]
+                SmartPlaylistFolderCard(
+                    playlist = tile.playlist,
+                    matchedCount = tile.matchedCount,
+                    onClick = { onOpenSmartPlaylistDetail(tile.playlist.id) },
+                    onLongClick = { onLongPressSmartPlaylist(tile.playlist) },
+                )
             }
         }
 
@@ -519,24 +506,26 @@ internal fun TabletFolderAndRecentPane(
 }
 
 /**
- * Folder card used in the tablet Folders horizontal-scroll row. Fixed [width]
- * (260 dp on 8"P / 320 dp on 10"P), 120 dp tall. Brings the phone tile look-and-feel
- * into the strip: sampled-palette background derived from [members]' artwork, a
- * mosaic of up to 4 thumbnails on the right, folder glyph + title + "N SHOWS" on
- * the left, and an optional NEW dot.
+ * Tablet folder card. Square tile (aspectRatio 1:1) matching the phone
+ * mosaic layout — folder glyph at top-left, list mosaic at top-right,
+ * title + "N SHOWS" at the bottom — with an optional selection border
+ * for tablet-landscape master-detail.
  *
- * Falls back to a seeded gradient + muted icon when no member has artwork yet.
+ * The caller passes a [Modifier] sized by the parent grid cell; the
+ * card enforces the square aspect itself. Sampled-palette background
+ * derives from [members]' artwork; falls back to a seeded gradient
+ * with a muted folder icon when no member has artwork yet.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun TabletFolderCard(
-    width: Dp,
     title: String,
     members: List<Podcast>,
     seed: Int,
     hasNew: Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
     selected: Boolean = false,
 ) {
     val c = LocalKofipodColors.current
@@ -554,84 +543,73 @@ internal fun TabletFolderCard(
         } else {
             Modifier.clickable(onClick = onClick)
         }
-    Row(
-        Modifier
-            .width(width)
-            .height(120.dp)
-            // Border first so the full 2dp stroke is visible: clip below trims
-            // the rounded-rect background but leaves the outer-stroke ring
-            // intact at the layout edge.
+    Box(
+        modifier
+            .aspectRatio(1f)
             .then(
                 if (selected) Modifier.border(2.dp, c.purple, RoundedCornerShape(r.md)) else Modifier,
             )
             .clip(RoundedCornerShape(r.md))
             .background(visuals.brush)
             .then(clickModifier)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(12.dp),
     ) {
-        Column(
-            Modifier.weight(1f).fillMaxHeight(),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            KPIcon(
-                name = KPIconName.Folder,
-                color = folderColor,
-                size = 22.dp,
-            )
-            Column {
-                Text(
-                    title,
-                    color = textColor,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "${members.size} SHOWS",
-                    color = subTextColor,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    letterSpacing = 0.6.sp,
-                )
-            }
-        }
-        Spacer(Modifier.width(12.dp))
-        Box(Modifier.fillMaxHeight()) {
+        KPIcon(
+            name = KPIconName.Folder,
+            color = folderColor,
+            size = 22.dp,
+            modifier = Modifier.align(Alignment.TopStart),
+        )
+        Box(Modifier.align(Alignment.TopEnd)) {
             ListMosaic(
                 members = members,
-                size = 92.dp,
+                size = 96.dp,
                 seed = seed,
             )
             if (hasNew) {
                 NewDot(
                     ringColor = if (onSampledBg) Color.White else c.surface,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(end = 2.dp, top = 2.dp),
+                    modifier = Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-2).dp),
                 )
             }
+        }
+        Column(Modifier.align(Alignment.BottomStart)) {
+            Text(
+                title,
+                color = textColor,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "${members.size} SHOWS",
+                color = subTextColor,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 0.6.sp,
+            )
         }
     }
 }
 
 /**
- * "+ New list" card rendered inline in the tablet Folders horizontal strip while
- * no user-defined lists exist. Matches [TabletFolderCard]'s width/height so the
- * strip's rhythm is preserved.
+ * "+ New list" card rendered inline in the tablet Folders grid while no
+ * user-defined lists exist. Matches [TabletFolderCard]'s square aspect
+ * so the grid's rhythm is preserved.
  */
 @Composable
 internal fun TabletNewListCard(
-    width: Dp,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
     Box(
-        Modifier
-            .width(width)
-            .height(120.dp)
+        modifier
+            .aspectRatio(1f)
             .clip(RoundedCornerShape(r.md))
             .dashedBorder(color = c.borderStrong, cornerRadius = r.md)
             .clickable(onClick = onClick),

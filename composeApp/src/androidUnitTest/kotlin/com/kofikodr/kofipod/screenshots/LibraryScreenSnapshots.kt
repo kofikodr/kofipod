@@ -94,7 +94,7 @@ class LibraryScreenSnapshots {
     }
 
     @Test
-    fun libraryFoldersRow_smartPlaylist_tablet10Port_light() {
+    fun libraryFoldersGrid_smartPlaylist_tablet10Port_light() {
         useTabletDeviceConfig(width = 1000, height = 1400)
         paparazzi.snapshot {
             LibraryHarness(state = POPULATED_WITH_SMART_PLAYLISTS_FIXTURE, size = TabletSize.Tablet10Port)
@@ -253,9 +253,18 @@ private fun list(
         createdAt = 0L,
     )
 
+// Five named folders + Unfiled (six folder tiles total) deliberately exceeds
+// the column count at every tablet form factor (8"P / 10"P / 8"L master /
+// 10"L master), so the new square-tile grid wraps to at least two rows in
+// every snapshot. A future regression that accidentally falls back to a
+// single-row layout would be visible as horizontally-clipped or extra-wide
+// tiles in the baseline diff.
 private val POPULATED_FIXTURE: LibraryUiState by lazy {
     val morning = list("morning", "Morning", 0)
     val longform = list("longform", "Long form", 1)
+    val news = list("news", "News", 2)
+    val tech = list("tech", "Tech", 3)
+    val comedy = list("comedy", "Comedy", 4)
     val groups =
         listOf(
             LibraryGroup(
@@ -274,6 +283,27 @@ private val POPULATED_FIXTURE: LibraryUiState by lazy {
                     ),
             ),
             LibraryGroup(
+                list = news,
+                podcasts =
+                    listOf(
+                        pod("p6", "Daily Brief", "Sam Kerr", "news", 1_800L),
+                    ),
+            ),
+            LibraryGroup(
+                list = tech,
+                podcasts =
+                    listOf(
+                        pod("p7", "Bits & Bytes", "Ava Rios", "tech", 1_700L),
+                    ),
+            ),
+            LibraryGroup(
+                list = comedy,
+                podcasts =
+                    listOf(
+                        pod("p8", "Late Laughs", "Theo Yamada", "comedy", 1_600L),
+                    ),
+            ),
+            LibraryGroup(
                 list = null,
                 podcasts =
                     listOf(
@@ -289,10 +319,10 @@ private val POPULATED_FIXTURE: LibraryUiState by lazy {
     )
 }
 
-// Trims the populated fixture to a single regular folder so the smart-playlist cards
-// land inside the 10"P viewport (~3 cards visible at 320 dp + 12 dp gap inside 960 dp
-// of content). Order in the row is: regular lists → Unfiled → smart playlists, so the
-// baseline shows: Morning (regular) → Unfiled → Unplayed (smart playlist).
+// Trims the populated fixture to a single regular folder + Unfiled + one smart
+// playlist so the baseline foregrounds the visual difference between the three
+// tile variants in the square-grid Folders section. Order across cells follows
+// the grid emission order: regular lists → Unfiled → smart playlists.
 private val POPULATED_WITH_SMART_PLAYLISTS_FIXTURE: LibraryUiState by lazy {
     val morning = list("morning", "Morning", 0)
     val groups =
