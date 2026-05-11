@@ -36,7 +36,16 @@ import com.kofikodr.kofipod.ui.screens.stats.StatsScreen
 fun KofipodNavHost(navController: NavHostController) {
     NavHost(navController = navController, startDestination = Route.Library) {
         composable<Route.Search> {
-            SearchScreen(onOpenPodcast = { id -> navController.navigate(Route.PodcastDetail(id)) })
+            SearchScreen(
+                onOpenPodcast = { id -> navController.navigate(Route.PodcastDetail(id)) },
+                onOpenPlayer = {
+                    navController.navigate(
+                        Route.Player,
+                        NavOptions.Builder().setLaunchSingleTop(true).build(),
+                    )
+                },
+                onOpenEpisode = { episodeId -> navController.navigate(Route.EpisodeDetail(episodeId)) },
+            )
         }
         composable<Route.Library> {
             LibraryScreen(

@@ -5,12 +5,6 @@ import com.kofikodr.kofipod.ui.layout.TabletSize
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-/**
- * Locks Task 3.4's result-tap routing decision exhaustively, one assertion per
- * [TabletSize] value (plus the phone `null` case). If a new TabletSize is added,
- * the helper's `when` becomes non-exhaustive and these tests need updating in
- * lockstep — that's the intentional design.
- */
 class SearchResultTapRoutingTest {
     @Test
     fun phone_null_size_navigates() {
@@ -23,32 +17,32 @@ class SearchResultTapRoutingTest {
     @Test
     fun tablet_8_portrait_navigates() {
         assertEquals(
-            SearchResultTapAction.Navigate("p1"),
-            routeSearchResultTap(size = TabletSize.Tablet8Port, podcastId = "p1"),
+            SearchResultTapAction.Navigate("p8-port"),
+            routeSearchResultTap(size = TabletSize.Tablet8Port, podcastId = "p8-port"),
         )
     }
 
     @Test
     fun tablet_10_portrait_navigates() {
         assertEquals(
-            SearchResultTapAction.Navigate("p1"),
-            routeSearchResultTap(size = TabletSize.Tablet10Port, podcastId = "p1"),
+            SearchResultTapAction.Navigate("p10-port"),
+            routeSearchResultTap(size = TabletSize.Tablet10Port, podcastId = "p10-port"),
         )
     }
 
     @Test
-    fun tablet_8_landscape_selects_for_master_detail_preview() {
+    fun tablet_8_landscape_selects() {
         assertEquals(
-            SearchResultTapAction.Select("p1"),
-            routeSearchResultTap(size = TabletSize.Tablet8Land, podcastId = "p1"),
+            SearchResultTapAction.Select("abc-123"),
+            routeSearchResultTap(size = TabletSize.Tablet8Land, podcastId = "abc-123"),
         )
     }
 
     @Test
-    fun tablet_10_landscape_selects_for_master_detail_preview() {
+    fun tablet_10_landscape_selects() {
         assertEquals(
-            SearchResultTapAction.Select("p1"),
-            routeSearchResultTap(size = TabletSize.Tablet10Land, podcastId = "p1"),
+            SearchResultTapAction.Select("xyz-999"),
+            routeSearchResultTap(size = TabletSize.Tablet10Land, podcastId = "xyz-999"),
         )
     }
 }

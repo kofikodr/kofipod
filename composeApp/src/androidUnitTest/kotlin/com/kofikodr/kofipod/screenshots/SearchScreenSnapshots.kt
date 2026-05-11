@@ -10,7 +10,6 @@ import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import com.android.resources.Density
 import com.android.resources.ScreenOrientation
-import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.domain.PodcastSummary
 import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.screens.search.SearchContent
@@ -22,18 +21,12 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * Paparazzi baselines for [SearchContent].
- *
- * - Phone (`size == null`): cold-start empty state at 412×892 dp MDPI. Locked in
- *   Task 3.1 as a byte-identical regression guard; **must not drift** when Tasks
- *   3.2 / 3.3 / 3.5 add tablet branches.
- * - Tablet portrait (`size == Tablet8Port` / `Tablet10Port`): cold-start empty
- *   state at 800×1200 / 1000×1400 dp MDPI matching the Task 3.2 mocks.
- *
- * The default `SearchUiState()` resolves through SearchContent's `state.results
- * .isEmpty()` → recs-empty → `EmptyQueryContent.ColdStart` arm, rendering the hero
- * card + popular-categories chips (empty list is fine — the chrome above the
- * categories row is the load-bearing snapshot surface for this guard).
+ * Paparazzi baselines for [SearchContent]. The landscape `withSelection` variant
+ * deliberately passes no `selectedSearchResultId` to the harness — the embedded
+ * detail pane is the real [com.kofikodr.kofipod.ui.screens.detail.PodcastDetailScreen]
+ * resolved via Koin at runtime, so Paparazzi (no Koin context) can only baseline the
+ * no-selection landscape state. The selection-on path is covered by manual on-device
+ * verification + the routing unit test.
  */
 class SearchScreenSnapshots {
     @get:Rule
@@ -98,28 +91,10 @@ class SearchScreenSnapshots {
     }
 
     @Test
-    fun searchPopulated_tablet10Land_withSelection_light() {
-        useLandscapeTabletConfig(width = 1400, height = 1000)
-        paparazzi.snapshot {
-            SearchHarness(
-                state = POPULATED_FIXTURE,
-                size = TabletSize.Tablet10Land,
-                selectedSearchResultId = "1001",
-                selectedRecentEpisodes = PREVIEW_EPISODES_FIXTURE,
-            )
-        }
-    }
-
-    @Test
-    fun searchPopulated_tablet8Land_withSelection_light() {
+    fun searchPopulated_tablet8Land_noSelection_light() {
         useLandscapeTabletConfig(width = 1200, height = 800)
         paparazzi.snapshot {
-            SearchHarness(
-                state = POPULATED_FIXTURE,
-                size = TabletSize.Tablet8Land,
-                selectedSearchResultId = "1001",
-                selectedRecentEpisodes = PREVIEW_EPISODES_FIXTURE,
-            )
+            SearchHarness(state = POPULATED_FIXTURE, size = TabletSize.Tablet8Land)
         }
     }
 
@@ -139,8 +114,6 @@ class SearchScreenSnapshots {
         )
     }
 
-    // Landscape configs need an explicit ScreenOrientation override; without it
-    // Paparazzi rotates the canvas to portrait and width/height arguments swap.
     private fun useLandscapeTabletConfig(
         width: Int,
         height: Int,
@@ -163,8 +136,6 @@ class SearchScreenSnapshots {
 private fun SearchHarness(
     state: SearchUiState,
     size: com.kofikodr.kofipod.ui.layout.TabletSize?,
-    selectedSearchResultId: String? = null,
-    selectedRecentEpisodes: List<Episode> = emptyList(),
 ) {
     KofipodTheme(KofipodThemeMode.Light) {
         val c = LocalKofipodColors.current
@@ -180,9 +151,6 @@ private fun SearchHarness(
                 onPickTopic = {},
                 onOpenPodcast = {},
                 size = size,
-                selectedSearchResultId = selectedSearchResultId,
-                selectedRecentEpisodes = selectedRecentEpisodes,
-                onSubscribe = {},
             )
         }
     }
@@ -207,30 +175,6 @@ private fun summary(
         feedUrl = "https://example.test/$id.xml",
         category = category,
         episodeCount = episodeCount,
-    )
-
-private fun previewEpisode(
-    podcastId: String,
-    seq: Int,
-    title: String,
-    durationSec: Long,
-): Episode =
-    Episode(
-        id = "$podcastId-ep$seq",
-        podcastId = podcastId,
-        guid = "$podcastId-ep$seq",
-        title = title,
-        description = "",
-        publishedAt = 0L,
-        durationSec = durationSec,
-        enclosureUrl = "",
-        enclosureMimeType = "audio/mpeg",
-        fileSizeBytes = 0L,
-        seasonNumber = null,
-        episodeNumber = seq.toLong(),
-        imageUrl = "",
-        chaptersUrl = null,
-        transcriptUrl = null,
     )
 
 private val POPULATED_FIXTURE: SearchUiState by lazy {
@@ -273,14 +217,5 @@ private val POPULATED_FIXTURE: SearchUiState by lazy {
                     episodeCount = 67,
                 ),
             ),
-    )
-}
-
-private val PREVIEW_EPISODES_FIXTURE: List<Episode> by lazy {
-    listOf(
-        previewEpisode("1001", 184, "Ada Palmer on the very long now", 78L * 60),
-        previewEpisode("1001", 183, "Field notes from the slow software movement", 64L * 60),
-        previewEpisode("1001", 182, "A reading list for difficult years", 71L * 60),
-        previewEpisode("1001", 181, "Why patient capital still matters", 59L * 60),
     )
 }
