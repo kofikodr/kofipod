@@ -23,11 +23,17 @@ internal fun PlayerHeader(
     durationMs: Long,
     title: String,
     podcastTitle: String,
+    centered: Boolean = true,
+    titleFontSize: androidx.compose.ui.unit.TextUnit = 22.sp,
+    titleLineHeight: androidx.compose.ui.unit.TextUnit = 26.sp,
 ) {
     val c = LocalKofipodColors.current
+    val textAlign = if (centered) TextAlign.Center else TextAlign.Start
+    val horizontalAlignment =
+        if (centered) Alignment.CenterHorizontally else Alignment.Start
     Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        horizontalAlignment = horizontalAlignment,
     ) {
         val kicker = buildKicker(episodeNumber, durationMs)
         if (kicker.isNotEmpty()) {
@@ -38,7 +44,7 @@ internal fun PlayerHeader(
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp,
-                textAlign = TextAlign.Center,
+                textAlign = textAlign,
             )
             Spacer(Modifier.height(8.dp))
         }
@@ -46,11 +52,11 @@ internal fun PlayerHeader(
             text = title.ifBlank { "—" },
             color = c.text,
             fontWeight = FontWeight.ExtraBold,
-            fontSize = 22.sp,
-            lineHeight = 26.sp,
+            fontSize = titleFontSize,
+            lineHeight = titleLineHeight,
             maxLines = 3,
             overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
+            textAlign = textAlign,
             modifier = Modifier.fillMaxWidth(),
         )
         if (podcastTitle.isNotBlank()) {
@@ -60,7 +66,7 @@ internal fun PlayerHeader(
                 color = c.textSoft,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                textAlign = TextAlign.Center,
+                textAlign = textAlign,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(),
