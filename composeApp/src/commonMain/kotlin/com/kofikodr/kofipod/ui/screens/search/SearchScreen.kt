@@ -944,6 +944,13 @@ private fun SearchToast(
     }
 }
 
+// TODO(tablet-design): The design mock "Search · first run" shows starter
+// packs (Slow news / Maker talk / Field notes) appearing in Search, with
+// the landscape variant placing them in the detail pane. Starter packs
+// currently live in Library only (ui/screens/library/StarterPackScreen.kt).
+// Lifting them into Search would be a new-feature addition, so it's out
+// of scope for the tablet layout adaptation. If the design intent is
+// confirmed, follow up with a separate plan.
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SearchEmptyState(
