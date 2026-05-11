@@ -15,6 +15,8 @@ import com.kofikodr.kofipod.downloads.downloadFileName
 import com.kofikodr.kofipod.network.NetworkMonitor
 import com.kofikodr.kofipod.network.NetworkType
 import com.kofikodr.kofipod.snippets.FileCheckerApi
+import com.kofikodr.kofipod.ui.UiEvent
+import com.kofikodr.kofipod.ui.UiEventBus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -87,6 +89,7 @@ class DownloadRepository(
     scope: CoroutineScope,
     private val telemetry: com.kofikodr.kofipod.diagnostics.Telemetry,
     private val fileChecker: FileCheckerApi,
+    private val uiEvents: UiEventBus,
 ) {
     init {
         engine.events.onEach { p ->
@@ -109,8 +112,10 @@ class DownloadRepository(
                     )
                     telemetry.track(com.kofikodr.kofipod.diagnostics.TelemetryEvent.EpisodeDownloaded)
                 }
-                DownloadProgress.State.Failed ->
+                DownloadProgress.State.Failed -> {
                     db.downloadQueries.updateState("Failed", p.errorMessage, p.episodeId)
+                    uiEvents.emit(UiEvent.Snackbar(downloadFailedMessage(p.errorMessage)))
+                }
             }
         }.launchIn(scope)
 
@@ -264,5 +269,22 @@ class DownloadRepository(
     companion object {
         /** Persistent state for downloads deferred until the Wi-Fi / metered rule allows them. */
         const val STATE_WAITING_WIFI = "WaitingForWifi"
+
+        // Cap appended detail at a sane length for a snackbar — raw errors can be long
+        // stack-trace messages from the engine, which would overflow a one-line toast.
+        // Over-length messages are truncated (not dropped) so callers still see the
+        // start of an "HTTP 404"-style status before the ellipsis.
+        private const val SNACKBAR_DETAIL_MAX_LEN = 60
+
+        internal fun downloadFailedMessage(errorMessage: String?): String {
+            val trimmed = errorMessage?.trim()?.takeIf { it.isNotEmpty() } ?: return "Download failed"
+            val detail =
+                if (trimmed.length > SNACKBAR_DETAIL_MAX_LEN) {
+                    trimmed.take(SNACKBAR_DETAIL_MAX_LEN) + "…"
+                } else {
+                    trimmed
+                }
+            return "Download failed: $detail"
+        }
     }
 }

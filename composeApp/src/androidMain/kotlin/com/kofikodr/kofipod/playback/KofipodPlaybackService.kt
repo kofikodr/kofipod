@@ -38,6 +38,8 @@ import com.kofikodr.kofipod.data.repo.PlaybackRepository
 import com.kofikodr.kofipod.data.repo.SettingsRepository
 import com.kofikodr.kofipod.network.NetworkMonitor
 import com.kofikodr.kofipod.playback.auto.AutoMediaTree
+import com.kofikodr.kofipod.ui.UiEvent
+import com.kofikodr.kofipod.ui.UiEventBus
 import com.kofikodr.kofipod.util.todayEpochDay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -82,6 +84,7 @@ class KofipodPlaybackService : MediaLibraryService() {
     private val settings by inject<SettingsRepository>()
     private val playbackCache: PlaybackCache by inject()
     private val networkMonitor: NetworkMonitor by inject()
+    private val uiEvents: UiEventBus by inject()
 
     private lateinit var tree: AutoMediaTree
 
@@ -181,7 +184,13 @@ class KofipodPlaybackService : MediaLibraryService() {
                 override fun onPlayerError(error: PlaybackException) {
                     val item = player.currentMediaItem ?: return
                     val uri = item.localConfiguration?.uri ?: return
-                    if (uri.scheme != "file") return
+                    if (uri.scheme != "file") {
+                        // Streaming failure — surface to the user. Without this the Play
+                        // icon silently stays "Play" (because isPlaying never went true),
+                        // which is what a removed-from-host enclosure looks like in the UI.
+                        uiEvents.emit(UiEvent.Snackbar("Couldn't play episode. Audio source unavailable."))
+                        return
+                    }
                     val episodeId = item.mediaId.removePrefix(MEDIA_ID_EPISODE_PREFIX)
                     if (episodeId.isBlank()) return
                     // Confirm we have a streaming fallback BEFORE wiping the download row —

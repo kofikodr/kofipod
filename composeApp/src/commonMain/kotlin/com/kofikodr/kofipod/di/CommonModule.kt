@@ -446,6 +446,7 @@ val commonDataModule =
                 scope = get(org.koin.core.qualifier.named("appScope")),
                 telemetry = get(),
                 fileChecker = get(),
+                uiEvents = get(),
             )
         }
 

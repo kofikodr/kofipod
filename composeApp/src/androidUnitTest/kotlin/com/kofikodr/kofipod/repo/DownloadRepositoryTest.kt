@@ -12,6 +12,8 @@ import com.kofikodr.kofipod.network.NetworkMonitor
 import com.kofikodr.kofipod.network.NetworkType
 import com.kofikodr.kofipod.snippets.FileCheckerApi
 import com.kofikodr.kofipod.testing.inMemoryDatabase
+import com.kofikodr.kofipod.ui.UiEvent
+import com.kofikodr.kofipod.ui.UiEventBus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
@@ -21,6 +23,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -354,6 +358,99 @@ class DownloadRepositoryTest {
             assertTrue(engine.deleted.isEmpty())
         }
 
+    @Test
+    fun failedEngineEvent_writesFailedState_andEmitsSnackbarWithDetail() =
+        runHarnessTest {
+            db.downloadQueries.upsert(
+                episodeId = "ep-404",
+                state = "Downloading",
+                localPath = null,
+                downloadedBytes = 0L,
+                totalBytes = 0L,
+                source = "Manual",
+                startedAt = 1L,
+                completedAt = null,
+                errorMessage = null,
+            )
+
+            engine.emit(failedProgress("ep-404", errorMessage = "HTTP 404"))
+
+            val row = db.downloadQueries.selectByEpisode("ep-404").executeAsOne()
+            assertEquals("Failed", row.state)
+            assertEquals("HTTP 404", row.errorMessage)
+            assertEquals(listOf("Download failed: HTTP 404"), snackbars)
+        }
+
+    @Test
+    fun failedEngineEvent_omitsDetail_whenErrorMessageIsNull() =
+        runHarnessTest {
+            db.downloadQueries.upsert(
+                episodeId = "ep-blank",
+                state = "Downloading",
+                localPath = null,
+                downloadedBytes = 0L,
+                totalBytes = 0L,
+                source = "Manual",
+                startedAt = 1L,
+                completedAt = null,
+                errorMessage = null,
+            )
+
+            engine.emit(failedProgress("ep-blank", errorMessage = null))
+
+            assertEquals(listOf("Download failed"), snackbars)
+        }
+
+    @Test
+    fun failedEngineEvent_truncatesDetail_atBoundary() =
+        runHarnessTest {
+            // Exactly SNACKBAR_DETAIL_MAX_LEN (60): kept verbatim, no ellipsis.
+            // One above: truncated to 60 chars and suffixed with `…`. Pinning both sides
+            // of the fence prevents fence-post regressions.
+            val exact = "x".repeat(60)
+            val tooLong = "x".repeat(61)
+            db.downloadQueries.upsert(
+                episodeId = "ep-exact",
+                state = "Downloading",
+                localPath = null,
+                downloadedBytes = 0L,
+                totalBytes = 0L,
+                source = "Manual",
+                startedAt = 1L,
+                completedAt = null,
+                errorMessage = null,
+            )
+            db.downloadQueries.upsert(
+                episodeId = "ep-long",
+                state = "Downloading",
+                localPath = null,
+                downloadedBytes = 0L,
+                totalBytes = 0L,
+                source = "Manual",
+                startedAt = 1L,
+                completedAt = null,
+                errorMessage = null,
+            )
+
+            engine.emit(failedProgress("ep-exact", errorMessage = exact))
+            engine.emit(failedProgress("ep-long", errorMessage = tooLong))
+
+            assertEquals(2, snackbars.size)
+            assertEquals("Download failed: $exact", snackbars[0])
+            assertEquals("Download failed: ${"x".repeat(60)}…", snackbars[1])
+        }
+
+    private fun failedProgress(
+        episodeId: String,
+        errorMessage: String?,
+    ) = com.kofikodr.kofipod.downloads.DownloadProgress(
+        episodeId = episodeId,
+        downloadedBytes = 0L,
+        totalBytes = 0L,
+        state = com.kofikodr.kofipod.downloads.DownloadProgress.State.Failed,
+        errorMessage = errorMessage,
+    )
+
     // ---------- harness ----------
 
     private class Harness(
@@ -363,6 +460,8 @@ class DownloadRepositoryTest {
         val settings: SettingsRepository,
         val scope: CoroutineScope,
         val network: MutableStateFlow<NetworkType>,
+        val uiEvents: UiEventBus,
+        val snackbars: MutableList<String>,
     ) {
         fun stateOf(episodeId: String): String? = db.downloadQueries.selectByEpisode(episodeId).executeAsOneOrNull()?.state
 
@@ -446,6 +545,11 @@ class DownloadRepositoryTest {
                 override val type: StateFlow<NetworkType> = networkFlow.asStateFlow()
             }
         val testScope = TestScope(dispatcher)
+        val uiEvents = UiEventBus()
+        val snackbars = mutableListOf<String>()
+        uiEvents.events
+            .onEach { event -> if (event is UiEvent.Snackbar) snackbars += event.message }
+            .launchIn(testScope)
         val repo =
             DownloadRepository(
                 db,
@@ -455,9 +559,10 @@ class DownloadRepositoryTest {
                 testScope,
                 com.kofikodr.kofipod.diagnostics.NoOpTelemetry,
                 fileChecker,
+                uiEvents,
             )
 
-        val harness = Harness(db, repo, engine, settings, testScope, networkFlow)
+        val harness = Harness(db, repo, engine, settings, testScope, networkFlow, uiEvents, snackbars)
         try {
             harness.block()
         } finally {
@@ -478,7 +583,13 @@ class DownloadRepositoryTest {
         val cancelled = mutableListOf<String>()
         val deleted = mutableListOf<String>()
 
-        override val events: SharedFlow<DownloadProgress> = MutableSharedFlow<DownloadProgress>().asSharedFlow()
+        private val _events =
+            MutableSharedFlow<DownloadProgress>(extraBufferCapacity = 16)
+        override val events: SharedFlow<DownloadProgress> = _events.asSharedFlow()
+
+        fun emit(progress: DownloadProgress) {
+            _events.tryEmit(progress)
+        }
 
         override fun enqueue(job: DownloadJob) {
             enqueued += job
