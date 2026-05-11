@@ -21,15 +21,12 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * Paparazzi baselines for [SearchContent].
- *
- * - Phone (`size == null`): cold-start empty state at 412×892 dp MDPI.
- * - Tablet portrait (`size == Tablet8Port` / `Tablet10Port`): cold-start empty
- *   state at 800×1200 / 1000×1400 dp MDPI.
- * - Tablet landscape (`size == Tablet8Land` / `Tablet10Land`): renders the same
- *   single-pane layout as portrait — tapping a result navigates straight to the
- *   podcast detail screen, which carries its own master-detail layout. Baselines
- *   cover the empty-state and the populated results list.
+ * Paparazzi baselines for [SearchContent]. The landscape `withSelection` variant
+ * deliberately passes no `selectedSearchResultId` to the harness — the embedded
+ * detail pane is the real [com.kofikodr.kofipod.ui.screens.detail.PodcastDetailScreen]
+ * resolved via Koin at runtime, so Paparazzi (no Koin context) can only baseline the
+ * no-selection landscape state. The selection-on path is covered by manual on-device
+ * verification + the routing unit test.
  */
 class SearchScreenSnapshots {
     @get:Rule
@@ -86,7 +83,7 @@ class SearchScreenSnapshots {
     }
 
     @Test
-    fun searchPopulated_tablet10Land_light() {
+    fun searchPopulated_tablet10Land_noSelection_light() {
         useLandscapeTabletConfig(width = 1400, height = 1000)
         paparazzi.snapshot {
             SearchHarness(state = POPULATED_FIXTURE, size = TabletSize.Tablet10Land)
@@ -94,7 +91,7 @@ class SearchScreenSnapshots {
     }
 
     @Test
-    fun searchPopulated_tablet8Land_light() {
+    fun searchPopulated_tablet8Land_noSelection_light() {
         useLandscapeTabletConfig(width = 1200, height = 800)
         paparazzi.snapshot {
             SearchHarness(state = POPULATED_FIXTURE, size = TabletSize.Tablet8Land)
@@ -117,8 +114,6 @@ class SearchScreenSnapshots {
         )
     }
 
-    // Landscape configs need an explicit ScreenOrientation override; without it
-    // Paparazzi rotates the canvas to portrait and width/height arguments swap.
     private fun useLandscapeTabletConfig(
         width: Int,
         height: Int,

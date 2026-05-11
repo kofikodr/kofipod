@@ -39,6 +39,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -62,7 +63,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kofikodr.kofipod.domain.PodcastSummary
+import com.kofikodr.kofipod.ui.layout.EmptyDetailHint
 import com.kofikodr.kofipod.ui.layout.LocalTabletSize
+import com.kofikodr.kofipod.ui.layout.MasterDetailPane
 import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.primitives.KPChip
 import com.kofikodr.kofipod.ui.primitives.KPChipTone
@@ -71,6 +74,7 @@ import com.kofikodr.kofipod.ui.primitives.KPIconName
 import com.kofikodr.kofipod.ui.primitives.KofipodArtwork
 import com.kofikodr.kofipod.ui.primitives.LoadMoreRow
 import com.kofikodr.kofipod.ui.primitives.SectionLabel
+import com.kofikodr.kofipod.ui.screens.detail.PodcastDetailScreen
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
 import com.kofikodr.kofipod.ui.theme.LocalKofipodRadii
 import com.mr3y.podcastindex.model.Category
@@ -81,9 +85,12 @@ private enum class EmptyQueryContent { Loading, ForYou, ColdStart }
 @Composable
 fun SearchScreen(
     onOpenPodcast: (String) -> Unit,
+    onOpenPlayer: () -> Unit,
+    onOpenEpisode: (String) -> Unit,
     viewModel: SearchViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
+    val selectedSearchResultId by viewModel.selectedSearchResultId.collectAsState()
 
     // Surface "out of reshuffles" as a transient toast string, consumed by the rendering below.
     var toastText by remember { mutableStateOf<String?>(null) }
@@ -97,6 +104,12 @@ fun SearchScreen(
     }
 
     val tabletSize = LocalTabletSize.current
+    val onResultTap: (String) -> Unit = { podcastId ->
+        when (val action = routeSearchResultTap(tabletSize, podcastId)) {
+            is SearchResultTapAction.Navigate -> onOpenPodcast(action.podcastId)
+            is SearchResultTapAction.Select -> viewModel.selectSearchResult(action.podcastId)
+        }
+    }
 
     SearchContent(
         state = state,
@@ -108,19 +121,28 @@ fun SearchScreen(
         onLoadMore = viewModel::loadMore,
         onPickTopic = viewModel::setQuery,
         onOpenPodcast = onOpenPodcast,
+        onResultTap = onResultTap,
+        selectedSearchResultId = selectedSearchResultId,
+        onClearSelection = { viewModel.selectSearchResult(null) },
+        onOpenPlayer = onOpenPlayer,
+        onOpenEpisode = onOpenEpisode,
         size = tabletSize,
     )
 }
 
 /**
- * Stateless Search body. Phone (`size == null`) renders the single-column layout.
- * Tablet portraits and landscapes both route to [SearchContentTabletSingle], which
- * keeps the same chrome + result list but caps the content column width for
- * comfortable reading on wider screens. Tapping a result navigates to the podcast
- * detail screen on every form factor — that screen carries its own tablet-landscape
- * master-detail layout, so Search doesn't need an in-pane preview.
+ * Stateless Search body.
+ *  - Phone (`size == null`): single-column layout.
+ *  - Tablet portraits: single-column with the content width capped for legibility.
+ *  - Tablet landscapes: master-detail. Master = the results list; detail =
+ *    [PodcastDetailScreen] embedded for the selected result, with [LocalTabletSize]
+ *    overridden to `null` so the embedded screen renders its single-column body inside
+ *    the pane (no nested master-detail).
  *
- * `internal` so Paparazzi tests can construct it directly.
+ * `internal` so Paparazzi tests can construct it directly. The `selected*` /
+ * `onOpenPlayer` / `onOpenEpisode` / `onClearSelection` params are only consumed by
+ * the landscape branch but live on every call so the public `SearchScreen` doesn't
+ * have to fork its argument list per form factor.
  */
 @Composable
 internal fun SearchContent(
@@ -134,13 +156,14 @@ internal fun SearchContent(
     onPickTopic: (String) -> Unit,
     onOpenPodcast: (String) -> Unit,
     size: TabletSize?,
+    onResultTap: (String) -> Unit = onOpenPodcast,
+    selectedSearchResultId: String? = null,
+    onClearSelection: () -> Unit = {},
+    onOpenPlayer: () -> Unit = {},
+    onOpenEpisode: (String) -> Unit = {},
 ) {
     when (size) {
-        TabletSize.Tablet8Port,
-        TabletSize.Tablet10Port,
-        TabletSize.Tablet8Land,
-        TabletSize.Tablet10Land,
-        ->
+        TabletSize.Tablet8Port, TabletSize.Tablet10Port ->
             SearchContentTabletSingle(
                 state = state,
                 toastText = toastText,
@@ -151,7 +174,25 @@ internal fun SearchContent(
                 onLoadMore = onLoadMore,
                 onPickTopic = onPickTopic,
                 onOpenPodcast = onOpenPodcast,
+                onResultTap = onResultTap,
                 size = size,
+            )
+        TabletSize.Tablet8Land, TabletSize.Tablet10Land ->
+            SearchContentTabletMasterDetail(
+                state = state,
+                toastText = toastText,
+                onToastDone = onToastDone,
+                onQueryChange = onQueryChange,
+                onTabSelect = onTabSelect,
+                onReshuffle = onReshuffle,
+                onLoadMore = onLoadMore,
+                onPickTopic = onPickTopic,
+                onOpenPodcast = onOpenPodcast,
+                onResultTap = onResultTap,
+                selectedSearchResultId = selectedSearchResultId,
+                onClearSelection = onClearSelection,
+                onOpenPlayer = onOpenPlayer,
+                onOpenEpisode = onOpenEpisode,
             )
         null ->
             SearchContentPhone(
@@ -164,7 +205,78 @@ internal fun SearchContent(
                 onLoadMore = onLoadMore,
                 onPickTopic = onPickTopic,
                 onOpenPodcast = onOpenPodcast,
+                onResultTap = onResultTap,
             )
+    }
+}
+
+/**
+ * Tablet landscape master-detail. Master = scope tabs + results column with the row
+ * tap routed to selection (not navigation). Detail = the full [PodcastDetailScreen]
+ * for the selected id, rendered with [LocalTabletSize] overridden to `null` so it
+ * lays out as a single-column phone body inside the pane (its own tablet-landscape
+ * master-detail would otherwise nest a second pane inside ours).
+ */
+@Composable
+private fun SearchContentTabletMasterDetail(
+    state: SearchUiState,
+    toastText: String?,
+    onToastDone: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onTabSelect: (SearchTab) -> Unit,
+    onReshuffle: () -> Unit,
+    onLoadMore: () -> Unit,
+    onPickTopic: (String) -> Unit,
+    onOpenPodcast: (String) -> Unit,
+    onResultTap: (String) -> Unit,
+    selectedSearchResultId: String?,
+    onClearSelection: () -> Unit,
+    onOpenPlayer: () -> Unit,
+    onOpenEpisode: (String) -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    val emptyHint =
+        if (state.query.isBlank()) "Search to find shows" else "Pick a result to preview"
+    Box(Modifier.fillMaxSize().background(c.bg)) {
+        MasterDetailPane(
+            master = {
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+                ) {
+                    SearchBodyContent(
+                        state = state,
+                        onQueryChange = onQueryChange,
+                        onTabSelect = onTabSelect,
+                        onReshuffle = onReshuffle,
+                        onLoadMore = onLoadMore,
+                        onPickTopic = onPickTopic,
+                        onOpenPodcast = onOpenPodcast,
+                        onResultTap = onResultTap,
+                        selectedResultId = selectedSearchResultId,
+                    )
+                }
+            },
+            detail = {
+                val id = selectedSearchResultId
+                if (id != null) {
+                    // Override LocalTabletSize to null so PodcastDetailScreen renders
+                    // its phone single-column body inside our pane instead of opening
+                    // its own nested master-detail.
+                    CompositionLocalProvider(LocalTabletSize provides null) {
+                        PodcastDetailScreen(
+                            podcastId = id,
+                            onBack = onClearSelection,
+                            onOpenPlayer = onOpenPlayer,
+                            onOpenEpisode = onOpenEpisode,
+                        )
+                    }
+                }
+            },
+            hasSelection = selectedSearchResultId != null,
+            masterWeight = 0.46f,
+            emptyDetail = { EmptyDetailHint(text = emptyHint) },
+        )
+        SearchToast(text = toastText, onDone = onToastDone)
     }
 }
 
@@ -179,6 +291,7 @@ private fun SearchContentPhone(
     onLoadMore: () -> Unit,
     onPickTopic: (String) -> Unit,
     onOpenPodcast: (String) -> Unit,
+    onResultTap: (String) -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Box(Modifier.fillMaxSize().background(c.bg)) {
@@ -191,6 +304,7 @@ private fun SearchContentPhone(
                 onLoadMore = onLoadMore,
                 onPickTopic = onPickTopic,
                 onOpenPodcast = onOpenPodcast,
+                onResultTap = onResultTap,
             )
         }
         SearchToast(text = toastText, onDone = onToastDone)
@@ -220,6 +334,7 @@ private fun SearchContentTabletSingle(
     onLoadMore: () -> Unit,
     onPickTopic: (String) -> Unit,
     onOpenPodcast: (String) -> Unit,
+    onResultTap: (String) -> Unit,
     @Suppress("UNUSED_PARAMETER") size: TabletSize,
 ) {
     val c = LocalKofipodColors.current
@@ -243,6 +358,7 @@ private fun SearchContentTabletSingle(
                     onLoadMore = onLoadMore,
                     onPickTopic = onPickTopic,
                     onOpenPodcast = onOpenPodcast,
+                    onResultTap = onResultTap,
                 )
             }
         }
@@ -264,6 +380,8 @@ private fun SearchBodyContent(
     onLoadMore: () -> Unit,
     onPickTopic: (String) -> Unit,
     onOpenPodcast: (String) -> Unit,
+    onResultTap: (String) -> Unit = onOpenPodcast,
+    selectedResultId: String? = null,
 ) {
     val c = LocalKofipodColors.current
     Spacer(Modifier.height(24.dp))
@@ -343,7 +461,8 @@ private fun SearchBodyContent(
                     ResultCard(
                         p = p,
                         isTopMatch = index == 0,
-                        onClick = { onOpenPodcast(p.id) },
+                        selected = p.id == selectedResultId,
+                        onClick = { onResultTap(p.id) },
                     )
                 }
                 if (state.hasMore) {
@@ -455,15 +574,18 @@ private fun ResultCard(
     p: PodcastSummary,
     isTopMatch: Boolean,
     onClick: () -> Unit,
+    selected: Boolean = false,
 ) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
+    val borderColor = if (selected) c.pink else c.border
+    val borderWidth = if (selected) 2.dp else 1.dp
     Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(r.md))
             .background(c.surface)
-            .border(1.dp, c.border, RoundedCornerShape(r.md))
+            .border(borderWidth, borderColor, RoundedCornerShape(r.md))
             .clickable { onClick() }
             .padding(12.dp),
         verticalAlignment = Alignment.Top,

@@ -81,6 +81,19 @@ class SearchViewModel(
 
     private val queryChannel = MutableStateFlow(QueryKey("", SearchTab.All))
 
+    /**
+     * Selected search result on tablet landscape. Drives the master-detail right pane
+     * (which embeds [com.kofikodr.kofipod.ui.screens.detail.PodcastDetailScreen] for the
+     * picked id). `null` means "show the empty-detail hint." VM-local UI state — not
+     * routed; the URL only changes when the user explicitly opens the detail elsewhere.
+     */
+    private val _selectedSearchResultId = MutableStateFlow<String?>(null)
+    val selectedSearchResultId: StateFlow<String?> = _selectedSearchResultId.asStateFlow()
+
+    fun selectSearchResult(podcastId: String?) {
+        _selectedSearchResultId.value = podcastId
+    }
+
     init {
         viewModelScope.launch {
             recommendations.observe().collect { recState ->
@@ -160,6 +173,9 @@ class SearchViewModel(
         _state.value = _state.value.copy(query = q)
         currentLimit = PodcastIndexApi.PAGE_SIZE
         queryChannel.value = QueryKey(q, _state.value.tab)
+        // Stale selection would leave the tablet-landscape right pane pinned to the
+        // previous query's result while the master shows new results.
+        _selectedSearchResultId.value = null
     }
 
     fun setTab(tab: SearchTab) {
@@ -167,6 +183,7 @@ class SearchViewModel(
         _state.value = _state.value.copy(tab = tab)
         currentLimit = PodcastIndexApi.PAGE_SIZE
         queryChannel.value = QueryKey(_state.value.query, tab)
+        _selectedSearchResultId.value = null
     }
 
     fun loadMore() {
