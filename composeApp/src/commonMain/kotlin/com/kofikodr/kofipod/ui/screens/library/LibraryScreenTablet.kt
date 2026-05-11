@@ -3,6 +3,7 @@ package com.kofikodr.kofipod.ui.screens.library
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +26,12 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,6 +83,8 @@ internal fun LibraryContentTabletSingle(
     size: TabletSize,
     showRecentlyOpened: Boolean = true,
     showEmptyHero: Boolean = true,
+    selectedFolder: FolderSelection? = null,
+    onSelectFolder: ((FolderSelection) -> Unit)? = null,
 ) {
     val c = LocalKofipodColors.current
 
@@ -145,13 +154,17 @@ internal fun LibraryContentTabletSingle(
                     items(lists.size) { idx ->
                         val list = lists[idx]
                         val members = podcasts.filter { it.listId == list.id }
+                        val sel = FolderSelection.OfList(list.id)
                         TabletFolderCard(
                             width = cardWidth,
                             title = list.name,
                             members = members,
                             seed = list.id.hashCode(),
                             hasNew = list.id in state.groupsWithNew,
-                            onClick = { onOpenList(list.id) },
+                            selected = selectedFolder == sel,
+                            onClick = {
+                                if (onSelectFolder != null) onSelectFolder(sel) else onOpenList(list.id)
+                            },
                             onLongClick = { onLongPressList(list) },
                         )
                     }
@@ -163,7 +176,10 @@ internal fun LibraryContentTabletSingle(
                                 members = unfiledPodcasts,
                                 seed = UNFILED_SEED,
                                 hasNew = null in state.groupsWithNew,
-                                onClick = { onOpenList(null) },
+                                selected = selectedFolder == FolderSelection.Unfiled,
+                                onClick = {
+                                    if (onSelectFolder != null) onSelectFolder(FolderSelection.Unfiled) else onOpenList(null)
+                                },
                                 onLongClick = null,
                             )
                         }
@@ -260,10 +276,12 @@ internal fun LibraryContentTabletMasterDetail(
     if (isLibraryEmpty) {
         // Empty library: keep a 50/50 split. Master pane shows the empty-state
         // action list (no hero), detail pane shows the hero graphic so it gets
-        // room to breathe on landscape.
+        // room to breathe on landscape. The hero lives in [emptyDetail] (not
+        // [detail]) because there's no user selection driving the right pane —
+        // it's the empty-state affordance, semantically the absence of selection.
         MasterDetailPane(
             masterWeight = 0.5f,
-            hasSelection = true,
+            hasSelection = false,
             master = {
                 LibraryContentTabletSingle(
                     state = state,
@@ -284,7 +302,8 @@ internal fun LibraryContentTabletMasterDetail(
                     showEmptyHero = false,
                 )
             },
-            detail = {
+            detail = {},
+            emptyDetail = {
                 EmptyHeroDetailPane(
                     onFindPodcast = onOpenSearch,
                     onCreateList = onNewList,
@@ -299,30 +318,47 @@ internal fun LibraryContentTabletMasterDetail(
             .sortedByDescending { it.addedAt }
             .take(RECENT_LIMIT)
 
-    if (recent.isEmpty()) {
-        // Library has folders but no podcasts yet → no recently-opened content.
-        // Drop the split pane so the master folder strip gets full width.
-        LibraryContentTabletSingle(
-            state = state,
-            onOpenPodcast = onOpenPodcast,
-            onOpenList = onOpenList,
-            onOpenSearch = onOpenSearch,
-            onOpenStarterPack = onOpenStarterPack,
-            onOpenBookmarks = onOpenBookmarks,
-            onOpenLibrarySearch = onOpenLibrarySearch,
-            onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
-            onNewList = onNewList,
-            onLongPressPodcast = onLongPressPodcast,
-            onLongPressList = onLongPressList,
-            onLongPressSmartPlaylist = onLongPressSmartPlaylist,
-            onImportOpml = onImportOpml,
-            size = masterSize,
-            showRecentlyOpened = false,
-        )
-        return
+    // Default selection: first user list, else Unfiled when only unfiled podcasts exist.
+    // `null` selection is impossible here — we have at least one folder bucket since
+    // the library is non-empty.
+    val unfiledPodcasts = podcasts.filter { it.listId == null }
+    val defaultSelection: FolderSelection =
+        when {
+            lists.isNotEmpty() -> FolderSelection.OfList(lists.first().id)
+            else -> FolderSelection.Unfiled
+        }
+    // rememberSaveable so the user's pick survives config changes (rotation,
+    // process death restore). FolderSelection.Saver round-trips through a
+    // String? (null = Unfiled, non-null = list id).
+    var selectedFolder by rememberSaveable(stateSaver = FolderSelection.Saver) {
+        mutableStateOf(defaultSelection)
     }
 
+    // If the previously-selected folder was deleted (or Unfiled emptied), reset
+    // the source of truth so the ring highlight and the detail-pane content
+    // never drift apart. The LaunchedEffect keys on the validity flag — it only
+    // re-runs when the selection transitions from valid → invalid.
+    val selectionStillValid =
+        when (val s = selectedFolder) {
+            is FolderSelection.OfList -> lists.any { it.id == s.id }
+            FolderSelection.Unfiled -> unfiledPodcasts.isNotEmpty()
+        }
+    LaunchedEffect(selectionStillValid, defaultSelection) {
+        if (!selectionStillValid) selectedFolder = defaultSelection
+    }
+
+    val (selectionTitle, selectionMembers) =
+        when (val s = if (selectionStillValid) selectedFolder else defaultSelection) {
+            is FolderSelection.OfList -> {
+                val list = lists.first { it.id == s.id }
+                list.name to podcasts.filter { it.listId == s.id }
+            }
+            FolderSelection.Unfiled -> "Unfiled" to unfiledPodcasts
+        }
+    val effectiveSelection = if (selectionStillValid) selectedFolder else defaultSelection
+
     MasterDetailPane(
+        masterWeight = 0.5f,
         master = {
             LibraryContentTabletSingle(
                 state = state,
@@ -340,19 +376,56 @@ internal fun LibraryContentTabletMasterDetail(
                 onImportOpml = onImportOpml,
                 size = masterSize,
                 showRecentlyOpened = false,
+                selectedFolder = effectiveSelection,
+                onSelectFolder = { selectedFolder = it },
             )
         },
         detail = {
-            TabletRecentlyOpenedPane(
+            TabletFolderAndRecentPane(
+                selectionTitle = selectionTitle,
+                selectionMembers = selectionMembers,
                 recent = recent,
                 onOpenPodcast = onOpenPodcast,
                 onLongPressPodcast = onLongPressPodcast,
             )
         },
-        // We've already filtered out the empty-recent case above, so the detail
-        // pane is always non-empty by the time we reach this branch.
         hasSelection = true,
     )
+}
+
+/**
+ * Selection model for the tablet-landscape Library master pane. Identifies which
+ * folder bucket the detail pane is currently mirroring. Smart playlists are not
+ * part of this model — they navigate to their own detail screen on tap, same as
+ * on phone.
+ */
+internal sealed interface FolderSelection {
+    data class OfList(val id: String) : FolderSelection
+
+    data object Unfiled : FolderSelection
+
+    companion object {
+        /**
+         * rememberSaveable bundle uses a non-null Any, so we encode as a tagged
+         * list rather than a nullable String. Tag `"list"` carries the list id;
+         * tag `"unfiled"` has no payload.
+         */
+        val Saver =
+            listSaver<FolderSelection, Any>(
+                save = { sel ->
+                    when (sel) {
+                        is OfList -> listOf("list", sel.id)
+                        Unfiled -> listOf("unfiled")
+                    }
+                },
+                restore = { tokens ->
+                    when (tokens.firstOrNull()) {
+                        "list" -> OfList(tokens[1] as String)
+                        else -> Unfiled
+                    }
+                },
+            )
+    }
 }
 
 /**
@@ -382,11 +455,17 @@ private fun EmptyHeroDetailPane(
 }
 
 /**
- * Right-pane "Recently opened" list for tablet landscape. Reuses [RecentRow] from
- * the phone body so a row tap navigates straight to the podcast detail route.
+ * Right-pane content for tablet landscape. Top section mirrors the master's
+ * currently-selected folder ([selectionTitle] + [selectionMembers]); bottom section
+ * is the global "Recently opened" list. Both reuse [RecentRow] so taps navigate
+ * straight to the podcast detail route. When the selected folder is empty (e.g.
+ * Unfiled with no unfiled podcasts after a re-file), the section header still
+ * renders with a muted "Empty" hint so the pane stays self-explanatory.
  */
 @Composable
-internal fun TabletRecentlyOpenedPane(
+internal fun TabletFolderAndRecentPane(
+    selectionTitle: String,
+    selectionMembers: List<Podcast>,
     recent: List<Podcast>,
     onOpenPodcast: (String) -> Unit,
     onLongPressPodcast: (Podcast) -> Unit,
@@ -397,17 +476,44 @@ internal fun TabletRecentlyOpenedPane(
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
     ) {
         item {
-            SectionLabel(title = "Recently opened", topSpacing = 0.dp)
+            SectionLabel(title = selectionTitle, topSpacing = 0.dp)
         }
-        items(recent.size) { idx ->
-            val p = recent[idx]
-            RecentRow(
-                podcast = p,
-                episodeCount = placeholderEpisodeCount(p),
-                showDivider = idx < recent.lastIndex,
-                onClick = { onOpenPodcast(p.id) },
-                onLongClick = { onLongPressPodcast(p) },
-            )
+        if (selectionMembers.isEmpty()) {
+            item {
+                Text(
+                    "Empty.",
+                    color = c.textMute,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+            }
+        } else {
+            items(selectionMembers.size) { idx ->
+                val p = selectionMembers[idx]
+                RecentRow(
+                    podcast = p,
+                    episodeCount = placeholderEpisodeCount(p),
+                    showDivider = idx < selectionMembers.lastIndex,
+                    onClick = { onOpenPodcast(p.id) },
+                    onLongClick = { onLongPressPodcast(p) },
+                )
+            }
+        }
+
+        if (recent.isNotEmpty()) {
+            item {
+                SectionLabel(title = "Recently opened", topSpacing = 22.dp)
+            }
+            items(recent.size) { idx ->
+                val p = recent[idx]
+                RecentRow(
+                    podcast = p,
+                    episodeCount = placeholderEpisodeCount(p),
+                    showDivider = idx < recent.lastIndex,
+                    onClick = { onOpenPodcast(p.id) },
+                    onLongClick = { onLongPressPodcast(p) },
+                )
+            }
         }
     }
 }
@@ -431,6 +537,7 @@ internal fun TabletFolderCard(
     hasNew: Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)?,
+    selected: Boolean = false,
 ) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
@@ -451,6 +558,12 @@ internal fun TabletFolderCard(
         Modifier
             .width(width)
             .height(120.dp)
+            // Border first so the full 2dp stroke is visible: clip below trims
+            // the rounded-rect background but leaves the outer-stroke ring
+            // intact at the layout edge.
+            .then(
+                if (selected) Modifier.border(2.dp, c.purple, RoundedCornerShape(r.md)) else Modifier,
+            )
             .clip(RoundedCornerShape(r.md))
             .background(visuals.brush)
             .then(clickModifier)
