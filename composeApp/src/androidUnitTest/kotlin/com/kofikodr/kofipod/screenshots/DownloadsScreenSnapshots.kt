@@ -50,10 +50,12 @@ class DownloadsScreenSnapshots {
         )
 
     @Test
-    fun downloadsPopulated_phone_light() =
+    fun downloadsPopulated_phone_light() {
+        resetToPhoneConfig()
         paparazzi.snapshot {
             DownloadsHarness(state = POPULATED_FIXTURE, size = null)
         }
+    }
 
     @Test
     fun downloadsEmpty_tablet8Port_light() {
@@ -101,6 +103,19 @@ class DownloadsScreenSnapshots {
         paparazzi.snapshot {
             DownloadsHarness(state = DownloadsUiState(), size = TabletSize.Tablet10Land)
         }
+    }
+
+    private fun resetToPhoneConfig() {
+        paparazzi.unsafeUpdateConfig(
+            deviceConfig =
+                DeviceConfig.PIXEL_5.copy(
+                    screenWidth = 412,
+                    screenHeight = 892,
+                    xdpi = 160,
+                    ydpi = 160,
+                    density = Density.MEDIUM,
+                ),
+        )
     }
 
     private fun useTabletDeviceConfig(
