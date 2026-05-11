@@ -202,6 +202,7 @@ private fun LibraryHarness(
                     state = state,
                     onOpenPodcast = {},
                     onOpenList = {},
+                    onOpenBookmarks = {},
                     onOpenSearch = {},
                     onOpenStarterPack = {},
                     onOpenLibrarySearch = {},
