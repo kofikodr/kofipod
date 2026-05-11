@@ -65,8 +65,6 @@ internal fun LibraryContentTabletSingle(
     onOpenList: (String?) -> Unit,
     onOpenSearch: () -> Unit,
     onOpenStarterPack: () -> Unit,
-    onOpenBookmarks: () -> Unit,
-    onOpenStats: () -> Unit,
     onOpenLibrarySearch: () -> Unit,
     onOpenSmartPlaylistDetail: (String) -> Unit,
     onNewList: () -> Unit,
@@ -112,9 +110,6 @@ internal fun LibraryContentTabletSingle(
             LibraryHeader(
                 showAddButton = true,
                 onNewList = onNewList,
-                onOpenStats = onOpenStats,
-                statsHasBadge = state.statsHasUnseenTierChange,
-                onOpenBookmarks = onOpenBookmarks,
             )
         }
 
@@ -244,8 +239,6 @@ internal fun LibraryContentTabletMasterDetail(
     onOpenList: (String?) -> Unit,
     onOpenSearch: () -> Unit,
     onOpenStarterPack: () -> Unit,
-    onOpenBookmarks: () -> Unit,
-    onOpenStats: () -> Unit,
     onOpenLibrarySearch: () -> Unit,
     onOpenSmartPlaylistDetail: (String) -> Unit,
     onNewList: () -> Unit,
@@ -271,8 +264,6 @@ internal fun LibraryContentTabletMasterDetail(
             onOpenList = onOpenList,
             onOpenSearch = onOpenSearch,
             onOpenStarterPack = onOpenStarterPack,
-            onOpenBookmarks = onOpenBookmarks,
-            onOpenStats = onOpenStats,
             onOpenLibrarySearch = onOpenLibrarySearch,
             onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
             onNewList = onNewList,
@@ -294,8 +285,6 @@ internal fun LibraryContentTabletMasterDetail(
                 onOpenList = onOpenList,
                 onOpenSearch = onOpenSearch,
                 onOpenStarterPack = onOpenStarterPack,
-                onOpenBookmarks = onOpenBookmarks,
-                onOpenStats = onOpenStats,
                 onOpenLibrarySearch = onOpenLibrarySearch,
                 onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
                 onNewList = onNewList,
