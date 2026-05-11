@@ -88,6 +88,19 @@ class PodcastDetailViewModel(
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing
 
+    /**
+     * Currently selected episode for the tablet-landscape master-detail preview pane.
+     * VM-local UI state — not persisted, not routed. `null` means "no explicit user
+     * selection yet"; the screen defaults to the newest stored episode when rendering.
+     * Phone and tablet portraits ignore this field — taps navigate via Route.EpisodeDetail.
+     */
+    private val _selectedEpisodeId = MutableStateFlow<String?>(null)
+    val selectedEpisodeId: StateFlow<String?> = _selectedEpisodeId
+
+    fun selectEpisode(episodeId: String) {
+        _selectedEpisodeId.value = episodeId
+    }
+
     private data class StoredBundle(val podcast: Podcast?, val episodes: List<Episode>, val lists: List<PodcastList>)
 
     private data class RemoteBundle(

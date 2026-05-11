@@ -38,8 +38,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.db.PodcastList
+import com.kofikodr.kofipod.ui.layout.EmptyDetailHint
+import com.kofikodr.kofipod.ui.layout.LocalTabletSize
+import com.kofikodr.kofipod.ui.layout.MasterDetailPane
+import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.permission.rememberNotificationPermissionRequester
+import com.kofikodr.kofipod.ui.primitives.KPButton
 import com.kofikodr.kofipod.ui.primitives.KPIcon
 import com.kofikodr.kofipod.ui.primitives.KPIconName
 import com.kofikodr.kofipod.ui.primitives.KofipodArtwork
@@ -52,6 +58,11 @@ import org.koin.core.parameter.parametersOf
 
 private enum class DetailTab { Episodes, About }
 
+/**
+ * Thin Koin-aware wrapper. Owns VM resolution, permission requester, dialog state, and
+ * the size-aware episode-tap routing. Delegates the actual layout to
+ * [PodcastDetailContent], which is stateless and branches by [TabletSize].
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PodcastDetailScreen(
@@ -64,6 +75,8 @@ fun PodcastDetailScreen(
     val state by viewModel.state.collectAsState()
     val playingEpisodeId by viewModel.playingEpisodeId.collectAsState()
     val refreshing by viewModel.refreshing.collectAsState()
+    val selectedEpisodeId by viewModel.selectedEpisodeId.collectAsState()
+    val tabletSize = LocalTabletSize.current
     val c = LocalKofipodColors.current
 
     val summary = state.summary
@@ -79,13 +92,200 @@ fun PodcastDetailScreen(
     }
 
     var listPickerOpen by remember { mutableStateOf(false) }
-    var tab by remember { mutableStateOf(DetailTab.Episodes) }
-    var newestFirst by remember { mutableStateOf(true) }
 
     val requestNotificationPermission =
         rememberNotificationPermissionRequester { granted ->
             viewModel.toggleNotifyNewEpisodes(granted)
         }
+
+    // Default the preview-pane selection to the newest stored episode when nothing has
+    // been picked yet, so landscape rotations never start with an empty detail pane.
+    val effectiveSelectedId: String? =
+        remember(selectedEpisodeId, state.storedEpisodes) {
+            selectedEpisodeId ?: state.storedEpisodes.firstOrNull()?.id
+        }
+    val selectedEpisode: Episode? =
+        remember(effectiveSelectedId, state.storedEpisodes) {
+            effectiveSelectedId?.let { id -> state.storedEpisodes.firstOrNull { it.id == id } }
+        }
+
+    // Size-aware routing for episode-row taps — see routeEpisodeTap. Phone +
+    // tablet portraits navigate; tablet landscapes preview-first via selection.
+    // On landscape, the EpisodePreviewPane only renders for storedEpisodes (full
+    // Episode rows); remote/unsubscribed rows have no preview content available
+    // (`EpisodePreview` is a minimal projection), so a tap on a remote row falls
+    // through to the full episode screen rather than silently no-op-ing.
+    val onEpisodeTap: (String) -> Unit = { episodeId ->
+        val inStored = state.storedEpisodes.any { it.id == episodeId }
+        when (val action = routeEpisodeTap(tabletSize, episodeId)) {
+            is EpisodeTapAction.Navigate -> onOpenEpisode(action.episodeId)
+            is EpisodeTapAction.Select ->
+                if (inStored) viewModel.selectEpisode(action.episodeId) else onOpenEpisode(action.episodeId)
+        }
+    }
+
+    PodcastDetailContent(
+        state = state,
+        playingEpisodeId = playingEpisodeId,
+        activePlaybackFlow = viewModel.activePlayback,
+        refreshing = refreshing,
+        selectedEpisode = selectedEpisode,
+        size = tabletSize,
+        onBack = onBack,
+        onSharePodcast = { viewModel.sharePodcast() },
+        onRefresh = { viewModel.refresh() },
+        onSaveTap = { listPickerOpen = true },
+        onToggleBell = {
+            if (!state.inLibrary) return@PodcastDetailContent
+            if (state.notifyNewEpisodes) {
+                viewModel.toggleNotifyNewEpisodes(false)
+            } else {
+                requestNotificationPermission()
+            }
+        },
+        onDownloadNewest = {
+            if (!state.inLibrary) return@PodcastDetailContent
+            val newest = state.storedEpisodes.firstOrNull()?.id
+            if (newest != null) viewModel.download(newest)
+        },
+        onToggleAutoDownload = { viewModel.toggleAutoDownload(it) },
+        onEpisodeTap = onEpisodeTap,
+        onEpisodeOpen = onOpenEpisode,
+        onPlayEpisode = { viewModel.play(it) },
+        onDownloadEpisode = { viewModel.download(it) },
+        onShareEpisode = { viewModel.shareEpisode(it) },
+        onLoadMore = { viewModel.loadMoreEpisodes() },
+    )
+
+    if (listPickerOpen) {
+        ListPickerDialog(
+            lists = state.lists,
+            currentListId = state.listId,
+            onDismiss = { listPickerOpen = false },
+            onPick = {
+                viewModel.saveToList(it)
+                listPickerOpen = false
+            },
+        )
+    }
+}
+
+/**
+ * Stateless podcast-detail body. Branches by [size]:
+ *  - Phone (`null`) and tablet portraits (`Tablet8Port` / `Tablet10Port`): today's
+ *    single-column LazyColumn body — unchanged from pre-Phase-8.
+ *  - Tablet landscape (`Tablet8Land` / `Tablet10Land`): master-detail. Master is the
+ *    same single-column body; detail pane previews the selected episode and offers an
+ *    "Open" CTA that navigates to the full Episode detail route.
+ *
+ * `selectedEpisode` is only consumed by the landscape branch but lives on the signature
+ * so the screen-level hoist stays uniform. `onEpisodeTap` is the single size-aware
+ * row-tap callback (see [routeEpisodeTap] upstream); `onEpisodeOpen` is the separate
+ * "Open" gesture in the landscape detail pane and the phone/portrait navigate path.
+ *
+ * The full tab-embedded detail pane (Overview / Chapters / Mentioned / Discuss) from
+ * the spec is deliberately deferred — see the plan doc's "Tab embedding deferred" note.
+ * This Phase 8 ships the preview-pane variant, mirroring Library and Search.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun PodcastDetailContent(
+    state: DetailUiState,
+    playingEpisodeId: String?,
+    activePlaybackFlow: StateFlow<ActivePlayback>,
+    refreshing: Boolean,
+    selectedEpisode: Episode?,
+    size: TabletSize?,
+    onBack: () -> Unit,
+    onSharePodcast: () -> Unit,
+    onRefresh: () -> Unit,
+    onSaveTap: () -> Unit,
+    onToggleBell: () -> Unit,
+    onDownloadNewest: () -> Unit,
+    onToggleAutoDownload: (Boolean) -> Unit,
+    onEpisodeTap: (String) -> Unit,
+    onEpisodeOpen: (String) -> Unit,
+    onPlayEpisode: (String) -> Unit,
+    onDownloadEpisode: (String) -> Unit,
+    onShareEpisode: (String) -> Unit,
+    onLoadMore: () -> Unit,
+) {
+    val summary = state.summary ?: return
+    val isLandscape = size == TabletSize.Tablet8Land || size == TabletSize.Tablet10Land
+
+    val master =
+        @Composable {
+            PodcastDetailSingleColumn(
+                state = state,
+                summary = summary,
+                playingEpisodeId = playingEpisodeId,
+                activePlaybackFlow = activePlaybackFlow,
+                refreshing = refreshing,
+                selectedEpisodeId = if (isLandscape) selectedEpisode?.id else null,
+                onBack = onBack,
+                onSharePodcast = onSharePodcast,
+                onRefresh = onRefresh,
+                onSaveTap = onSaveTap,
+                onToggleBell = onToggleBell,
+                onDownloadNewest = onDownloadNewest,
+                onToggleAutoDownload = onToggleAutoDownload,
+                onEpisodeTap = onEpisodeTap,
+                onPlayEpisode = onPlayEpisode,
+                onDownloadEpisode = onDownloadEpisode,
+                onShareEpisode = onShareEpisode,
+                onLoadMore = onLoadMore,
+            )
+        }
+
+    if (!isLandscape) {
+        master()
+        return
+    }
+
+    MasterDetailPane(
+        master = master,
+        detail = {
+            val ep = selectedEpisode
+            if (ep != null) {
+                EpisodePreviewPane(
+                    episode = ep,
+                    podcastTitle = summary.title,
+                    onPlay = { onPlayEpisode(ep.id) },
+                    onOpen = { onEpisodeOpen(ep.id) },
+                )
+            }
+        },
+        hasSelection = selectedEpisode != null,
+        masterWeight = 0.46f,
+        emptyDetail = { EmptyDetailHint(text = "Tap an episode to preview") },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PodcastDetailSingleColumn(
+    state: DetailUiState,
+    summary: com.kofikodr.kofipod.domain.PodcastSummary,
+    playingEpisodeId: String?,
+    activePlaybackFlow: StateFlow<ActivePlayback>,
+    refreshing: Boolean,
+    selectedEpisodeId: String? = null,
+    onBack: () -> Unit,
+    onSharePodcast: () -> Unit,
+    onRefresh: () -> Unit,
+    onSaveTap: () -> Unit,
+    onToggleBell: () -> Unit,
+    onDownloadNewest: () -> Unit,
+    onToggleAutoDownload: (Boolean) -> Unit,
+    onEpisodeTap: (String) -> Unit,
+    onPlayEpisode: (String) -> Unit,
+    onDownloadEpisode: (String) -> Unit,
+    onShareEpisode: (String) -> Unit,
+    onLoadMore: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    var tab by remember { mutableStateOf(DetailTab.Episodes) }
+    var newestFirst by remember { mutableStateOf(true) }
 
     val listName = state.listId?.let { id -> state.lists.firstOrNull { it.id == id }?.name }
     val saveLabel =
@@ -137,19 +337,18 @@ fun PodcastDetailScreen(
             if (newestFirst) mapped else mapped.asReversed()
         }
     val visibleRows = remember(rows, displayLimit) { rows.take(displayLimit) }
-    val activePlaybackFlow = viewModel.activePlayback
 
     PullToRefreshBox(
         isRefreshing = refreshing,
-        onRefresh = viewModel::refresh,
+        onRefresh = onRefresh,
         modifier = Modifier.fillMaxSize().background(c.bg),
     ) {
         LazyColumn(Modifier.fillMaxSize()) {
             item {
                 TopIconBar(
                     onBack = onBack,
-                    onShare = { viewModel.sharePodcast() },
-                    onCheckForEpisodes = viewModel::refresh,
+                    onShare = onSharePodcast,
+                    onCheckForEpisodes = onRefresh,
                 )
             }
             item { HeroRow(summary) }
@@ -173,20 +372,9 @@ fun PodcastDetailScreen(
                     saved = state.inLibrary,
                     bellOn = state.inLibrary && state.notifyNewEpisodes,
                     bellEnabled = state.inLibrary,
-                    onSave = { listPickerOpen = true },
-                    onToggleBell = {
-                        if (!state.inLibrary) return@ActionRow
-                        if (state.notifyNewEpisodes) {
-                            viewModel.toggleNotifyNewEpisodes(false)
-                        } else {
-                            requestNotificationPermission()
-                        }
-                    },
-                    onDownload = {
-                        if (!state.inLibrary) return@ActionRow
-                        val newest = state.storedEpisodes.firstOrNull()?.id
-                        if (newest != null) viewModel.download(newest)
-                    },
+                    onSave = onSaveTap,
+                    onToggleBell = onToggleBell,
+                    onDownload = onDownloadNewest,
                     downloadEnabled = state.inLibrary,
                 )
             }
@@ -194,7 +382,7 @@ fun PodcastDetailScreen(
                 item {
                     AutoDownloadRow(
                         enabled = state.autoDownload,
-                        onToggle = { viewModel.toggleAutoDownload(it) },
+                        onToggle = onToggleAutoDownload,
                     )
                 }
             }
@@ -213,15 +401,18 @@ fun PodcastDetailScreen(
                     EpisodeRow(
                         ep = ep,
                         isActive = ep.id == playingEpisodeId,
+                        isSelected = ep.id == selectedEpisodeId,
                         canDownload = inLibrary,
                         activePlaybackFlow = activePlaybackFlow,
-                        viewModel = viewModel,
-                        onOpenEpisode = onOpenEpisode,
+                        onTap = { onEpisodeTap(ep.id) },
+                        onLongPress = { onShareEpisode(ep.id) },
+                        onPlay = { onPlayEpisode(ep.id) },
+                        onDownload = { onDownloadEpisode(ep.id) },
                     )
                 }
                 if (hasMore) {
                     item(key = "load-more") {
-                        LoadMoreRow(loading = state.loadingMore, onClick = viewModel::loadMoreEpisodes)
+                        LoadMoreRow(loading = state.loadingMore, onClick = onLoadMore)
                     }
                 }
             } else {
@@ -248,17 +439,98 @@ fun PodcastDetailScreen(
             item { Spacer(Modifier.height(24.dp)) }
         }
     }
+}
 
-    if (listPickerOpen) {
-        ListPickerDialog(
-            lists = state.lists,
-            currentListId = state.listId,
-            onDismiss = { listPickerOpen = false },
-            onPick = {
-                viewModel.saveToList(it)
-                listPickerOpen = false
-            },
+/**
+ * Right-pane preview for the selected episode (tablet landscapes). Eyebrow date +
+ * duration, title, podcast name + duration meta, Resume/Play CTA, "Open" affordance
+ * that navigates to the full Episode detail route, and the truncated description.
+ *
+ * No tabs (Chapters / Mentioned / Discuss) — those are deferred to a follow-up; the
+ * "Open" button is the bridge to the full experience in the meantime. Mirrors
+ * [com.kofikodr.kofipod.ui.screens.library.SubscriptionPreviewPane]'s shape.
+ */
+@Composable
+internal fun EpisodePreviewPane(
+    episode: Episode,
+    podcastTitle: String,
+    onPlay: () -> Unit,
+    onOpen: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(c.bg)
+            .padding(24.dp),
+    ) {
+        val durationSec = episode.durationSec.toInt()
+        val eyebrowParts = mutableListOf<String>()
+        episode.episodeNumber?.let { eyebrowParts += "EP $it" }
+        if (episode.publishedAt > 0) eyebrowParts += formatDate(episode.publishedAt)
+        if (eyebrowParts.isNotEmpty()) {
+            Text(
+                eyebrowParts.joinToString("  ·  "),
+                color = c.pink,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                letterSpacing = 0.08.em,
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+        Text(
+            episode.title,
+            color = c.text,
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 22.sp,
+            lineHeight = 28.sp,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
         )
+        Spacer(Modifier.height(8.dp))
+        val metaParts = mutableListOf(podcastTitle)
+        if (durationSec > 0) metaParts += formatDuration(durationSec)
+        if (episode.fileSizeBytes > 0) metaParts += formatMb(episode.fileSizeBytes)
+        Text(
+            metaParts.joinToString("  ·  "),
+            color = c.textMute,
+            fontSize = 13.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+        Spacer(Modifier.height(20.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            KPButton(
+                label = "Play",
+                onClick = onPlay,
+            )
+            Spacer(Modifier.width(12.dp))
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .border(1.dp, c.border, RoundedCornerShape(999.dp))
+                    .clickable { onOpen() }
+                    .padding(horizontal = 18.dp, vertical = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "Open",
+                    color = c.textSoft,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                )
+            }
+        }
+        if (episode.description.isNotBlank()) {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                episode.description,
+                color = c.textSoft,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                maxLines = 10,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -560,18 +832,21 @@ private fun EpisodeRow(
     isActive: Boolean,
     canDownload: Boolean,
     activePlaybackFlow: StateFlow<ActivePlayback>,
-    viewModel: PodcastDetailViewModel,
-    onOpenEpisode: (String) -> Unit,
+    onTap: () -> Unit,
+    onLongPress: () -> Unit,
+    onPlay: () -> Unit,
+    onDownload: () -> Unit,
+    isSelected: Boolean = false,
 ) {
     val c = LocalKofipodColors.current
     val playable = ep.playable
-    val id = ep.id
     Row(
         Modifier
             .fillMaxWidth()
+            .background(if (isSelected) c.purpleTint else Color.Transparent)
             .combinedClickable(
-                onClick = { onOpenEpisode(id) },
-                onLongClick = { viewModel.shareEpisode(id) },
+                onClick = onTap,
+                onLongClick = onLongPress,
             )
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -580,7 +855,7 @@ private fun EpisodeRow(
             isActive = isActive,
             activePlaybackFlow = activePlaybackFlow,
             enabled = playable,
-            onClick = { if (playable) viewModel.play(id) },
+            onClick = { if (playable) onPlay() },
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -604,7 +879,7 @@ private fun EpisodeRow(
         StateIndicator(
             ep = ep,
             canDownload = canDownload,
-            onDownload = { if (playable && canDownload) viewModel.download(id) },
+            onDownload = { if (playable && canDownload) onDownload() },
         )
     }
 }

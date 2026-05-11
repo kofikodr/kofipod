@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -36,6 +37,8 @@ import androidx.compose.ui.unit.sp
 import com.kofikodr.kofipod.ai.DiscussMessage
 import com.kofikodr.kofipod.ai.DiscussRole
 import com.kofikodr.kofipod.ai.DiscussUiState
+import com.kofikodr.kofipod.ui.layout.TabletSize
+import com.kofikodr.kofipod.ui.layout.rememberTabletSize
 import com.kofikodr.kofipod.ui.primitives.KPIcon
 import com.kofikodr.kofipod.ui.primitives.KPIconName
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
@@ -67,6 +70,7 @@ fun DiscussTabPanel(
         onOpenAskGemini = onOpenAskGemini,
         onClearChat = viewModel::clearChat,
         modifier = modifier,
+        size = rememberTabletSize(),
     )
 }
 
@@ -81,6 +85,33 @@ internal fun DiscussTabPanelContent(
     onOpenAskGemini: () -> Unit,
     onClearChat: () -> Unit,
     modifier: Modifier = Modifier,
+    // Tablet width cap: 8" portrait keeps full width; every wider variant
+    // caps to 720 dp so the suggestion + composer-stub don't stretch
+    // edge-to-edge on landscape tablets.
+    size: TabletSize? = null,
+) {
+    val capWidth: androidx.compose.ui.unit.Dp? =
+        when (size) {
+            null, TabletSize.Tablet8Port -> null
+            TabletSize.Tablet8Land, TabletSize.Tablet10Port, TabletSize.Tablet10Land -> 720.dp
+        }
+    if (capWidth != null) {
+        Box(modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            Column(Modifier.widthIn(max = capWidth).fillMaxWidth()) {
+                DiscussBody(state, onOpenAskGemini, onClearChat, Modifier)
+            }
+        }
+    } else {
+        DiscussBody(state, onOpenAskGemini, onClearChat, modifier)
+    }
+}
+
+@Composable
+private fun DiscussBody(
+    state: DiscussUiState,
+    onOpenAskGemini: () -> Unit,
+    onClearChat: () -> Unit,
+    modifier: Modifier,
 ) {
     when (state) {
         // Hidden is unreachable from this composable in practice — the parent

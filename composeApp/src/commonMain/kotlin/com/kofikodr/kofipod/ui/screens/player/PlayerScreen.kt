@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -23,10 +24,17 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import com.kofikodr.kofipod.playback.PlayerState
+import com.kofikodr.kofipod.pro.ProEntitlement
+import com.kofikodr.kofipod.ui.layout.TabletSize
+import com.kofikodr.kofipod.ui.layout.rememberTabletSize
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
 import kotlin.math.roundToInt
@@ -40,9 +48,9 @@ fun PlayerScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val c = LocalKofipodColors.current
-    val p = state.player
     val ent by viewModel.entitlement.collectAsState()
     val tipDismissed by viewModel.isProTipDismissed.collectAsState()
+    val size = rememberTabletSize()
 
     LaunchedEffect(viewModel) {
         viewModel.snippetEditorRoute.collect { id -> onOpenSnippetEditor(id) }
@@ -90,6 +98,9 @@ fun PlayerScreen(
             }
         }
 
+    // Outer container owns drag-to-dismiss + scroll. Phone keeps the original 20dp
+    // horizontal page padding; per-row title-block padding for tablets is layered
+    // on inside PlayerContent so phone Paparazzi stays byte-identical.
     Column(
         Modifier
             .fillMaxSize()
@@ -99,26 +110,130 @@ fun PlayerScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp),
     ) {
-        Spacer(Modifier.height(16.dp))
-        PlayerTopBar(
-            podcastTitle = p.podcastTitle,
+        PlayerContent(
+            state = state,
+            entitlement = ent,
+            isProTipDismissed = tipDismissed,
+            audioLevels = viewModel.audioLevels,
+            size = size,
             onBack = onBack,
             onShare = viewModel::share,
             onGoToPodcast = {
-                if (p.podcastId.isNotBlank()) onOpenPodcast(p.podcastId)
+                val pid = state.player.podcastId
+                if (pid.isNotBlank()) onOpenPodcast(pid)
             },
             onMarkPlayed = viewModel::markAsPlayed,
+            onSeek = viewModel::seekTo,
+            onTogglePlay = viewModel::togglePlayPause,
+            onSkipBack = viewModel::skipBack,
+            onSkipForward = viewModel::skipForward,
+            onPrev = viewModel::prev,
+            onNext = viewModel::next,
+            onSnipTapped = viewModel::onSnipTapped,
+            onBookmarkTapped = viewModel::onBookmarkTapped,
+            onCycleSpeed = viewModel::cycleSpeed,
+            onSetSleep = viewModel::setSleepTimer,
+            onDismissProTip = viewModel::dismissProTip,
         )
-        Spacer(Modifier.height(16.dp))
-        PlayerArtworkCard(
-            seed = p.episodeId?.hashCode() ?: 0,
-            imageUrl = p.artworkUrl,
-            podcastTitle = p.podcastTitle,
-            episodeNumber = p.episodeNumber,
-            isPlaying = p.isPlaying,
-            audioLevels = viewModel.audioLevels,
-        )
-        Spacer(Modifier.height(20.dp))
+    }
+
+    state.toast?.let { text ->
+        PlayerToast(text = text, onDone = viewModel::dismissToast)
+    }
+}
+
+/**
+ * Stateless body of the Player screen. Wraps the column of rows from artwork down
+ * through the pro-tip banner. Phone (`size == null`) is byte-identical to the
+ * legacy layout — the row paddings collapse to zero and the artwork falls back to
+ * its original `fillMaxWidth(0.5f)` sizing.
+ *
+ * Tablet branches: artwork is width-capped, the title block (header / scrubber /
+ * transport / action strip) gets extra horizontal padding, and the action strip
+ * scales its icon size + label visibility per [TabletSize] (see spec §6).
+ *
+ * **Drag-to-dismiss and the outer `verticalScroll`/`background` chain stay on
+ * `PlayerScreen`'s outer Column** — this body must remain stateless and idempotent
+ * so Paparazzi can render it without those Animatable / coroutine seams.
+ */
+@Composable
+internal fun PlayerContent(
+    state: PlayerUiState,
+    entitlement: ProEntitlement,
+    isProTipDismissed: Boolean,
+    audioLevels: StateFlow<FloatArray>,
+    size: TabletSize?,
+    onBack: () -> Unit,
+    onShare: () -> Unit,
+    onGoToPodcast: () -> Unit,
+    onMarkPlayed: () -> Unit,
+    onSeek: (Long) -> Unit,
+    onTogglePlay: () -> Unit,
+    onSkipBack: () -> Unit,
+    onSkipForward: () -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onSnipTapped: () -> Unit,
+    onBookmarkTapped: () -> Unit,
+    onCycleSpeed: () -> Unit,
+    onSetSleep: (Int?) -> Unit,
+    onDismissProTip: () -> Unit,
+) {
+    val p: PlayerState = state.player
+
+    // size-derived layout knobs (phone = unchanged).
+    val artworkMaxWidth: Dp? =
+        when (size) {
+            TabletSize.Tablet8Port, TabletSize.Tablet8Land -> 360.dp
+            TabletSize.Tablet10Port -> 480.dp
+            TabletSize.Tablet10Land -> 560.dp
+            null -> null
+        }
+    // Title block extra horizontal padding **on top of** the outer column's 20dp.
+    // Targets: 32dp total on 8" (extra=12), 64dp on 10" (extra=44). Phone = 0.
+    val titleBlockExtraPadding: Dp =
+        when (size) {
+            TabletSize.Tablet8Port, TabletSize.Tablet8Land -> 12.dp
+            TabletSize.Tablet10Port, TabletSize.Tablet10Land -> 44.dp
+            null -> 0.dp
+        }
+    val actionIconSize: Dp =
+        when (size) {
+            TabletSize.Tablet8Port, TabletSize.Tablet8Land -> 28.dp
+            TabletSize.Tablet10Port, TabletSize.Tablet10Land -> 32.dp
+            null -> 24.dp
+        }
+    // Phone keeps its current behavior (labels visible). 10" landscape mirrors that;
+    // the smaller / portrait tablet sizes hide labels per the design mocks.
+    val actionShowLabels: Boolean =
+        when (size) {
+            null, TabletSize.Tablet10Land -> true
+            TabletSize.Tablet8Port, TabletSize.Tablet8Land, TabletSize.Tablet10Port -> false
+        }
+
+    Spacer(Modifier.height(16.dp))
+    PlayerTopBar(
+        podcastTitle = p.podcastTitle,
+        onBack = onBack,
+        onShare = onShare,
+        onGoToPodcast = onGoToPodcast,
+        onMarkPlayed = onMarkPlayed,
+    )
+    Spacer(Modifier.height(16.dp))
+    PlayerArtworkCard(
+        seed = p.episodeId?.hashCode() ?: 0,
+        imageUrl = p.artworkUrl,
+        podcastTitle = p.podcastTitle,
+        episodeNumber = p.episodeNumber,
+        isPlaying = p.isPlaying,
+        audioLevels = audioLevels,
+        artworkMaxWidth = artworkMaxWidth,
+    )
+    Spacer(Modifier.height(20.dp))
+    // Phone (no extra padding) inlines the rows under the outer Column so the
+    // legacy Paparazzi baseline stays byte-identical — no nested Column in the
+    // layout tree. Tablet sizes wrap the title block in a padded Column.
+    if (titleBlockExtraPadding == 0.dp) {
         PlayerHeader(
             episodeNumber = p.episodeNumber,
             durationMs = p.durationMs,
@@ -130,7 +245,7 @@ fun PlayerScreen(
             positionMs = p.positionMs,
             durationMs = p.durationMs,
             bufferedMs = p.bufferedMs,
-            onSeek = viewModel::seekTo,
+            onSeek = onSeek,
             isLocalSource = p.isLocalSource,
         )
         Spacer(Modifier.height(20.dp))
@@ -140,31 +255,78 @@ fun PlayerScreen(
             skipForwardSec = state.skipForwardSec,
             hasPrev = state.hasPrev,
             hasNext = state.hasNext,
-            onTogglePlay = viewModel::togglePlayPause,
-            onSkipBack = viewModel::skipBack,
-            onSkipForward = viewModel::skipForward,
-            onPrev = viewModel::prev,
-            onNext = viewModel::next,
+            onTogglePlay = onTogglePlay,
+            onSkipBack = onSkipBack,
+            onSkipForward = onSkipForward,
+            onPrev = onPrev,
+            onNext = onNext,
         )
         Spacer(Modifier.height(20.dp))
         PlayerActionStrip(
-            entitlement = ent,
+            entitlement = entitlement,
             speed = p.speed,
             sleepRemainingMs = p.sleepRemainingMs,
-            onSnipTapped = viewModel::onSnipTapped,
-            onBookmarkTapped = viewModel::onBookmarkTapped,
-            onCycleSpeed = viewModel::cycleSpeed,
-            onSetSleep = viewModel::setSleepTimer,
+            onSnipTapped = onSnipTapped,
+            onBookmarkTapped = onBookmarkTapped,
+            onCycleSpeed = onCycleSpeed,
+            onSetSleep = onSetSleep,
+            iconSize = actionIconSize,
+            showLabels = actionShowLabels,
         )
-        Spacer(Modifier.height(12.dp))
-        PlayerProTipBanner(
-            visible = !tipDismissed,
-            onDismiss = viewModel::dismissProTip,
-        )
-        Spacer(Modifier.height(32.dp))
+    } else {
+        Column(Modifier.fillMaxWidth().padding(horizontal = titleBlockExtraPadding)) {
+            PlayerHeader(
+                episodeNumber = p.episodeNumber,
+                durationMs = p.durationMs,
+                title = p.title,
+                podcastTitle = p.podcastTitle,
+            )
+            Spacer(Modifier.height(20.dp))
+            PlayerScrubber(
+                positionMs = p.positionMs,
+                durationMs = p.durationMs,
+                bufferedMs = p.bufferedMs,
+                onSeek = onSeek,
+                isLocalSource = p.isLocalSource,
+            )
+            Spacer(Modifier.height(20.dp))
+            PlayerTransport(
+                isPlaying = p.isPlaying,
+                skipBackSec = state.skipBackSec,
+                skipForwardSec = state.skipForwardSec,
+                hasPrev = state.hasPrev,
+                hasNext = state.hasNext,
+                onTogglePlay = onTogglePlay,
+                onSkipBack = onSkipBack,
+                onSkipForward = onSkipForward,
+                onPrev = onPrev,
+                onNext = onNext,
+            )
+            Spacer(Modifier.height(20.dp))
+            PlayerActionStrip(
+                entitlement = entitlement,
+                speed = p.speed,
+                sleepRemainingMs = p.sleepRemainingMs,
+                onSnipTapped = onSnipTapped,
+                onBookmarkTapped = onBookmarkTapped,
+                onCycleSpeed = onCycleSpeed,
+                onSetSleep = onSetSleep,
+                iconSize = actionIconSize,
+                showLabels = actionShowLabels,
+            )
+        }
     }
-
-    state.toast?.let { text ->
-        PlayerToast(text = text, onDone = viewModel::dismissToast)
-    }
+    Spacer(Modifier.height(12.dp))
+    PlayerProTipBanner(
+        visible = !isProTipDismissed,
+        onDismiss = onDismissProTip,
+    )
+    Spacer(Modifier.height(32.dp))
 }
+
+/**
+ * Snapshot-only helper: an inert `StateFlow<FloatArray>` for Paparazzi harnesses
+ * that need to render [PlayerContent] without a live player. Kept out of the public
+ * API surface — internal to make it callable from `androidUnitTest` snapshot tests.
+ */
+internal fun emptyAudioLevelsForPreview(): StateFlow<FloatArray> = MutableStateFlow(FloatArray(24) { 0f })

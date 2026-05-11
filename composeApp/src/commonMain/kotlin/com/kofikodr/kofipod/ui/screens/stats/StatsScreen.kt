@@ -11,13 +11,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -46,6 +49,8 @@ import com.kofikodr.kofipod.data.repo.DailyListening
 import com.kofikodr.kofipod.data.repo.StatsSnapshot
 import com.kofikodr.kofipod.data.repo.TopPodcast
 import com.kofikodr.kofipod.domain.Tier
+import com.kofikodr.kofipod.ui.layout.LocalTabletSize
+import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.primitives.KPIcon
 import com.kofikodr.kofipod.ui.primitives.KPIconName
 import com.kofikodr.kofipod.ui.primitives.KofipodArtwork
@@ -65,49 +70,16 @@ fun StatsScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val tierExplainOpen by viewModel.tierExplainOpen.collectAsState()
-    val c = LocalKofipodColors.current
 
     LaunchedEffect(Unit) { viewModel.markTierSeen() }
 
-    Box(Modifier.fillMaxSize().background(c.bg)) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            item { StatsTopBar(onBack = onBack) }
-
-            val snap = state.snapshot
-            if (snap == null) {
-                item { Spacer(Modifier.height(80.dp)) }
-            } else {
-                // Single unified scroll. The only state-dependent card is the tier card
-                // at the top: a "Brewing…" placeholder while gated, the purple hero once a
-                // tier is emitted. Everything below renders the same shape regardless of
-                // state — early users just see zeros / empties.
-                if (snap.tier == null) {
-                    item { BrewingCard(snap = snap) }
-                } else {
-                    item { TierHeroCard(snap = snap, onTap = viewModel::openTierExplain) }
-                }
-                item { TotalPlaybackCard(snap = snap) }
-                item { DailyPlaybackCard(snap = snap) }
-                item {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        StreakCard(snap = snap, modifier = Modifier.weight(1f))
-                        CompletedCard(snap = snap, modifier = Modifier.weight(1f))
-                    }
-                }
-                if (snap.topPodcasts.isNotEmpty()) {
-                    item { SectionLabel(title = "Top podcasts", topSpacing = 4.dp) }
-                    topPodcastItems(snap.topPodcasts, onOpenPodcast)
-                }
-            }
-        }
-    }
+    StatsContent(
+        state = state,
+        onBack = onBack,
+        onOpenPodcast = onOpenPodcast,
+        onOpenTierExplain = viewModel::openTierExplain,
+        size = LocalTabletSize.current,
+    )
 
     if (tierExplainOpen) {
         TierExplainDialog(
@@ -117,7 +89,100 @@ fun StatsScreen(
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.topPodcastItems(
+/**
+ * Stateless Stats body. Branches by [size]:
+ *  - Phone (`null`) and 8" portrait (`Tablet8Port`): full-width LazyColumn body
+ *    (byte-identical to today's phone layout — no wrapper).
+ *  - 8" landscape, 10" portrait, 10" landscape: same body inside a centered
+ *    `widthIn(max = 800.dp)` column so KPI cards and the daily bar chart stay
+ *    readable on wide screens.
+ *
+ * The card composition (Tier/Brewing → TotalPlayback → DailyPlayback →
+ * Row(Streak, Completed) → Top podcasts) is identical across form factors.
+ */
+@Composable
+internal fun StatsContent(
+    state: StatsUiState,
+    onBack: () -> Unit,
+    onOpenPodcast: (String) -> Unit,
+    onOpenTierExplain: () -> Unit,
+    size: TabletSize?,
+) {
+    val c = LocalKofipodColors.current
+    val capped =
+        size == TabletSize.Tablet8Land ||
+            size == TabletSize.Tablet10Port ||
+            size == TabletSize.Tablet10Land
+
+    Box(Modifier.fillMaxSize().background(c.bg)) {
+        if (!capped) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                statsListContent(state, onBack, onOpenPodcast, onOpenTierExplain)
+            }
+        } else {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                LazyColumn(
+                    modifier =
+                        Modifier
+                            .widthIn(max = 800.dp)
+                            .fillMaxHeight(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    statsListContent(state, onBack, onOpenPodcast, onOpenTierExplain)
+                }
+            }
+        }
+    }
+}
+
+private fun LazyListScope.statsListContent(
+    state: StatsUiState,
+    onBack: () -> Unit,
+    onOpenPodcast: (String) -> Unit,
+    onOpenTierExplain: () -> Unit,
+) {
+    item { StatsTopBar(onBack = onBack) }
+
+    val snap = state.snapshot
+    if (snap == null) {
+        item { Spacer(Modifier.height(80.dp)) }
+    } else {
+        // Single unified scroll. The only state-dependent card is the tier card
+        // at the top: a "Brewing…" placeholder while gated, the purple hero once a
+        // tier is emitted. Everything below renders the same shape regardless of
+        // state — early users just see zeros / empties.
+        if (snap.tier == null) {
+            item { BrewingCard(snap = snap) }
+        } else {
+            item { TierHeroCard(snap = snap, onTap = onOpenTierExplain) }
+        }
+        item { TotalPlaybackCard(snap = snap) }
+        item { DailyPlaybackCard(snap = snap) }
+        item {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                StreakCard(snap = snap, modifier = Modifier.weight(1f))
+                CompletedCard(snap = snap, modifier = Modifier.weight(1f))
+            }
+        }
+        if (snap.topPodcasts.isNotEmpty()) {
+            item { SectionLabel(title = "Top podcasts", topSpacing = 4.dp) }
+            topPodcastItems(snap.topPodcasts, onOpenPodcast)
+        }
+    }
+}
+
+private fun LazyListScope.topPodcastItems(
     list: List<TopPodcast>,
     onOpenPodcast: (String) -> Unit,
 ) {

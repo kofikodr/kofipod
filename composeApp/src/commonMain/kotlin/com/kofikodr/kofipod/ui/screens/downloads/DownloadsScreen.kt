@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,10 +38,13 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kofikodr.kofipod.data.repo.DownloadRow
+import com.kofikodr.kofipod.ui.layout.LocalTabletSize
+import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.primitives.KPIcon
 import com.kofikodr.kofipod.ui.primitives.KPIconName
 import com.kofikodr.kofipod.ui.primitives.KofipodArtwork
@@ -58,8 +63,76 @@ fun DownloadsScreen(
     onOpenEpisode: (String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
-    val c = LocalKofipodColors.current
+    DownloadsContent(
+        state = state,
+        onOpenEpisode = onOpenEpisode,
+        onCancel = { viewModel.cancel(it) },
+        onDelete = { viewModel.delete(it) },
+        size = LocalTabletSize.current,
+    )
+}
 
+/**
+ * Stateless Downloads body. Branches by [size]:
+ *  - Phone (`null`) and 8" portrait (`Tablet8Port`): full-width LazyColumn body
+ *    (byte-identical to today's phone layout \u2014 no wrapper).
+ *  - 8" landscape, 10" portrait, 10" landscape: same body inside a centered
+ *    `widthIn(max = 800.dp)` column so row line lengths stay readable on wide screens.
+ *
+ * No master-detail (per Phase 4 plan \u00A74.3); tapping a row navigates to the episode
+ * detail screen on every form factor.
+ */
+@Composable
+internal fun DownloadsContent(
+    state: DownloadsUiState,
+    onOpenEpisode: (String) -> Unit,
+    onCancel: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    size: TabletSize?,
+) {
+    val c = LocalKofipodColors.current
+    val capped =
+        size == TabletSize.Tablet8Land ||
+            size == TabletSize.Tablet10Port ||
+            size == TabletSize.Tablet10Land
+
+    if (!capped) {
+        LazyColumn(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .background(c.bg)
+                    .padding(horizontal = 20.dp),
+        ) {
+            downloadsListContent(state, onOpenEpisode, onCancel, onDelete)
+        }
+    } else {
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .background(c.bg),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            LazyColumn(
+                modifier =
+                    Modifier
+                        .widthIn(max = 800.dp)
+                        .fillMaxHeight()
+                        .padding(horizontal = 20.dp),
+            ) {
+                downloadsListContent(state, onOpenEpisode, onCancel, onDelete)
+            }
+        }
+    }
+}
+
+private fun LazyListScope.downloadsListContent(
+    state: DownloadsUiState,
+    onOpenEpisode: (String) -> Unit,
+    onCancel: (String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
     val usedBytes: Long = state.completed.sumOf { it.totalBytes.coerceAtLeast(0L) }
     val capBytes: Long = state.capBytes
     val capGb: Double = capBytes.toDouble() / BYTES_PER_GB
@@ -70,125 +143,124 @@ fun DownloadsScreen(
             0f
         }
 
-    LazyColumn(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .background(c.bg)
-                .padding(horizontal = 20.dp),
+    item {
+        val c = LocalKofipodColors.current
+        Spacer(Modifier.height(20.dp))
+        Text(
+            text = "Downloads",
+            color = c.text,
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 32.sp,
+        )
+        Spacer(Modifier.height(16.dp))
+        AutoDownloadCapCard(
+            usedBytes = usedBytes,
+            capGb = capGb,
+            fraction = fraction,
+            episodeCount = state.completed.size,
+        )
+    }
+
+    // DOWNLOADING
+    if (state.downloading.isNotEmpty()) {
+        item {
+            val c = LocalKofipodColors.current
+            SectionLabel(
+                title = "Downloading \u00B7 ${state.downloading.size}",
+                trailing = {
+                    Text(
+                        text = "Pause all",
+                        color = c.pink,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        modifier =
+                            Modifier.clickable {
+                                state.downloading.forEach { onCancel(it.episodeId) }
+                            },
+                    )
+                },
+            )
+        }
+        items(state.downloading, key = { "dl-${it.episodeId}" }) { d ->
+            InProgressRow(
+                d,
+                onCancel = { onCancel(d.episodeId) },
+                onClick = { onOpenEpisode(d.episodeId) },
+            )
+        }
+    }
+
+    // UP NEXT (queued + paused)
+    if (state.queued.isNotEmpty()) {
+        item { SectionLabel(title = "Up next \u00B7 ${state.queued.size}") }
+        items(state.queued, key = { "up-${it.episodeId}" }) { d ->
+            QueuedRow(d, onClick = { onOpenEpisode(d.episodeId) })
+        }
+    }
+
+    // DOWNLOADED
+    if (state.completed.isNotEmpty()) {
+        item {
+            val c = LocalKofipodColors.current
+            SectionLabel(
+                title = "Downloaded \u00B7 ${state.completed.size}",
+                trailing = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Oldest first",
+                            color = c.textSoft,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                        )
+                        Spacer(Modifier.size(4.dp))
+                        KPIcon(
+                            name = KPIconName.ChevronDown,
+                            color = c.textSoft,
+                            size = 14.dp,
+                            strokeWidth = 2f,
+                        )
+                    }
+                },
+            )
+        }
+        items(state.completed, key = { "done-${it.episodeId}" }) { d ->
+            CompletedRow(
+                d,
+                onDelete = { onDelete(d.episodeId) },
+                onClick = { onOpenEpisode(d.episodeId) },
+            )
+        }
+    }
+
+    // FAILED retains a simple section so users can dismiss errors.
+    if (state.failed.isNotEmpty()) {
+        item { SectionLabel(title = "Failed \u00B7 ${state.failed.size}") }
+        items(state.failed, key = { "fail-${it.episodeId}" }) { d ->
+            CompletedRow(
+                d,
+                onDelete = { onDelete(d.episodeId) },
+                onClick = { onOpenEpisode(d.episodeId) },
+            )
+        }
+    }
+
+    if (state.downloading.isEmpty() && state.queued.isEmpty() &&
+        state.completed.isEmpty() && state.failed.isEmpty()
     ) {
         item {
-            Spacer(Modifier.height(20.dp))
-            Text(
-                text = "Downloads",
-                color = c.text,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 32.sp,
-            )
-            Spacer(Modifier.height(16.dp))
-            AutoDownloadCapCard(
-                usedBytes = usedBytes,
-                capGb = capGb,
-                fraction = fraction,
-                episodeCount = state.completed.size,
-            )
-        }
-
-        // DOWNLOADING
-        if (state.downloading.isNotEmpty()) {
-            item {
-                SectionLabel(
-                    title = "Downloading \u00B7 ${state.downloading.size}",
-                    trailing = {
-                        Text(
-                            text = "Pause all",
-                            color = c.pink,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            modifier =
-                                Modifier.clickable {
-                                    state.downloading.forEach { viewModel.cancel(it.episodeId) }
-                                },
-                        )
-                    },
-                )
-            }
-            items(state.downloading, key = { "dl-${it.episodeId}" }) { d ->
-                InProgressRow(
-                    d,
-                    onCancel = { viewModel.cancel(d.episodeId) },
-                    onClick = { onOpenEpisode(d.episodeId) },
-                )
-            }
-        }
-
-        // UP NEXT (queued + paused)
-        if (state.queued.isNotEmpty()) {
-            item { SectionLabel(title = "Up next \u00B7 ${state.queued.size}") }
-            items(state.queued, key = { "up-${it.episodeId}" }) { d ->
-                QueuedRow(d, onClick = { onOpenEpisode(d.episodeId) })
-            }
-        }
-
-        // DOWNLOADED
-        if (state.completed.isNotEmpty()) {
-            item {
-                SectionLabel(
-                    title = "Downloaded \u00B7 ${state.completed.size}",
-                    trailing = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "Oldest first",
-                                color = c.textSoft,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 12.sp,
-                            )
-                            Spacer(Modifier.size(4.dp))
-                            KPIcon(
-                                name = KPIconName.ChevronDown,
-                                color = c.textSoft,
-                                size = 14.dp,
-                                strokeWidth = 2f,
-                            )
-                        }
-                    },
-                )
-            }
-            items(state.completed, key = { "done-${it.episodeId}" }) { d ->
-                CompletedRow(
-                    d,
-                    onDelete = { viewModel.delete(d.episodeId) },
-                    onClick = { onOpenEpisode(d.episodeId) },
-                )
-            }
-        }
-
-        // FAILED retains a simple section so users can dismiss errors.
-        if (state.failed.isNotEmpty()) {
-            item { SectionLabel(title = "Failed \u00B7 ${state.failed.size}") }
-            items(state.failed, key = { "fail-${it.episodeId}" }) { d ->
-                CompletedRow(
-                    d,
-                    onDelete = { viewModel.delete(d.episodeId) },
-                    onClick = { onOpenEpisode(d.episodeId) },
-                )
-            }
-        }
-
-        if (state.downloading.isEmpty() && state.queued.isEmpty() &&
-            state.completed.isEmpty() && state.failed.isEmpty()
-        ) {
-            item {
-                Spacer(Modifier.height(32.dp))
+            val c = LocalKofipodColors.current
+            Spacer(Modifier.height(32.dp))
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Text(
                     text = "No downloads yet. Tap \u2913 on an episode to download.",
                     color = c.textMute,
+                    textAlign = TextAlign.Center,
                 )
             }
         }
-
-        item { Spacer(Modifier.height(24.dp)) }
     }
+
+    item { Spacer(Modifier.height(24.dp)) }
 }
 
 // ---------------------------------------------------------------------------

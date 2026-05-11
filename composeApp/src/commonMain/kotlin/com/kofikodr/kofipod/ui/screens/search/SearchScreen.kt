@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -60,7 +61,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.domain.PodcastSummary
+import com.kofikodr.kofipod.ui.layout.EmptyDetailHint
+import com.kofikodr.kofipod.ui.layout.LocalTabletSize
+import com.kofikodr.kofipod.ui.layout.MasterDetailPane
+import com.kofikodr.kofipod.ui.layout.TabletSize
+import com.kofikodr.kofipod.ui.primitives.KPButton
+import com.kofikodr.kofipod.ui.primitives.KPButtonStyle
 import com.kofikodr.kofipod.ui.primitives.KPChip
 import com.kofikodr.kofipod.ui.primitives.KPChipTone
 import com.kofikodr.kofipod.ui.primitives.KPIcon
@@ -81,7 +89,9 @@ fun SearchScreen(
     viewModel: SearchViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
-    val c = LocalKofipodColors.current
+    val selectedSearchResultId by viewModel.selectedSearchResultId.collectAsState()
+    val selectedRecentEpisodes by viewModel.selectedRecentEpisodes.collectAsState()
+    val selectedInLibrary by viewModel.selectedInLibrary.collectAsState()
 
     // Surface "out of reshuffles" as a transient toast string, consumed by the rendering below.
     var toastText by remember { mutableStateOf<String?>(null) }
@@ -94,98 +104,537 @@ fun SearchScreen(
         }
     }
 
+    val tabletSize = LocalTabletSize.current
+    // Task 3.4 — single source of truth for "what does tapping a result mean here?"
+    // Phone + portraits navigate; landscapes select the master-detail preview. The
+    // size-aware decision lives in [routeSearchResultTap]; SearchScreen just consumes it.
+    val onResultTap: (String) -> Unit = { podcastId ->
+        when (val action = routeSearchResultTap(tabletSize, podcastId)) {
+            is SearchResultTapAction.Navigate -> onOpenPodcast(action.podcastId)
+            is SearchResultTapAction.Select -> viewModel.selectSearchResult(action.podcastId)
+        }
+    }
+
+    SearchContent(
+        state = state,
+        toastText = toastText,
+        onToastDone = { toastText = null },
+        onQueryChange = viewModel::setQuery,
+        onTabSelect = viewModel::setTab,
+        onReshuffle = viewModel::reshuffle,
+        onLoadMore = viewModel::loadMore,
+        onPickTopic = viewModel::setQuery,
+        onOpenPodcast = onOpenPodcast,
+        onResultTap = onResultTap,
+        selectedSearchResultId = selectedSearchResultId,
+        selectedRecentEpisodes = selectedRecentEpisodes,
+        selectedInLibrary = selectedInLibrary,
+        onSubscribe = viewModel::subscribe,
+        size = tabletSize,
+    )
+}
+
+/**
+ * Stateless Search body. Phone (`size == null`) renders today's single-column layout
+ * unchanged. Tablet portraits (Tablet8Port / Tablet10Port) route to
+ * [SearchContentTabletSingle], which keeps the same chrome + result list but caps the
+ * content column width for comfortable reading on wider screens. Tablet landscapes
+ * route to [SearchContentTabletMasterDetail] — master = scope tabs + results column,
+ * detail = [SearchPreviewPane] for the selected result.
+ *
+ * Result-tap routing is decided one level up in [SearchScreen] via [routeSearchResultTap]
+ * and passed in as a single [onResultTap] lambda — leaf composables don't need to know
+ * which size they're rendering for. `selectedSearchResultId` / `selectedRecentEpisodes`
+ * / `onSubscribe` are only consumed by the landscape branch but are accepted on every
+ * call so the public `SearchScreen` doesn't have to fork its argument list per form
+ * factor. `internal` so Paparazzi tests can construct it directly.
+ */
+@Composable
+internal fun SearchContent(
+    state: SearchUiState,
+    toastText: String?,
+    onToastDone: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onTabSelect: (SearchTab) -> Unit,
+    onReshuffle: () -> Unit,
+    onLoadMore: () -> Unit,
+    onPickTopic: (String) -> Unit,
+    onOpenPodcast: (String) -> Unit,
+    size: TabletSize?,
+    onResultTap: (String) -> Unit = onOpenPodcast,
+    selectedSearchResultId: String? = null,
+    selectedRecentEpisodes: List<Episode> = emptyList(),
+    selectedInLibrary: Boolean = false,
+    onSubscribe: (String) -> Unit = {},
+) {
+    when (size) {
+        TabletSize.Tablet8Port, TabletSize.Tablet10Port -> {
+            SearchContentTabletSingle(
+                state = state,
+                toastText = toastText,
+                onToastDone = onToastDone,
+                onQueryChange = onQueryChange,
+                onTabSelect = onTabSelect,
+                onReshuffle = onReshuffle,
+                onLoadMore = onLoadMore,
+                onPickTopic = onPickTopic,
+                onOpenPodcast = onOpenPodcast,
+                onResultTap = onResultTap,
+                size = size,
+            )
+        }
+        TabletSize.Tablet8Land, TabletSize.Tablet10Land -> {
+            val selectedSummary =
+                remember(selectedSearchResultId, state.results) {
+                    if (selectedSearchResultId == null) {
+                        null
+                    } else {
+                        state.results.firstOrNull { it.id == selectedSearchResultId }
+                    }
+                }
+            SearchContentTabletMasterDetail(
+                state = state,
+                toastText = toastText,
+                onToastDone = onToastDone,
+                onQueryChange = onQueryChange,
+                onTabSelect = onTabSelect,
+                onReshuffle = onReshuffle,
+                onLoadMore = onLoadMore,
+                onPickTopic = onPickTopic,
+                onOpenPodcast = onOpenPodcast,
+                onResultTap = onResultTap,
+                selectedSummary = selectedSummary,
+                selectedRecentEpisodes = selectedRecentEpisodes,
+                selectedInLibrary = selectedInLibrary,
+                onSubscribe = onSubscribe,
+            )
+        }
+        else ->
+            SearchContentPhone(
+                state = state,
+                toastText = toastText,
+                onToastDone = onToastDone,
+                onQueryChange = onQueryChange,
+                onTabSelect = onTabSelect,
+                onReshuffle = onReshuffle,
+                onLoadMore = onLoadMore,
+                onPickTopic = onPickTopic,
+                onOpenPodcast = onOpenPodcast,
+                onResultTap = onResultTap,
+            )
+    }
+}
+
+@Composable
+private fun SearchContentPhone(
+    state: SearchUiState,
+    toastText: String?,
+    onToastDone: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onTabSelect: (SearchTab) -> Unit,
+    onReshuffle: () -> Unit,
+    onLoadMore: () -> Unit,
+    onPickTopic: (String) -> Unit,
+    onOpenPodcast: (String) -> Unit,
+    onResultTap: (String) -> Unit,
+) {
+    val c = LocalKofipodColors.current
     Box(Modifier.fillMaxSize().background(c.bg)) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
-            Spacer(Modifier.height(24.dp))
-            Text(
-                "Search",
-                color = c.text,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 32.sp,
+            SearchBodyContent(
+                state = state,
+                onQueryChange = onQueryChange,
+                onTabSelect = onTabSelect,
+                onReshuffle = onReshuffle,
+                onLoadMore = onLoadMore,
+                onPickTopic = onPickTopic,
+                onOpenPodcast = onOpenPodcast,
+                onResultTap = onResultTap,
             )
-            Spacer(Modifier.height(2.dp))
+        }
+        SearchToast(text = toastText, onDone = onToastDone)
+    }
+}
+
+/**
+ * Tablet portrait layout (8" / 10" portrait). Same single-column body as phone, but
+ * the content column is capped at 720 dp and centered so result rows don't sprawl on
+ * wider screens. Horizontal padding is bumped to 28 dp for breathing room.
+ *
+ * The first-run empty state today renders the hero card + popular-categories chips
+ * (see [SearchEmptyState]). The plan calls out a future "starter packs horizontal
+ * scroll" treatment with a reusable `StarterPackCard`; that affordance doesn't yet
+ * exist on the Search side (starter packs live in Library), so we render today's
+ * cold-start content as-is. Follow-up: lift Library's starter packs into a shared
+ * composable and surface them here when the design lands.
+ */
+@Composable
+private fun SearchContentTabletSingle(
+    state: SearchUiState,
+    toastText: String?,
+    onToastDone: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onTabSelect: (SearchTab) -> Unit,
+    onReshuffle: () -> Unit,
+    onLoadMore: () -> Unit,
+    onPickTopic: (String) -> Unit,
+    onOpenPodcast: (String) -> Unit,
+    onResultTap: (String) -> Unit,
+    @Suppress("UNUSED_PARAMETER") size: TabletSize,
+) {
+    val c = LocalKofipodColors.current
+    Box(Modifier.fillMaxSize().background(c.bg)) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Column(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .widthIn(max = 720.dp)
+                        .padding(horizontal = 28.dp),
+            ) {
+                SearchBodyContent(
+                    state = state,
+                    onQueryChange = onQueryChange,
+                    onTabSelect = onTabSelect,
+                    onReshuffle = onReshuffle,
+                    onLoadMore = onLoadMore,
+                    onPickTopic = onPickTopic,
+                    onOpenPodcast = onOpenPodcast,
+                    onResultTap = onResultTap,
+                )
+            }
+        }
+        SearchToast(text = toastText, onDone = onToastDone)
+    }
+}
+
+/**
+ * Tablet landscape master-detail layout (8" / 10" landscape). Master pane (~46%) is
+ * the existing [SearchBodyContent] (header + scope tabs + results list) with the
+ * result-tap callback routed to selection instead of navigation. Detail pane (~54%)
+ * is [SearchPreviewPane] for the selected result, or an [EmptyDetailHint] when
+ * nothing is selected — the hint copy varies based on whether the query is empty.
+ *
+ * Per plan §3.3 the master/detail split is ~46/54 (wider detail than Library's
+ * 62/38), since the preview card is denser than Library's episode list.
+ */
+@Composable
+private fun SearchContentTabletMasterDetail(
+    state: SearchUiState,
+    toastText: String?,
+    onToastDone: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onTabSelect: (SearchTab) -> Unit,
+    onReshuffle: () -> Unit,
+    onLoadMore: () -> Unit,
+    onPickTopic: (String) -> Unit,
+    onOpenPodcast: (String) -> Unit,
+    onResultTap: (String) -> Unit,
+    selectedSummary: PodcastSummary?,
+    selectedRecentEpisodes: List<Episode>,
+    selectedInLibrary: Boolean,
+    onSubscribe: (String) -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    val emptyHint =
+        if (state.query.isBlank()) "Search to find shows" else "Pick a result to preview"
+    Box(Modifier.fillMaxSize().background(c.bg)) {
+        MasterDetailPane(
+            master = {
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+                ) {
+                    SearchBodyContent(
+                        state = state,
+                        onQueryChange = onQueryChange,
+                        onTabSelect = onTabSelect,
+                        onReshuffle = onReshuffle,
+                        onLoadMore = onLoadMore,
+                        onPickTopic = onPickTopic,
+                        onOpenPodcast = onOpenPodcast,
+                        onResultTap = onResultTap,
+                        selectedResultId = selectedSummary?.id,
+                    )
+                }
+            },
+            detail = {
+                val s = selectedSummary
+                if (s != null) {
+                    SearchPreviewPane(
+                        summary = s,
+                        recentEpisodes = selectedRecentEpisodes,
+                        inLibrary = selectedInLibrary,
+                        onOpenPodcast = { onOpenPodcast(s.id) },
+                        onSubscribe = { onSubscribe(s.id) },
+                    )
+                }
+            },
+            hasSelection = selectedSummary != null,
+            masterWeight = 0.46f,
+            emptyDetail = { EmptyDetailHint(text = emptyHint) },
+        )
+        SearchToast(text = toastText, onDone = onToastDone)
+    }
+}
+
+/**
+ * Right-pane preview for a selected search result. Renders a podcast header (artwork
+ * + title + author + category), the Subscribe + Latest CTA pair, the blurb, and the
+ * last [SearchViewModel.PREVIEW_EPISODE_LIMIT] episodes (sourced from the DB; empty
+ * for unsubscribed shows, which is the common case in Search).
+ */
+@Composable
+private fun SearchPreviewPane(
+    summary: PodcastSummary,
+    recentEpisodes: List<Episode>,
+    inLibrary: Boolean,
+    onOpenPodcast: () -> Unit,
+    onSubscribe: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(c.bg)
+            .padding(20.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            KofipodArtwork(
+                size = 72.dp,
+                seed = summary.feedId.toInt(),
+                label = summary.title,
+                radius = 14.dp,
+                model = summary.artworkUrl.ifBlank { null },
+                contentDescription = summary.title,
+            )
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    summary.title,
+                    color = c.text,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 19.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (summary.author.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        summary.author,
+                        color = c.textMute,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (summary.category.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    CategoryTag(summary.category)
+                }
+            }
+        }
+        Spacer(Modifier.height(18.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            KPButton(
+                label = if (inLibrary) "Subscribed" else "Subscribe",
+                onClick = onSubscribe,
+                style = if (inLibrary) KPButtonStyle.Outline else KPButtonStyle.PrimaryPink,
+                enabled = !inLibrary,
+            )
+            KPButton(
+                label = "Latest",
+                onClick = onOpenPodcast,
+                style = KPButtonStyle.Outline,
+            )
+        }
+        if (summary.description.isNotBlank()) {
+            Spacer(Modifier.height(18.dp))
             Text(
-                "Powered by the Podcast Index",
+                summary.description,
+                color = c.textSoft,
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+                maxLines = 5,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        SectionLabel(title = "Latest episodes", topSpacing = 22.dp)
+        if (recentEpisodes.isEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                if (inLibrary) {
+                    "No episodes cached yet."
+                } else {
+                    "No episodes cached yet — subscribe to load the feed."
+                },
                 color = c.textMute,
                 fontSize = 13.sp,
             )
-            Spacer(Modifier.height(16.dp))
-            SearchBar(
-                value = state.query,
-                onValueChange = viewModel::setQuery,
-                onClear = { viewModel.setQuery("") },
-            )
-            Spacer(Modifier.height(14.dp))
-            TabRow(current = state.tab, onSelect = viewModel::setTab)
-            Spacer(Modifier.height(16.dp))
-
-            when {
-                state.loading ->
-                    Box(Modifier.fillMaxSize(), Alignment.Center) {
-                        CircularProgressIndicator(color = c.pink)
-                    }
-                state.error != null ->
-                    Box(Modifier.fillMaxSize(), Alignment.Center) {
-                        Text(state.error!!, color = c.danger)
-                    }
-                state.results.isEmpty() && state.query.isNotBlank() ->
-                    Box(
-                        Modifier.fillMaxSize(),
-                        Alignment.Center,
-                    ) {
-                        Text("No results", color = c.textMute)
-                    }
-                state.results.isEmpty() -> {
-                    val target =
-                        when {
-                            state.recommendations.isEmpty() && state.recsLoading -> EmptyQueryContent.Loading
-                            state.recommendations.isNotEmpty() -> EmptyQueryContent.ForYou
-                            else -> EmptyQueryContent.ColdStart
-                        }
-                    Crossfade(targetState = target, label = "empty-query-content") { which ->
-                        when (which) {
-                            EmptyQueryContent.Loading ->
-                                RecommendationsLoading(quip = state.recsLoadingQuip)
-                            EmptyQueryContent.ForYou ->
-                                ForYouSection(
-                                    items = state.recommendations,
-                                    inlineLoading = state.recsLoading,
-                                    inlineQuip = state.recsLoadingQuip,
-                                    onReshuffle = viewModel::reshuffle,
-                                    onOpenPodcast = onOpenPodcast,
-                                )
-                            EmptyQueryContent.ColdStart ->
-                                SearchEmptyState(
-                                    categories = state.popularCategories,
-                                    onPickTopic = viewModel::setQuery,
-                                )
-                        }
-                    }
+        } else {
+            Spacer(Modifier.height(8.dp))
+            Column(Modifier.fillMaxWidth()) {
+                recentEpisodes.forEachIndexed { idx, ep ->
+                    SearchPreviewEpisodeRow(
+                        episode = ep,
+                        showDivider = idx < recentEpisodes.lastIndex,
+                    )
                 }
-                else -> {
-                    ResultsCaption(count = state.results.size)
-                    Spacer(Modifier.height(12.dp))
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(bottom = 24.dp),
-                    ) {
-                        itemsIndexed(state.results, key = { _, p -> p.id }) { index, p ->
-                            ResultCard(
-                                p = p,
-                                isTopMatch = index == 0,
-                                onClick = { onOpenPodcast(p.id) },
-                            )
-                        }
-                        if (state.hasMore) {
-                            item(key = "load-more") {
-                                LoadMoreRow(loading = state.loadingMore, onClick = viewModel::loadMore)
-                            }
-                        }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchPreviewEpisodeRow(
+    episode: Episode,
+    showDivider: Boolean,
+) {
+    val c = LocalKofipodColors.current
+    Column(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(vertical = 10.dp)) {
+            Text(
+                episode.title,
+                color = c.text,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (episode.durationSec > 0) {
+                Spacer(Modifier.height(2.dp))
+                val minutes = (episode.durationSec / 60).coerceAtLeast(0)
+                Text(
+                    "$minutes MIN",
+                    color = c.textMute,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 0.6.sp,
+                )
+            }
+        }
+        if (showDivider) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+        }
+    }
+}
+
+/**
+ * Shared body content used by phone, tablet-portrait, and tablet-landscape (master
+ * pane) wrappers. Header + search bar + scope tabs + the empty/loading/results
+ * switch — identical across form factors. Layout differences (padding, max-width
+ * cap, chrome) live in the wrappers.
+ *
+ * `onResultTap` lets phone / portraits route to navigation while landscapes route to
+ * selection — the decision is made one level up in [SearchScreen] via
+ * [routeSearchResultTap]. `onOpenPodcast` is still accepted because the "For you"
+ * recommendations row inside the empty-state always navigates — selection only applies
+ * to the typed-query results list.
+ */
+@Composable
+private fun SearchBodyContent(
+    state: SearchUiState,
+    onQueryChange: (String) -> Unit,
+    onTabSelect: (SearchTab) -> Unit,
+    onReshuffle: () -> Unit,
+    onLoadMore: () -> Unit,
+    onPickTopic: (String) -> Unit,
+    onOpenPodcast: (String) -> Unit,
+    onResultTap: (String) -> Unit = onOpenPodcast,
+    selectedResultId: String? = null,
+) {
+    val c = LocalKofipodColors.current
+    Spacer(Modifier.height(24.dp))
+    Text(
+        "Search",
+        color = c.text,
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 32.sp,
+    )
+    Spacer(Modifier.height(2.dp))
+    Text(
+        "Powered by the Podcast Index",
+        color = c.textMute,
+        fontSize = 13.sp,
+    )
+    Spacer(Modifier.height(16.dp))
+    SearchBar(
+        value = state.query,
+        onValueChange = onQueryChange,
+        onClear = { onQueryChange("") },
+    )
+    Spacer(Modifier.height(14.dp))
+    TabRow(current = state.tab, onSelect = onTabSelect)
+    Spacer(Modifier.height(16.dp))
+
+    when {
+        state.loading ->
+            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                CircularProgressIndicator(color = c.pink)
+            }
+        state.error != null ->
+            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                Text(state.error!!, color = c.danger)
+            }
+        state.results.isEmpty() && state.query.isNotBlank() ->
+            Box(
+                Modifier.fillMaxSize(),
+                Alignment.Center,
+            ) {
+                Text("No results", color = c.textMute)
+            }
+        state.results.isEmpty() -> {
+            val target =
+                when {
+                    state.recommendations.isEmpty() && state.recsLoading -> EmptyQueryContent.Loading
+                    state.recommendations.isNotEmpty() -> EmptyQueryContent.ForYou
+                    else -> EmptyQueryContent.ColdStart
+                }
+            Crossfade(targetState = target, label = "empty-query-content") { which ->
+                when (which) {
+                    EmptyQueryContent.Loading ->
+                        RecommendationsLoading(quip = state.recsLoadingQuip)
+                    EmptyQueryContent.ForYou ->
+                        ForYouSection(
+                            items = state.recommendations,
+                            inlineLoading = state.recsLoading,
+                            inlineQuip = state.recsLoadingQuip,
+                            onReshuffle = onReshuffle,
+                            onOpenPodcast = onOpenPodcast,
+                        )
+                    EmptyQueryContent.ColdStart ->
+                        SearchEmptyState(
+                            categories = state.popularCategories,
+                            onPickTopic = onPickTopic,
+                        )
+                }
+            }
+        }
+        else -> {
+            ResultsCaption(count = state.results.size)
+            Spacer(Modifier.height(12.dp))
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(bottom = 24.dp),
+            ) {
+                itemsIndexed(state.results, key = { _, p -> p.id }) { index, p ->
+                    ResultCard(
+                        p = p,
+                        isTopMatch = index == 0,
+                        selected = p.id == selectedResultId,
+                        onClick = { onResultTap(p.id) },
+                    )
+                }
+                if (state.hasMore) {
+                    item(key = "load-more") {
+                        LoadMoreRow(loading = state.loadingMore, onClick = onLoadMore)
                     }
                 }
             }
         }
-        SearchToast(text = toastText, onDone = { toastText = null })
     }
 }
 
@@ -288,15 +737,18 @@ private fun ResultCard(
     p: PodcastSummary,
     isTopMatch: Boolean,
     onClick: () -> Unit,
+    selected: Boolean = false,
 ) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
+    val borderColor = if (selected) c.pink else c.border
+    val borderWidth = if (selected) 2.dp else 1.dp
     Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(r.md))
             .background(c.surface)
-            .border(1.dp, c.border, RoundedCornerShape(r.md))
+            .border(borderWidth, borderColor, RoundedCornerShape(r.md))
             .clickable { onClick() }
             .padding(12.dp),
         verticalAlignment = Alignment.Top,
@@ -504,6 +956,13 @@ private fun SearchToast(
     }
 }
 
+// TODO(tablet-design): The design mock "Search · first run" shows starter
+// packs (Slow news / Maker talk / Field notes) appearing in Search, with
+// the landscape variant placing them in the detail pane. Starter packs
+// currently live in Library only (ui/screens/library/StarterPackScreen.kt).
+// Lifting them into Search would be a new-feature addition, so it's out
+// of scope for the tablet layout adaptation. If the design intent is
+// confirmed, follow up with a separate plan.
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SearchEmptyState(

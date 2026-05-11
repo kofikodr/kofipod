@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,6 +18,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kofikodr.kofipod.ui.primitives.KofipodArtwork
@@ -32,13 +34,24 @@ internal fun PlayerArtworkCard(
     episodeNumber: Int?,
     isPlaying: Boolean,
     audioLevels: StateFlow<FloatArray>,
+    artworkMaxWidth: Dp? = null,
 ) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        // Phone default (artworkMaxWidth == null): preserve byte-identical 50% width.
+        // Tablet: take the available width up to the cap so artwork scales sensibly
+        // on wider devices without ever exceeding the per-size design budget.
+        // Note: widthIn must come BEFORE fillMaxWidth — fillMaxWidth honors the
+        // incoming max-width constraint that widthIn has just tightened.
+        val sizingModifier =
+            if (artworkMaxWidth == null) {
+                Modifier.fillMaxWidth(0.5f)
+            } else {
+                Modifier.widthIn(max = artworkMaxWidth).fillMaxWidth()
+            }
         Box(
-            Modifier
-                .fillMaxWidth(0.5f)
+            sizingModifier
                 .aspectRatio(1f)
                 .clip(RoundedCornerShape(r.xl)),
         ) {

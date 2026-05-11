@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -51,6 +53,8 @@ import com.kofikodr.kofipod.ai.DiscussProgress
 import com.kofikodr.kofipod.ai.DiscussProgressStage
 import com.kofikodr.kofipod.ai.DiscussRole
 import com.kofikodr.kofipod.ai.DiscussUiState
+import com.kofikodr.kofipod.ui.layout.TabletSize
+import com.kofikodr.kofipod.ui.layout.rememberTabletSize
 import com.kofikodr.kofipod.ui.primitives.KPIcon
 import com.kofikodr.kofipod.ui.primitives.KPIconName
 import com.kofikodr.kofipod.ui.screens.detail.ai.AiPillChip
@@ -99,6 +103,7 @@ fun AskGeminiScreen(
                 if (viewModel.seekToCitation(ms)) onOpenPlayer()
             }
         },
+        size = rememberTabletSize(),
     )
 }
 
@@ -114,12 +119,70 @@ internal fun AskGeminiContent(
     onClearChat: () -> Unit,
     onRetry: () -> Unit,
     onCitationTap: (Long) -> Unit,
+    // Tablet form factor (null = phone): caps the chat thread + composer
+    // column so messages stay legible on 8" (640 dp) / 10" (760 dp) widths
+    // rather than stretching edge-to-edge. The rail stays visible — this is
+    // a tablet route, not a Player full-bleed.
+    size: TabletSize? = null,
 ) {
     val c = LocalKofipodColors.current
-    Column(
+    val chatCapWidth: androidx.compose.ui.unit.Dp? =
+        when (size) {
+            null -> null
+            // 8"P: 800-dp width minus the icon-only rail (~64 dp) already lands
+            // at ~736 dp, which is under the 8"L cap. Applying 640 dp here would
+            // visibly narrow the chat thread on a route where the rail is always
+            // present (per plan §10.4 — full-screen AskGemini keeps the rail).
+            TabletSize.Tablet8Port -> null
+            TabletSize.Tablet8Land -> 640.dp
+            TabletSize.Tablet10Port, TabletSize.Tablet10Land -> 760.dp
+        }
+    Box(
         Modifier
             .fillMaxSize()
-            .background(c.bg)
+            .background(c.bg),
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        AskGeminiBody(
+            state = state,
+            composerText = composerText,
+            header = header,
+            onBack = onBack,
+            onComposerChange = onComposerChange,
+            onSubmit = onSubmit,
+            onSubmitPreset = onSubmitPreset,
+            onClearChat = onClearChat,
+            onRetry = onRetry,
+            onCitationTap = onCitationTap,
+            modifier =
+                if (chatCapWidth != null) {
+                    Modifier
+                        .fillMaxHeight()
+                        .widthIn(max = chatCapWidth)
+                        .fillMaxWidth()
+                } else {
+                    Modifier.fillMaxSize()
+                },
+        )
+    }
+}
+
+@Composable
+private fun AskGeminiBody(
+    state: DiscussUiState,
+    composerText: String,
+    header: EpisodeHeader,
+    onBack: () -> Unit,
+    onComposerChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+    onSubmitPreset: (String) -> Unit,
+    onClearChat: () -> Unit,
+    onRetry: () -> Unit,
+    onCitationTap: (Long) -> Unit,
+    modifier: Modifier,
+) {
+    Column(
+        modifier
             .imePadding()
             .padding(horizontal = 20.dp)
             .padding(top = 8.dp, bottom = 12.dp),

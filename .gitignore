@@ -19,3 +19,4 @@ detail-design*.png
 
 # Release artifacts
 dist/
+.gstack/

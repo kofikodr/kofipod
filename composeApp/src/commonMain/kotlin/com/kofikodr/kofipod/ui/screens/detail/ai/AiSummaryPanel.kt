@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
@@ -37,6 +38,8 @@ import com.kofikodr.kofipod.ai.AiSummary
 import com.kofikodr.kofipod.ai.AiSummaryUiState
 import com.kofikodr.kofipod.ai.GeminiModel
 import com.kofikodr.kofipod.ai.GenerationStage
+import com.kofikodr.kofipod.ui.layout.TabletSize
+import com.kofikodr.kofipod.ui.layout.rememberTabletSize
 import com.kofikodr.kofipod.ui.primitives.KPButton
 import com.kofikodr.kofipod.ui.primitives.KPButtonStyle
 import com.kofikodr.kofipod.ui.primitives.KPIcon
@@ -75,6 +78,7 @@ fun AiSummaryPanel(
         onOpenAiSetup = onOpenAiSetup,
         onExportSummary = onExportSummary,
         modifier = modifier,
+        size = rememberTabletSize(),
     )
 }
 
@@ -96,6 +100,34 @@ internal fun AiSummaryPanelContent(
     // bucket. Production keeps the default — the relative caption updates on
     // every recomposition, which is what the user expects on a long-lived screen.
     nowMs: Long = Clock.System.now().toEpochMilliseconds(),
+    // Tablet form factor (null = phone). 10" + 8" landscape get a 720 dp
+    // content cap so the prose doesn't stretch into single-column-illegible
+    // line lengths; 8" portrait stays full-width because the available width
+    // is already ≤ 720 dp once chrome is subtracted.
+    size: TabletSize? = null,
+) {
+    val capWidth = capWidthFor(size)
+    if (capWidth != null) {
+        Box(modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            Column(Modifier.widthIn(max = capWidth).fillMaxWidth()) {
+                RenderState(state, audioMinutes, onGenerate, onCancel, onOpenAiSetup, onExportSummary, nowMs, Modifier)
+            }
+        }
+    } else {
+        RenderState(state, audioMinutes, onGenerate, onCancel, onOpenAiSetup, onExportSummary, nowMs, modifier)
+    }
+}
+
+@Composable
+private fun RenderState(
+    state: AiSummaryUiState,
+    audioMinutes: Int,
+    onGenerate: () -> Unit,
+    onCancel: () -> Unit,
+    onOpenAiSetup: () -> Unit,
+    onExportSummary: () -> Unit,
+    nowMs: Long,
+    modifier: Modifier,
 ) {
     when (state) {
         AiSummaryUiState.Hidden -> Unit
@@ -106,6 +138,18 @@ internal fun AiSummaryPanelContent(
         is AiSummaryUiState.Error -> ErrorCard(state.error, onGenerate, onOpenAiSetup, modifier)
     }
 }
+
+/**
+ * Per-spec content cap: 8" portrait keeps the panel full-width because the
+ * column already sits inside chrome that constrains it. Every other tablet
+ * variant caps to 720 dp so the prose summary doesn't stretch to >100 chars
+ * per line on 10" landscape. Phone (null) inherits the surrounding layout.
+ */
+private fun capWidthFor(size: TabletSize?): androidx.compose.ui.unit.Dp? =
+    when (size) {
+        null, TabletSize.Tablet8Port -> null
+        TabletSize.Tablet8Land, TabletSize.Tablet10Port, TabletSize.Tablet10Land -> 720.dp
+    }
 
 // -----------------------------------------------------------------------------
 // State cards

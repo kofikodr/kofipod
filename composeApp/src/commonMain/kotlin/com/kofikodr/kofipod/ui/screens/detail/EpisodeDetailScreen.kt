@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,6 +45,8 @@ import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.db.EpisodeChapter
 import com.kofikodr.kofipod.db.Podcast
 import com.kofikodr.kofipod.snippets.Snippet
+import com.kofikodr.kofipod.ui.layout.TabletSize
+import com.kofikodr.kofipod.ui.layout.rememberTabletSize
 import com.kofikodr.kofipod.ui.primitives.KPButton
 import com.kofikodr.kofipod.ui.primitives.KPButtonStyle
 import com.kofikodr.kofipod.ui.primitives.KPIcon
@@ -69,9 +72,11 @@ fun EpisodeDetailScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val savedItems by viewModel.saved.collectAsState()
+    val tabletSize = rememberTabletSize()
     EpisodeDetailContent(
         state = state,
         saved = savedItems,
+        size = tabletSize,
         onBack = onBack,
         onShare = viewModel::share,
         onPlay = {
@@ -128,19 +133,14 @@ internal fun EpisodeDetailContent(
     onBookmarkDelete: (String) -> Unit = {},
     onSnippetDelete: (String) -> Unit = {},
     onAiSummaryExport: () -> Unit = {},
+    size: TabletSize? = null,
+    hostMode: HostMode = HostMode.Standalone,
 ) {
     val c = LocalKofipodColors.current
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(c.bg)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            .padding(top = 8.dp, bottom = 32.dp),
-    ) {
-        TopBar(onBack = onBack, onShare = onShare)
-
+    // Inner content shared by both host modes. Captures all the params via closure
+    // so we don't duplicate the long argument list across the two host branches.
+    val content: @Composable () -> Unit = {
         when {
             state.episode == null && !state.loading -> {
                 Spacer(Modifier.height(40.dp))
@@ -179,7 +179,65 @@ internal fun EpisodeDetailContent(
             }
         }
     }
+
+    if (hostMode == HostMode.MasterDetailPane) {
+        // Host (Podcast detail master-detail in Phase 8) owns scroll, padding,
+        // background and the back/share affordances. Render only the content
+        // column — no TopBar, no width cap, no outer Box.
+        Column(Modifier.fillMaxWidth()) {
+            content()
+        }
+        return
+    }
+
+    // Standalone context: full-screen scroll container + TopBar. On 10" sizes we
+    // cap the content width so the tab body doesn't stretch into uncomfortably
+    // wide reading measure (matches PlayerScreen's tablet cap pattern). 8" sizes
+    // and phone use full width.
+    val maxContentWidth =
+        when (size) {
+            TabletSize.Tablet10Port -> 760.dp
+            TabletSize.Tablet10Land -> 880.dp
+            else -> null
+        }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(c.bg)
+            .verticalScroll(rememberScrollState()),
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        // When capping, drop `fillMaxWidth()` and use `widthIn(max=…)` alone — the
+        // outer Box(TopCenter) then centers a column that's content-sized up to
+        // the cap. Phone + 8" use `fillMaxWidth()` (no cap), preserving today's
+        // edge-to-edge layout. (Same pattern as DownloadsScreen / StatsScreen.)
+        val columnModifier =
+            if (maxContentWidth != null) {
+                Modifier
+                    .widthIn(max = maxContentWidth)
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 8.dp, bottom = 32.dp)
+            } else {
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 8.dp, bottom = 32.dp)
+            }
+        Column(columnModifier) {
+            TopBar(onBack = onBack, onShare = onShare)
+            content()
+        }
+    }
 }
+
+/**
+ * Whether the episode detail content owns its own chrome ([Standalone]) or is
+ * embedded in a host that provides scroll, padding, background, and navigation
+ * affordances ([MasterDetailPane], used by Podcast detail's right pane in Phase 8).
+ */
+internal enum class HostMode { Standalone, MasterDetailPane }
 
 @Composable
 private fun TopBar(

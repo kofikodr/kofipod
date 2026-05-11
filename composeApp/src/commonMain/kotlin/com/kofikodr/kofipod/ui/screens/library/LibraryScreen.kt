@@ -55,8 +55,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.db.Podcast
 import com.kofikodr.kofipod.db.PodcastList
+import com.kofikodr.kofipod.ui.layout.LocalTabletSize
+import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.palette.rememberTileVisuals
 import com.kofikodr.kofipod.ui.primitives.KPButton
 import com.kofikodr.kofipod.ui.primitives.KPIcon
@@ -82,143 +85,50 @@ fun LibraryScreen(
     viewModel: LibraryViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
-    val c = LocalKofipodColors.current
+    val selectedPodcastId by viewModel.selectedPodcastId.collectAsState()
+    val selectedEpisodes by viewModel.selectedEpisodes.collectAsState()
+    val tabletSize = LocalTabletSize.current
 
     var newListOpen by remember { mutableStateOf(false) }
     var pendingDeletePodcast by remember { mutableStateOf<Podcast?>(null) }
     var pendingDeleteList by remember { mutableStateOf<PodcastList?>(null) }
     var pendingDeleteSmartPlaylist by remember { mutableStateOf<SmartPlaylistDomain?>(null) }
 
-    val lists: List<PodcastList> = state.groups.mapNotNull { it.list }
-    val podcasts: List<Podcast> = state.groups.flatMap { it.podcasts }
-
-    val activeListId: String? =
-        lists
-            .firstOrNull { l -> podcasts.any { it.listId == l.id } }
-            ?.id
-            ?: lists.firstOrNull()?.id
-
-    val recent: List<Podcast> =
-        podcasts
-            .sortedByDescending { it.addedAt }
-            .take(6)
-
-    // Tile slot descriptor: either a real list, an unfiled bucket, or the "New list" CTA.
-    // Lets the grid iterate uniformly without special-casing indices inline.
-    // NewList tile appears only before any folder exists — once folders are created the "+"
-    // moves to the header to free up grid space.
-    val unfiledPodcasts = podcasts.filter { it.listId == null }
-    val tiles: List<Tile> =
-        buildList {
-            lists.forEach { add(Tile.OfList(it)) }
-            if (unfiledPodcasts.isNotEmpty()) add(Tile.Unfiled(unfiledPodcasts))
-            if (lists.isEmpty()) add(Tile.NewList)
-            // Smart Playlists rendered after the list/unfiled tiles so the user's own
-            // folder organization stays the primary visual anchor; the "+ New playlist"
-            // CTA only shows once any folder or playlist exists, mirroring NewListTile.
-            state.smartPlaylists.forEach { add(Tile.SmartPlaylist(it.playlist, it.matchedCount)) }
-        }
-
-    LazyColumn(
-        Modifier.fillMaxSize().background(c.bg),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 24.dp),
-    ) {
-        item {
-            LibraryHeader(
-                showAddButton = lists.isNotEmpty(),
-                onNewList = { newListOpen = true },
-                onOpenStats = onOpenStats,
-                statsHasBadge = state.statsHasUnseenTierChange,
-                onOpenBookmarks = {
-                    if (viewModel.onBookmarksTapped()) onOpenBookmarks()
-                },
-            )
-        }
-
-        item {
-            LibrarySearchEntry(
-                onTap = {
-                    if (viewModel.onLibrarySearchTapped()) onOpenLibrarySearch()
-                },
-            )
-        }
-
-        if (lists.isEmpty() && podcasts.isEmpty()) {
-            item {
-                LibraryEmptyState(
-                    onFindPodcast = onOpenSearch,
-                    onCreateList = { newListOpen = true },
-                    onOpenStarterPack = onOpenStarterPack,
-                    onImportOpml = { viewModel.importOpml() },
-                )
-            }
-        } else {
-            item { SectionLabel(title = "Your lists", topSpacing = 18.dp) }
-
-            val rows = (tiles.size + 1) / 2
-            items(rows) { rowIndex ->
-                val left = tiles.getOrNull(rowIndex * 2)
-                val right = tiles.getOrNull(rowIndex * 2 + 1)
-                Row(
-                    Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    TileSlot(
-                        modifier = Modifier.weight(1f),
-                        tile = left,
-                        podcasts = podcasts,
-                        activeListId = activeListId,
-                        groupsWithNew = state.groupsWithNew,
-                        onOpenList = onOpenList,
-                        onLongPressList = { pendingDeleteList = it },
-                        onCreateList = { newListOpen = true },
-                        onOpenSmartPlaylistDetail = { id ->
-                            if (viewModel.onSmartPlaylistTapped()) onOpenSmartPlaylistDetail(id)
-                        },
-                        onLongPressSmartPlaylist = { pendingDeleteSmartPlaylist = it },
-                    )
-                    TileSlot(
-                        modifier = Modifier.weight(1f),
-                        tile = right,
-                        podcasts = podcasts,
-                        activeListId = activeListId,
-                        groupsWithNew = state.groupsWithNew,
-                        onOpenList = onOpenList,
-                        onLongPressList = { pendingDeleteList = it },
-                        onCreateList = { newListOpen = true },
-                        onOpenSmartPlaylistDetail = { id ->
-                            if (viewModel.onSmartPlaylistTapped()) onOpenSmartPlaylistDetail(id)
-                        },
-                        onLongPressSmartPlaylist = { pendingDeleteSmartPlaylist = it },
-                    )
-                }
-            }
-
-            item { SectionLabel(title = "Recently opened", topSpacing = 20.dp) }
-
-            if (recent.isEmpty()) {
-                item {
-                    Text(
-                        "Nothing here yet.",
-                        color = c.textMute,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(vertical = 8.dp),
-                    )
-                }
-            } else {
-                items(recent.size) { idx ->
-                    val p = recent[idx]
-                    RecentRow(
-                        podcast = p,
-                        episodeCount = placeholderEpisodeCount(p),
-                        showDivider = idx < recent.lastIndex,
-                        onClick = { onOpenPodcast(p.id) },
-                        onLongClick = { pendingDeletePodcast = p },
-                    )
-                }
-            }
+    // Size-aware routing for tile taps — see routeLibraryPodcastTap. Phone +
+    // tablet portraits navigate; tablet landscapes preview-first via selection.
+    val onPodcastTap: (String) -> Unit = { podcastId ->
+        when (val action = routeLibraryPodcastTap(tabletSize, podcastId)) {
+            is PodcastTapAction.Navigate -> onOpenPodcast(action.podcastId)
+            is PodcastTapAction.Select -> viewModel.selectPodcast(action.podcastId)
         }
     }
+
+    LibraryContent(
+        state = state,
+        selectedPodcastId = selectedPodcastId,
+        selectedEpisodes = selectedEpisodes,
+        onPodcastTap = onPodcastTap,
+        onOpenPodcastDetail = onOpenPodcast,
+        onOpenList = onOpenList,
+        onOpenSearch = onOpenSearch,
+        onOpenStarterPack = onOpenStarterPack,
+        onOpenBookmarks = {
+            if (viewModel.onBookmarksTapped()) onOpenBookmarks()
+        },
+        onOpenStats = onOpenStats,
+        onOpenLibrarySearch = {
+            if (viewModel.onLibrarySearchTapped()) onOpenLibrarySearch()
+        },
+        onOpenSmartPlaylistDetail = { id ->
+            if (viewModel.onSmartPlaylistTapped()) onOpenSmartPlaylistDetail(id)
+        },
+        onNewList = { newListOpen = true },
+        onLongPressPodcast = { pendingDeletePodcast = it },
+        onLongPressList = { pendingDeleteList = it },
+        onLongPressSmartPlaylist = { pendingDeleteSmartPlaylist = it },
+        onImportOpml = { viewModel.importOpml() },
+        size = LocalTabletSize.current,
+    )
 
     if (newListOpen) {
         NewListDialog(
@@ -279,6 +189,223 @@ fun LibraryScreen(
     }
 }
 
+/**
+ * Stateless Library body. Branches by [size]:
+ *  - Phone (`null`): today's single-column LazyColumn body (unchanged from Slice 1).
+ *  - Tablet portrait (`Tablet8Port` / `Tablet10Port`): single-column body from Task 2.2.
+ *  - Tablet landscape (`Tablet8Land` / `Tablet10Land`): Task 2.3's master-detail body —
+ *    master pane reuses the tablet-portrait grid; detail pane previews the selected
+ *    subscription's last [LibraryViewModel.PREVIEW_EPISODE_LIMIT] episodes.
+ *
+ * `selectedPodcastId` / `selectedEpisodes` are only consumed by the landscape branch
+ * but live on the signature so the screen-level hoist stays uniform. `onPodcastTap`
+ * is the single size-aware tile-tap callback (see routeLibraryPodcastTap upstream);
+ * `onOpenPodcastDetail` is the separate "Open" gesture in the landscape detail pane.
+ */
+@Composable
+internal fun LibraryContent(
+    state: LibraryUiState,
+    selectedPodcastId: String?,
+    selectedEpisodes: List<Episode>,
+    onPodcastTap: (String) -> Unit,
+    onOpenPodcastDetail: (String) -> Unit,
+    onOpenList: (String?) -> Unit,
+    onOpenSearch: () -> Unit,
+    onOpenStarterPack: () -> Unit,
+    onOpenBookmarks: () -> Unit,
+    onOpenStats: () -> Unit,
+    onOpenLibrarySearch: () -> Unit,
+    onOpenSmartPlaylistDetail: (String) -> Unit,
+    onNewList: () -> Unit,
+    onLongPressPodcast: (Podcast) -> Unit,
+    onLongPressList: (PodcastList) -> Unit,
+    onLongPressSmartPlaylist: (SmartPlaylistDomain) -> Unit,
+    onImportOpml: () -> Unit,
+    size: TabletSize?,
+) {
+    if (size == TabletSize.Tablet8Port || size == TabletSize.Tablet10Port) {
+        LibraryContentTabletSingle(
+            state = state,
+            onOpenPodcast = onPodcastTap,
+            onOpenList = onOpenList,
+            onOpenSearch = onOpenSearch,
+            onOpenStarterPack = onOpenStarterPack,
+            onOpenBookmarks = onOpenBookmarks,
+            onOpenStats = onOpenStats,
+            onOpenLibrarySearch = onOpenLibrarySearch,
+            onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
+            onNewList = onNewList,
+            onLongPressPodcast = onLongPressPodcast,
+            onLongPressList = onLongPressList,
+            onLongPressSmartPlaylist = onLongPressSmartPlaylist,
+            onImportOpml = onImportOpml,
+            size = size,
+        )
+        return
+    }
+
+    if (size == TabletSize.Tablet8Land || size == TabletSize.Tablet10Land) {
+        // Master-detail: master mirrors portrait, detail previews the selected
+        // subscription. Tile taps in this mode select rather than navigate; the
+        // "Open" CTA in the detail pane handles navigation.
+        val masterSize = if (size == TabletSize.Tablet10Land) TabletSize.Tablet10Port else TabletSize.Tablet8Port
+        val selected: Podcast? =
+            remember(selectedPodcastId, state.groups) {
+                if (selectedPodcastId == null) {
+                    null
+                } else {
+                    state.groups.flatMap { it.podcasts }.firstOrNull { it.id == selectedPodcastId }
+                }
+            }
+        LibraryContentTabletMasterDetail(
+            state = state,
+            selectedPodcast = selected,
+            selectedEpisodes = selectedEpisodes,
+            onPodcastTap = onPodcastTap,
+            onOpenPodcastDetail = onOpenPodcastDetail,
+            onOpenList = onOpenList,
+            onOpenSearch = onOpenSearch,
+            onOpenStarterPack = onOpenStarterPack,
+            onOpenBookmarks = onOpenBookmarks,
+            onOpenStats = onOpenStats,
+            onOpenLibrarySearch = onOpenLibrarySearch,
+            onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
+            onNewList = onNewList,
+            onLongPressPodcast = onLongPressPodcast,
+            onLongPressList = onLongPressList,
+            onLongPressSmartPlaylist = onLongPressSmartPlaylist,
+            onImportOpml = onImportOpml,
+            masterSize = masterSize,
+        )
+        return
+    }
+
+    val c = LocalKofipodColors.current
+
+    val lists: List<PodcastList> = state.groups.mapNotNull { it.list }
+    val podcasts: List<Podcast> = state.groups.flatMap { it.podcasts }
+
+    val activeListId: String? =
+        lists
+            .firstOrNull { l -> podcasts.any { it.listId == l.id } }
+            ?.id
+            ?: lists.firstOrNull()?.id
+
+    val recent: List<Podcast> =
+        podcasts
+            .sortedByDescending { it.addedAt }
+            .take(6)
+
+    // Tile slot descriptor: either a real list, an unfiled bucket, or the "New list" CTA.
+    // Lets the grid iterate uniformly without special-casing indices inline.
+    // NewList tile appears only before any folder exists — once folders are created the "+"
+    // moves to the header to free up grid space.
+    val unfiledPodcasts = podcasts.filter { it.listId == null }
+    val tiles: List<Tile> =
+        buildList {
+            lists.forEach { add(Tile.OfList(it)) }
+            if (unfiledPodcasts.isNotEmpty()) add(Tile.Unfiled(unfiledPodcasts))
+            if (lists.isEmpty()) add(Tile.NewList)
+            // Smart Playlists rendered after the list/unfiled tiles so the user's own
+            // folder organization stays the primary visual anchor; the "+ New playlist"
+            // CTA only shows once any folder or playlist exists, mirroring NewListTile.
+            state.smartPlaylists.forEach { add(Tile.SmartPlaylist(it.playlist, it.matchedCount)) }
+        }
+
+    LazyColumn(
+        Modifier.fillMaxSize().background(c.bg),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 24.dp),
+    ) {
+        item {
+            LibraryHeader(
+                showAddButton = lists.isNotEmpty(),
+                onNewList = onNewList,
+                onOpenStats = onOpenStats,
+                statsHasBadge = state.statsHasUnseenTierChange,
+                onOpenBookmarks = onOpenBookmarks,
+            )
+        }
+
+        item {
+            LibrarySearchEntry(
+                onTap = onOpenLibrarySearch,
+            )
+        }
+
+        if (lists.isEmpty() && podcasts.isEmpty()) {
+            item {
+                LibraryEmptyState(
+                    onFindPodcast = onOpenSearch,
+                    onCreateList = onNewList,
+                    onOpenStarterPack = onOpenStarterPack,
+                    onImportOpml = onImportOpml,
+                )
+            }
+        } else {
+            item { SectionLabel(title = "Your lists", topSpacing = 18.dp) }
+
+            val rows = (tiles.size + 1) / 2
+            items(rows) { rowIndex ->
+                val left = tiles.getOrNull(rowIndex * 2)
+                val right = tiles.getOrNull(rowIndex * 2 + 1)
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    TileSlot(
+                        modifier = Modifier.weight(1f),
+                        tile = left,
+                        podcasts = podcasts,
+                        activeListId = activeListId,
+                        groupsWithNew = state.groupsWithNew,
+                        onOpenList = onOpenList,
+                        onLongPressList = onLongPressList,
+                        onCreateList = onNewList,
+                        onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
+                        onLongPressSmartPlaylist = onLongPressSmartPlaylist,
+                    )
+                    TileSlot(
+                        modifier = Modifier.weight(1f),
+                        tile = right,
+                        podcasts = podcasts,
+                        activeListId = activeListId,
+                        groupsWithNew = state.groupsWithNew,
+                        onOpenList = onOpenList,
+                        onLongPressList = onLongPressList,
+                        onCreateList = onNewList,
+                        onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
+                        onLongPressSmartPlaylist = onLongPressSmartPlaylist,
+                    )
+                }
+            }
+
+            item { SectionLabel(title = "Recently opened", topSpacing = 20.dp) }
+
+            if (recent.isEmpty()) {
+                item {
+                    Text(
+                        "Nothing here yet.",
+                        color = c.textMute,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+                }
+            } else {
+                items(recent.size) { idx ->
+                    val p = recent[idx]
+                    RecentRow(
+                        podcast = p,
+                        episodeCount = placeholderEpisodeCount(p),
+                        showDivider = idx < recent.lastIndex,
+                        onClick = { onPodcastTap(p.id) },
+                        onLongClick = { onLongPressPodcast(p) },
+                    )
+                }
+            }
+        }
+    }
+}
+
 private sealed interface Tile {
     data class OfList(val list: PodcastList) : Tile
 
@@ -290,7 +417,7 @@ private sealed interface Tile {
 }
 
 @Composable
-private fun LibrarySearchEntry(onTap: () -> Unit) {
+internal fun LibrarySearchEntry(onTap: () -> Unit) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
     Row(
@@ -315,7 +442,7 @@ private fun LibrarySearchEntry(onTap: () -> Unit) {
 }
 
 @Composable
-private fun LibraryHeader(
+internal fun LibraryHeader(
     showAddButton: Boolean,
     onNewList: () -> Unit,
     onOpenStats: () -> Unit,
@@ -737,7 +864,7 @@ private fun NewListTile(
  * background) so the dot reads clearly when it overlaps artwork or folder chrome.
  */
 @Composable
-private fun NewDot(
+internal fun NewDot(
     ringColor: Color,
     modifier: Modifier = Modifier,
 ) {
@@ -758,7 +885,7 @@ private fun NewDot(
     }
 }
 
-private fun Modifier.dashedBorder(
+internal fun Modifier.dashedBorder(
     color: Color,
     cornerRadius: Dp,
     strokeWidth: Dp = 1.5.dp,
@@ -863,7 +990,7 @@ private fun placeholderEpisodeCount(p: Podcast): Int {
 }
 
 @Composable
-private fun LibraryEmptyState(
+internal fun LibraryEmptyState(
     onFindPodcast: () -> Unit,
     onCreateList: () -> Unit,
     onOpenStarterPack: () -> Unit,

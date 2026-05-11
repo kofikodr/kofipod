@@ -8,8 +8,13 @@ import android.os.Build
 import androidx.core.content.FileProvider
 import com.kofikodr.kofipod.data.repo.UpdateRepository
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.HttpTimeoutConfig
+import io.ktor.client.plugins.timeout
+import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.utils.io.jvm.javaio.toInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -59,30 +64,9 @@ class UpdateInstaller(
     ): String =
         withContext(Dispatchers.IO) {
             val dir = File(context.filesDir, UPDATES_DIR).apply { mkdirs() }
-            // Wipe any old APKs to keep storage bounded; the previous version is no longer useful.
-            dir.listFiles()?.forEach { it.delete() }
-            val target = File(dir, "kofipod-${info.version}.apk")
-
-            httpClient.prepareGet(info.apkUrl).execute { response ->
-                val total = info.apkSizeBytes
-                var downloaded = 0L
-                val buffer = ByteArray(STREAM_CHUNK_BYTES)
-                response.bodyAsChannel().toInputStream().use { input ->
-                    FileOutputStream(target).use { out ->
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read < 0) break
-                            out.write(buffer, 0, read)
-                            downloaded += read
-                            onProgress(downloaded, total)
-                        }
-                        out.flush()
-                    }
-                }
-            }
-
-            repo.markApkDownloaded(target.absolutePath)
-            target.absolutePath
+            val path = streamApkInto(httpClient = httpClient, dir = dir, info = info, onProgress = onProgress)
+            repo.markApkDownloaded(path)
+            path
         }
 
     /**
@@ -144,7 +128,113 @@ class UpdateInstaller(
     }
 
     companion object {
-        private const val UPDATES_DIR = "updates"
-        private const val STREAM_CHUNK_BYTES: Int = 64 * 1024
+        internal const val UPDATES_DIR = "updates"
     }
+}
+
+private const val STREAM_CHUNK_BYTES: Int = 64 * 1024
+
+// Tolerate 60s of zero-byte progress before declaring the stream dead. The shared
+// HttpClient uses 15s — too tight for an APK download over flaky cellular where a
+// brief tower handoff can stall reads for tens of seconds.
+private const val SOCKET_INACTIVITY_TIMEOUT_MS: Long = 60_000L
+
+// Slightly higher than the shared client's 10s — give marginal cellular a chance
+// to complete the TCP handshake without paying the full request timeout.
+private const val CONNECT_TIMEOUT_MS: Long = 15_000L
+
+/**
+ * Stream the APK at [UpdateInfo.apkUrl] into [dir], with HTTP Range resume across
+ * call attempts. Returns the absolute path of the completed `.apk`.
+ *
+ * Resume protocol:
+ * - If `kofipod-${info.version}.apk.partial` exists in [dir], we send
+ *   `Range: bytes=<existing-size>-`. A `206 Partial Content` response means the server
+ *   honored the range — we append to the partial. A `200 OK` means it didn't — we
+ *   wipe the partial and restart cleanly.
+ * - The partial file is **never deleted in any `catch` or `finally`** — this is the
+ *   load-bearing invariant for resume. If the stream throws mid-read, the partial stays
+ *   on disk; the next call reads `partial.length()` and resumes. The one place the
+ *   partial *is* deleted up-front is the deliberate 200-restart branch (server returned
+ *   `200 OK` to our `Range` request, signalling it ignored the range and is sending the
+ *   full body), since appending fresh bytes onto an old partial would corrupt the file.
+ *   That delete happens *before* writing begins, never as exception cleanup. To preserve
+ *   this guarantee: do NOT introduce `partial.delete()` inside any `catch` or `finally`,
+ *   and keep the partial→target rename strictly *after* `.execute { }` returns cleanly.
+ *   A regression here silently breaks resume with no test-level signal (see test file's
+ *   note on the Ktor `toInputStream()` cause-swallowing bridge that prevents a clean
+ *   unit test of this contract).
+ * - Any non-matching files in [dir] (e.g. an old-version partial or stale temp) are
+ *   wiped at the start of each attempt so storage stays bounded.
+ *
+ * Timeout policy mirrors [com.kofikodr.kofipod.ai.buildAiHttpClient]: per-request
+ * `requestTimeoutMillis = INFINITE` (otherwise the shared client's 15s wall-clock cap
+ * would kill any APK over a few MB), with `socketTimeoutMillis = 60_000` to still
+ * detect a truly dead connection.
+ *
+ * Top-level so unit tests can drive it with a `MockEngine`-backed [HttpClient] and a
+ * `TemporaryFolder`-style [File] without constructing an Android [android.content.Context].
+ */
+internal suspend fun streamApkInto(
+    httpClient: HttpClient,
+    dir: File,
+    info: UpdateInfo,
+    onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
+): String {
+    // info.version comes from a tag on the kofikodr/kofipod GitHub release, which we
+    // control — but treat it as untrusted defensively. A `/` or `..` in the filename
+    // would let a future supply-chain compromise escape `dir`.
+    require(!info.version.contains('/') && !info.version.contains('\\') && !info.version.contains("..")) {
+        "Unsafe characters in update version: ${info.version}"
+    }
+    val partial = File(dir, "kofipod-${info.version}.apk.partial")
+    val target = File(dir, "kofipod-${info.version}.apk")
+    dir.listFiles()
+        ?.filter { it != partial && it != target }
+        ?.forEach { it.delete() }
+
+    val existingBytes = if (partial.exists()) partial.length() else 0L
+
+    httpClient
+        .prepareGet(info.apkUrl) {
+            timeout {
+                requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+                socketTimeoutMillis = SOCKET_INACTIVITY_TIMEOUT_MS
+                connectTimeoutMillis = CONNECT_TIMEOUT_MS
+            }
+            if (existingBytes > 0L) header(HttpHeaders.Range, "bytes=$existingBytes-")
+        }
+        .execute { response ->
+            val resumed = existingBytes > 0L && response.status == HttpStatusCode.PartialContent
+            if (!resumed && partial.exists()) {
+                // Server ignored our Range (200 OK) or we had no partial to begin with —
+                // start the file fresh so we don't write past stale bytes.
+                partial.delete()
+            }
+            var downloaded = if (resumed) existingBytes else 0L
+            val total = info.apkSizeBytes
+            onProgress(downloaded, total)
+            FileOutputStream(partial, resumed).use { out ->
+                response.bodyAsChannel().toInputStream().use { input ->
+                    val buffer = ByteArray(STREAM_CHUNK_BYTES)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        out.write(buffer, 0, read)
+                        downloaded += read
+                        onProgress(downloaded, total)
+                    }
+                }
+            }
+        }
+
+    // Promote partial → final only after the stream completed cleanly. If renameTo
+    // fails (cross-filesystem, etc.) fall back to copy+delete so we never strand the
+    // user without a usable file.
+    if (target.exists()) target.delete()
+    if (!partial.renameTo(target)) {
+        partial.copyTo(target, overwrite = true)
+        partial.delete()
+    }
+    return target.absolutePath
 }

@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kofikodr.kofipod.pro.ProEntitlement
@@ -49,6 +50,8 @@ internal fun PlayerActionStrip(
     onCycleSpeed: () -> Unit,
     onSetSleep: (Int?) -> Unit,
     modifier: Modifier = Modifier,
+    iconSize: Dp = 24.dp,
+    showLabels: Boolean = true,
 ) {
     val showProBadge = entitlement !is ProEntitlement.Pro
     Row(
@@ -62,22 +65,30 @@ internal fun PlayerActionStrip(
             icon = KPIconName.Scissors,
             label = "Snip",
             showProBadge = showProBadge,
+            iconSize = iconSize,
+            showLabel = showLabels,
             onClick = onSnipTapped,
         )
         ChipColumn(
             icon = KPIconName.Bookmark,
             label = "Bookmark",
             showProBadge = showProBadge,
+            iconSize = iconSize,
+            showLabel = showLabels,
             onClick = onBookmarkTapped,
         )
         ChipColumn(
             icon = KPIconName.SpeedUp,
             label = "${formatSpeed(speed)}×",
             showProBadge = false,
+            iconSize = iconSize,
+            showLabel = showLabels,
             onClick = onCycleSpeed,
         )
         SleepChipColumn(
             sleepRemainingMs = sleepRemainingMs,
+            iconSize = iconSize,
+            showLabel = showLabels,
             onSetSleep = onSetSleep,
         )
     }
@@ -88,6 +99,8 @@ private fun ChipColumn(
     icon: KPIconName,
     label: String,
     showProBadge: Boolean,
+    iconSize: Dp,
+    showLabel: Boolean,
     onClick: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
@@ -100,7 +113,7 @@ private fun ChipColumn(
                 .clickable { onClick() },
             contentAlignment = Alignment.Center,
         ) {
-            KPIcon(name = icon, color = c.text, size = 24.dp)
+            KPIcon(name = icon, color = c.text, size = iconSize)
             if (showProBadge) {
                 Box(
                     Modifier
@@ -120,19 +133,23 @@ private fun ChipColumn(
                 }
             }
         }
-        Text(
-            text = label,
-            color = c.textMute,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(top = 4.dp),
-        )
+        if (showLabel) {
+            Text(
+                text = label,
+                color = c.textMute,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
     }
 }
 
 @Composable
 private fun SleepChipColumn(
     sleepRemainingMs: Long?,
+    iconSize: Dp,
+    showLabel: Boolean,
     onSetSleep: (Int?) -> Unit,
 ) {
     val c = LocalKofipodColors.current
@@ -147,7 +164,7 @@ private fun SleepChipColumn(
                     .clickable { menuOpen = true },
                 contentAlignment = Alignment.Center,
             ) {
-                KPIcon(name = KPIconName.Moon, color = c.text, size = 24.dp)
+                KPIcon(name = KPIconName.Moon, color = c.text, size = iconSize)
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 listOf(5, 15, 30, 60).forEach { m ->
@@ -170,12 +187,14 @@ private fun SleepChipColumn(
                 }
             }
         }
-        Text(
-            text = sleepRemainingMs?.let { formatMs(it) } ?: "Off",
-            color = c.textMute,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(top = 4.dp),
-        )
+        if (showLabel) {
+            Text(
+                text = sleepRemainingMs?.let { formatMs(it) } ?: "Off",
+                color = c.textMute,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
     }
 }

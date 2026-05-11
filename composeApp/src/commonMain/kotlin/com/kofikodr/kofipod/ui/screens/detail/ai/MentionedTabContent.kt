@@ -36,6 +36,8 @@ import com.kofikodr.kofipod.ai.AiSummaryUiState
 import com.kofikodr.kofipod.ai.MentionedLink
 import com.kofikodr.kofipod.ai.MentionedPerson
 import com.kofikodr.kofipod.ai.MentionedThing
+import com.kofikodr.kofipod.ui.layout.TabletSize
+import com.kofikodr.kofipod.ui.layout.rememberTabletSize
 import com.kofikodr.kofipod.ui.primitives.KPIcon
 import com.kofikodr.kofipod.ui.primitives.KPIconName
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
@@ -61,7 +63,7 @@ fun MentionedTabPanel(
     viewModel: AiSummaryViewModel = koinViewModel(parameters = { parametersOf(episodeId) }),
 ) {
     val state by viewModel.state.collectAsState()
-    MentionedTabContent(state = state, modifier = modifier)
+    MentionedTabContent(state = state, modifier = modifier, size = rememberTabletSize())
 }
 
 /**
@@ -72,15 +74,26 @@ fun MentionedTabPanel(
 internal fun MentionedTabContent(
     state: AiSummaryUiState,
     modifier: Modifier = Modifier,
+    // Drives the entity-list column count: phone / 8" portrait = 1, 8"
+    // landscape / 10" portrait = 2, 10" landscape = 3. The filter chip row
+    // above the list stays full-width regardless.
+    size: TabletSize? = null,
 ) {
     when (state) {
         AiSummaryUiState.Hidden -> Unit
         is AiSummaryUiState.Idle -> AwaitingSummaryHint(modifier)
         is AiSummaryUiState.Generating -> AwaitingSummaryHint(modifier)
         is AiSummaryUiState.Error -> AwaitingSummaryHint(modifier)
-        is AiSummaryUiState.Ready -> MentionedReady(state.summary, modifier)
+        is AiSummaryUiState.Ready -> MentionedReady(state.summary, modifier, columnsFor(size))
     }
 }
+
+private fun columnsFor(size: TabletSize?): Int =
+    when (size) {
+        null, TabletSize.Tablet8Port -> 1
+        TabletSize.Tablet8Land, TabletSize.Tablet10Port -> 2
+        TabletSize.Tablet10Land -> 3
+    }
 
 @Composable
 private fun AwaitingSummaryHint(modifier: Modifier) {
@@ -122,6 +135,7 @@ private enum class MentionedFilter(val label: String) {
 private fun MentionedReady(
     summary: AiSummary,
     modifier: Modifier,
+    columns: Int = 1,
 ) {
     val total = summary.people.size + summary.things.size + summary.links.size
     if (total == 0) {
@@ -166,17 +180,17 @@ private fun MentionedReady(
             MentionedFilter.People -> {
                 SectionHeader("PEOPLE")
                 Spacer(Modifier.height(4.dp))
-                PeopleList(summary.people)
+                if (columns > 1) PeopleGrid(summary.people, columns) else PeopleList(summary.people)
             }
             MentionedFilter.Things -> {
                 SectionHeader("BOOKS / THINGS")
                 Spacer(Modifier.height(4.dp))
-                ThingsList(summary.things)
+                if (columns > 1) ThingsGrid(summary.things, columns) else ThingsList(summary.things)
             }
             MentionedFilter.Links -> {
                 SectionHeader("LINKS")
                 Spacer(Modifier.height(4.dp))
-                LinksList(summary.links)
+                if (columns > 1) LinksGrid(summary.links, columns) else LinksList(summary.links)
             }
         }
     }
@@ -318,6 +332,127 @@ private fun SectionHeader(title: String) {
 // -----------------------------------------------------------------------------
 // Lists
 // -----------------------------------------------------------------------------
+
+// Grid path: chunked rows of `EntityCard` (a boxed variant of EntityRow).
+//
+// Spec deviation from plan §10.2: the plan called for
+// `LazyVerticalGrid(GridCells.Fixed(N))`, but this tab renders inside a parent
+// column that already owns vertical scrolling. A `LazyVerticalGrid` nested in
+// a `verticalScroll`-bearing parent does not measure — it requires an explicit
+// `heightIn(max = ...)` to render, which is brittle (the cap has to be guessed
+// or recomputed) and adds no perf gain at this scale. Entity counts per filter
+// are typically < 20, so eager composition via chunked Rows is the simpler,
+// more robust choice. Revisit only if a filter routinely exceeds ~50 items.
+@Composable
+private fun PeopleGrid(
+    people: List<MentionedPerson>,
+    columns: Int,
+) {
+    val uri = LocalUriHandler.current
+    EntityGrid(items = people, columns = columns) { person ->
+        EntityCard(
+            name = person.name,
+            subtitle = person.subtitle,
+            onClick = { runCatching { uri.openUri(googleSearchUrl(person.name, person.subtitle)) } },
+            testTag = "mentionedPerson",
+        )
+    }
+}
+
+@Composable
+private fun ThingsGrid(
+    things: List<MentionedThing>,
+    columns: Int,
+) {
+    val uri = LocalUriHandler.current
+    EntityGrid(items = things, columns = columns) { thing ->
+        EntityCard(
+            name = thing.name,
+            subtitle = thing.subtitle,
+            onClick = { runCatching { uri.openUri(googleSearchUrl(thing.name, thing.subtitle)) } },
+            testTag = "mentionedThing",
+        )
+    }
+}
+
+@Composable
+private fun LinksGrid(
+    links: List<MentionedLink>,
+    columns: Int,
+) {
+    val uri = LocalUriHandler.current
+    EntityGrid(items = links, columns = columns) { link ->
+        EntityCard(
+            name = link.label.ifBlank { link.url },
+            subtitle = link.url,
+            accent = true,
+            onClick = { runCatching { uri.openUri(link.url) } },
+            testTag = "mentionedLink",
+        )
+    }
+}
+
+@Composable
+private fun <T> EntityGrid(
+    items: List<T>,
+    columns: Int,
+    cell: @Composable (T) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items.chunked(columns).forEach { row ->
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                row.forEach { item ->
+                    Box(Modifier.weight(1f)) { cell(item) }
+                }
+                // Pad the trailing row so the cells stay aligned to the leading
+                // edge when items.size % columns != 0.
+                repeat(columns - row.size) {
+                    Box(Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EntityCard(
+    name: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    testTag: String,
+    accent: Boolean = false,
+) {
+    val c = LocalKofipodColors.current
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(c.surface)
+            .border(1.dp, c.border, RoundedCornerShape(14.dp))
+            .clickable { onClick() }
+            .padding(14.dp)
+            .testTag(testTag),
+    ) {
+        Text(
+            name,
+            color = c.text,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        if (subtitle.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                subtitle,
+                color = if (accent) c.pink else c.textSoft,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+            )
+        }
+    }
+}
 
 @Composable
 private fun PeopleList(people: List<MentionedPerson>) {
