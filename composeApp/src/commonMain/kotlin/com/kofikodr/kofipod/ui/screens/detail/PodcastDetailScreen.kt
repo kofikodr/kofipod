@@ -70,7 +70,12 @@ fun PodcastDetailScreen(
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
     onOpenEpisode: (String) -> Unit,
-    viewModel: PodcastDetailViewModel = koinViewModel { parametersOf(podcastId) },
+    // `key = podcastId` is load-bearing for embedded use (Search tablet-landscape
+    // master-detail): the ViewModelStoreOwner stays the same as the user clicks
+    // through results, so without a per-id key Koin would hand out the FIRST VM
+    // for every subsequent podcast — the detail pane would stick on result #1.
+    viewModel: PodcastDetailViewModel =
+        koinViewModel(key = podcastId) { parametersOf(podcastId) },
 ) {
     val state by viewModel.state.collectAsState()
     val playingEpisodeId by viewModel.playingEpisodeId.collectAsState()
@@ -300,16 +305,22 @@ private fun PodcastDetailSingleColumn(
     val remoteEpisodes = state.remoteEpisodes
     val downloadStates = state.downloadStates
     val displayLimit = state.episodeDisplayLimit
+    // Prefer stored rows for subscribed shows (carries downloadState + real
+    // publishedAt). Fall back to remote when stored is empty so subscriptions
+    // whose Episode rows were never persisted still render — the API result is
+    // already in memory from the VM's init `loadRemote`. Single source of truth
+    // for both row mapping and `hasMore` paging below.
+    val useStored = inLibrary && storedEpisodes.isNotEmpty()
     val rows: List<EpisodeRowData> =
         remember(
-            inLibrary,
+            useStored,
             storedEpisodes,
             remoteEpisodes,
             downloadStates,
             newestFirst,
         ) {
             val mapped =
-                if (inLibrary) {
+                if (useStored) {
                     storedEpisodes.map {
                         EpisodeRowData(
                             id = it.id,
@@ -396,7 +407,10 @@ private fun PodcastDetailSingleColumn(
                     item { Text(err, color = c.danger, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 20.dp)) }
                 }
 
-                val hasMore = if (inLibrary) rows.size > visibleRows.size else state.remoteHasMore
+                // When rows came from the fallback (subscribed but stored empty), the
+                // pagination signal lives on the remote side too — `useStored` is the
+                // single source of truth for row source / paging source.
+                val hasMore = if (useStored) rows.size > visibleRows.size else state.remoteHasMore
                 items(visibleRows, key = { it.id }) { ep ->
                     EpisodeRow(
                         ep = ep,
