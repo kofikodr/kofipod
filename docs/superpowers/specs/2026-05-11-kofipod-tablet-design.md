@@ -142,7 +142,7 @@ Each phase has its own implementation plan under `docs/superpowers/plans/`. Phas
 3. **Search** — master-detail with podcast preview pane. (`-phase-03-search.md`) First-run starter packs in Search are **deferred** — see Phase 3 plan §3.5 deferral note.
 4. **Downloads** — header, capacity, Active / Completed sections at tablet widths. (`-phase-04-downloads.md`)
 5. **Stats** — Pour Over hero + KPIs + by-show list, single-column at all tablet sizes. (`-phase-05-stats.md`)
-6. **Settings** — index + panel master-detail on landscape, nested on portrait, Daily check-in explainer mock. (`-phase-06-settings.md`)
+6. **Settings** — **SKIPPED for now**: reuses phone layout on tablet. Master-detail adaptation deferred. (`-phase-06-settings.md` header has the skip rationale)
 7. **Now Playing** — full-bleed at all sizes, rail hidden. (`-phase-07-now-playing.md`)
 8. **Podcast detail** — episode list + episode preview master-detail. (`-phase-08-podcast-detail.md`)
 9. **Episode detail** — V3 redesign layout adaptation (Overview / Chapters / Transcript tabs). (`-phase-09-episode-detail.md`)

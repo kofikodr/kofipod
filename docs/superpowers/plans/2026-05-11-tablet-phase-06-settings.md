@@ -1,5 +1,7 @@
 # Phase 6 — Settings
 
+> **STATUS: SKIPPED (2026-05-11).** Per user direction, the Settings screen reuses the existing phone layout on tablet for now. The two-pane master-detail mock and Daily scheduler tablet adaptation described below are deferred. Today's full-width list of settings rows already renders acceptably inside the rail-bounded content area at every tablet size — it just doesn't take advantage of the extra horizontal real estate the master-detail mock would offer. Revisit when the Settings index outgrows a single column or when the rest of the tablet redesign is in production. No `screens/settings` or `screens/scheduler` files are modified by this phase.
+
 **Spec:** `docs/superpowers/specs/2026-05-11-kofipod-tablet-design.md` §6 (Settings bullet)
 **Design (authoritative):** `docs/kofipod-tablet-design.html` — sections "Settings · playback panel", "Daily scheduler explainer", and the four "Settings · {size}" mocks.
 **Depends on:** Phase 1 (`MasterDetailPane`).
