@@ -10,6 +10,7 @@ import com.kofikodr.kofipod.data.repo.DownloadRepository
 import com.kofikodr.kofipod.data.repo.EpisodeSource
 import com.kofikodr.kofipod.data.repo.LibraryRepository
 import com.kofikodr.kofipod.data.repo.PlaybackRepository
+import com.kofikodr.kofipod.data.repo.RemoteEpisodeCache
 import com.kofikodr.kofipod.db.Download
 import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.db.EpisodeChapter
@@ -73,26 +74,40 @@ class EpisodeDetailViewModel(
     private val pkmExport: PkmExportCoordinator,
     private val paywallRouter: PaywallRouter,
     private val pro: ProEntitlementRepository,
+    remoteCache: RemoteEpisodeCache,
 ) : ViewModel() {
     private val error = MutableStateFlow<String?>(null)
 
-    private val episodeFlow = episodes.episodeFlow(episodeId)
+    // Resolve the episode against the DB first, fall back to the in-memory
+    // RemoteEpisodeCache when the row isn't persisted yet (Search → unsubscribed
+    // podcast → episode). The cache emits when the parent PodcastDetailVM
+    // populates it; here it's observed alongside the DB flow.
+    private val dbEpisodeFlow = episodes.episodeFlow(episodeId)
+    private val cacheFlow = remoteCache.observe(episodeId)
+    private val episodeFlow = mergeEpisodeWithCache(dbEpisodeFlow, cacheFlow)
     private val chaptersFlow = chapters.chaptersFlow(episodeId)
     private val summaryEnabledFlow = aiConfig.isKeyConfigured()
 
     // Derive the podcast as a Flow off the episode so the combine lambda doesn't need
     // a synchronous DB read on every emission. player.state ticks ~2/sec during
     // playback, so a synchronous lookup here would burn a Default-pool thread per tick.
+    // Library DB wins; cache supplies a Podcast for remote-only episodes.
     @OptIn(ExperimentalCoroutinesApi::class)
     private val podcastFlow =
         episodeFlow
             .map { it?.podcastId }
             .distinctUntilChanged()
             .flatMapLatest { id -> if (id != null) library.podcastFlow(id) else flowOf(null) }
+            .combine(cacheFlow) { db, cached -> db ?: cached?.podcast }
 
     init {
+        // Gate chapter-fetch on the DB-backed episode flow specifically. `EpisodeChapter`
+        // FKs to `Episode.id ON DELETE CASCADE`, so writing rows for a cache-only
+        // (unsubscribed-podcast) episode would either FK-fail or strand orphan rows
+        // depending on SQLite's enforcement. Subscribed shows already cover the
+        // chaptersUrl path; unsubscribed shows wait until the user saves to library.
         viewModelScope.launch {
-            episodeFlow.collect { ep ->
+            dbEpisodeFlow.collect { ep ->
                 val url = ep?.chaptersUrl?.takeIf { it.isNotBlank() } ?: return@collect
                 chapters.ensureCached(episodeId, url)
             }
@@ -325,3 +340,14 @@ class EpisodeDetailViewModel(
 private fun Download?.isDownloaded(): Boolean = this != null && state == "Completed" && !localPath.isNullOrBlank()
 
 private fun PlaybackState?.isPlayed(): Boolean = this != null && completedAt != null
+
+/**
+ * Combines the DB-backed episode flow with the in-memory RemoteEpisodeCache so that
+ * navigating to a remote-only episode (Search → unsubscribed podcast → episode) shows
+ * the cached projection until/unless the user subscribes and the row is persisted.
+ * DB wins on conflict; cache fills the null slot.
+ */
+internal fun mergeEpisodeWithCache(
+    dbFlow: kotlinx.coroutines.flow.Flow<Episode?>,
+    cacheFlow: kotlinx.coroutines.flow.Flow<com.kofikodr.kofipod.data.repo.RemoteEpisodeCache.Entry?>,
+): kotlinx.coroutines.flow.Flow<Episode?> = kotlinx.coroutines.flow.combine(dbFlow, cacheFlow) { db, cached -> db ?: cached?.episode }

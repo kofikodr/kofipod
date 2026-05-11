@@ -103,29 +103,33 @@ fun PodcastDetailScreen(
             viewModel.toggleNotifyNewEpisodes(granted)
         }
 
-    // Default the preview-pane selection to the newest stored episode when nothing has
-    // been picked yet, so landscape rotations never start with an empty detail pane.
+    // Default the preview-pane selection to the newest row when nothing has been picked
+    // yet, so landscape rotations never start with an empty detail pane. Falls back to
+    // remoteEpisodes for unsubscribed podcasts (Search → result → tablet landscape).
     val effectiveSelectedId: String? =
-        remember(selectedEpisodeId, state.storedEpisodes) {
-            selectedEpisodeId ?: state.storedEpisodes.firstOrNull()?.id
+        remember(selectedEpisodeId, state.storedEpisodes, state.remoteEpisodes) {
+            selectedEpisodeId
+                ?: state.storedEpisodes.firstOrNull()?.id
+                ?: state.remoteEpisodes.firstOrNull()?.id
         }
+    // Resolve the selected episode against stored rows first (full Episode), then
+    // fall back to a transient projection of the matching EpisodePreview so the
+    // preview pane renders for unsubscribed podcasts too. Without this, tapping an
+    // episode in Search → tablet landscape silently navigated to an empty full-screen
+    // EpisodeDetail (the DB row doesn't exist for unsubscribed shows).
     val selectedEpisode: Episode? =
-        remember(effectiveSelectedId, state.storedEpisodes) {
-            effectiveSelectedId?.let { id -> state.storedEpisodes.firstOrNull { it.id == id } }
+        remember(effectiveSelectedId, state.storedEpisodes, state.remoteEpisodes, podcastId) {
+            val id = effectiveSelectedId ?: return@remember null
+            state.storedEpisodes.firstOrNull { it.id == id }
+                ?: state.remoteEpisodes.firstOrNull { it.id == id }?.toTransientEpisode(podcastId)
         }
 
     // Size-aware routing for episode-row taps — see routeEpisodeTap. Phone +
     // tablet portraits navigate; tablet landscapes preview-first via selection.
-    // On landscape, the EpisodePreviewPane only renders for storedEpisodes (full
-    // Episode rows); remote/unsubscribed rows have no preview content available
-    // (`EpisodePreview` is a minimal projection), so a tap on a remote row falls
-    // through to the full episode screen rather than silently no-op-ing.
     val onEpisodeTap: (String) -> Unit = { episodeId ->
-        val inStored = state.storedEpisodes.any { it.id == episodeId }
         when (val action = routeEpisodeTap(tabletSize, episodeId)) {
             is EpisodeTapAction.Navigate -> onOpenEpisode(action.episodeId)
-            is EpisodeTapAction.Select ->
-                if (inStored) viewModel.selectEpisode(action.episodeId) else onOpenEpisode(action.episodeId)
+            is EpisodeTapAction.Select -> viewModel.selectEpisode(action.episodeId)
         }
     }
 
@@ -1065,3 +1069,27 @@ private fun PickerRow(
         Text(label, color = c.text, fontWeight = FontWeight.Medium)
     }
 }
+
+// Projects an unsubscribed-feed `EpisodePreview` into a transient `Episode` that
+// `EpisodePreviewPane` can render. Never persisted — only used to feed the
+// landscape preview pane when the user is browsing a podcast they haven't saved.
+// Missing fields (description, fileSizeBytes, imageUrl, etc.) collapse to the
+// SQLDelight schema's NOT-NULL defaults so the pane just elides them.
+private fun EpisodePreview.toTransientEpisode(podcastId: String): Episode =
+    Episode(
+        id = id,
+        podcastId = podcastId,
+        guid = id,
+        title = title,
+        description = "",
+        publishedAt = 0L,
+        durationSec = (durationMinutes * 60).toLong(),
+        enclosureUrl = enclosureUrl,
+        enclosureMimeType = "",
+        fileSizeBytes = 0L,
+        seasonNumber = null,
+        episodeNumber = episodeNumber?.toLong(),
+        imageUrl = "",
+        chaptersUrl = null,
+        transcriptUrl = null,
+    )

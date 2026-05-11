@@ -10,6 +10,7 @@ import com.kofikodr.kofipod.data.repo.EpisodeSource
 import com.kofikodr.kofipod.data.repo.LibraryRepository
 import com.kofikodr.kofipod.data.repo.PlaybackRepository
 import com.kofikodr.kofipod.data.repo.RecentlyViewedRepository
+import com.kofikodr.kofipod.data.repo.RemoteEpisodeCache
 import com.kofikodr.kofipod.data.repo.autoDownloadEnabledBool
 import com.kofikodr.kofipod.data.repo.notifyNewEpisodesEnabledBool
 import com.kofikodr.kofipod.db.Download
@@ -77,6 +78,7 @@ class PodcastDetailViewModel(
     private val sharer: Sharer,
     private val recentlyViewed: RecentlyViewedRepository,
     private val errors: NetworkErrorHandler,
+    private val remoteCache: RemoteEpisodeCache,
 ) : ViewModel() {
     private val remoteSummary = MutableStateFlow<PodcastSummary?>(null)
     private val remoteEpisodes = MutableStateFlow<List<EpisodePreview>>(emptyList())
@@ -274,6 +276,12 @@ class PodcastDetailViewModel(
                 }
                 val eps = api.episodesByFeedId(feedId, limit = remoteLimit.value)
                 remoteEpisodes.value = eps.map { it.toPreview() }
+                // Seed RemoteEpisodeCache so EpisodeDetailViewModel can render the body
+                // for unsubscribed podcasts (the rows never land in the DB).
+                remoteSummary.value?.let { summary ->
+                    val pod = summary.toTransientPodcast()
+                    remoteCache.put(eps.map { it.toCacheEntry(pod) })
+                }
             }.onFailure {
                 // If user already has the podcast in the library or stored episodes, treat
                 // the failure as transient (snackbar) and keep showing cached data. Otherwise
@@ -402,4 +410,48 @@ private fun EpisodeFeed.toPreview(): EpisodePreview =
         durationMinutes = (duration ?: 0) / 60,
         enclosureUrl = enclosureUrl,
         episodeNumber = episode,
+    )
+
+// Project an API EpisodeFeed into a transient Episode for RemoteEpisodeCache.
+// Mirrors EpisodesRepository.refresh()'s insert mapping so cached and persisted
+// episodes look identical to downstream consumers — including the Podcast Index
+// quirk that `datePublished` deserializes as seconds-as-millis, so we restore
+// real milliseconds with `* 1000`.
+private fun EpisodeFeed.toCacheEntry(pod: Podcast): RemoteEpisodeCache.Entry =
+    RemoteEpisodeCache.Entry(
+        episode =
+            Episode(
+                id = id.toString(),
+                podcastId = pod.id,
+                guid = guid,
+                title = title,
+                description = description.orEmpty(),
+                publishedAt = datePublished.toEpochMilliseconds() * 1000L,
+                durationSec = (duration ?: 0).toLong(),
+                enclosureUrl = enclosureUrl,
+                enclosureMimeType = enclosureType,
+                fileSizeBytes = enclosureLength.toLong(),
+                seasonNumber = season?.toLong(),
+                episodeNumber = episode?.toLong(),
+                imageUrl = image,
+                chaptersUrl = chaptersUrl,
+                transcriptUrl = transcriptUrl,
+            ),
+        podcast = pod,
+    )
+
+private fun PodcastSummary.toTransientPodcast(): Podcast =
+    Podcast(
+        id = id,
+        title = title,
+        author = author,
+        description = description,
+        artworkUrl = artworkUrl,
+        feedUrl = feedUrl,
+        listId = null,
+        autoDownloadEnabled = 0L,
+        notifyNewEpisodesEnabled = 1L,
+        lastCheckedAt = null,
+        addedAt = 0L,
+        primaryCategory = category,
     )
