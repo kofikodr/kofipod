@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import com.android.resources.Density
+import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.screens.search.SearchContent
 import com.kofikodr.kofipod.ui.screens.search.SearchUiState
 import com.kofikodr.kofipod.ui.theme.KofipodTheme
@@ -23,6 +24,8 @@ import org.junit.Test
  * - Phone (`size == null`): cold-start empty state at 412×892 dp MDPI. Locked in
  *   Task 3.1 as a byte-identical regression guard; **must not drift** when Tasks
  *   3.2 / 3.3 / 3.5 add tablet branches.
+ * - Tablet portrait (`size == Tablet8Port` / `Tablet10Port`): cold-start empty
+ *   state at 800×1200 / 1000×1400 dp MDPI matching the Task 3.2 mocks.
  *
  * The default `SearchUiState()` resolves through SearchContent's `state.results
  * .isEmpty()` → recs-empty → `EmptyQueryContent.ColdStart` arm, rendering the hero
@@ -50,6 +53,38 @@ class SearchScreenSnapshots {
         paparazzi.snapshot {
             SearchHarness(state = SearchUiState(), size = null)
         }
+
+    @Test
+    fun searchColdStart_tablet8Port_light() {
+        useTabletDeviceConfig(width = 800, height = 1200)
+        paparazzi.snapshot {
+            SearchHarness(state = SearchUiState(), size = TabletSize.Tablet8Port)
+        }
+    }
+
+    @Test
+    fun searchColdStart_tablet10Port_light() {
+        useTabletDeviceConfig(width = 1000, height = 1400)
+        paparazzi.snapshot {
+            SearchHarness(state = SearchUiState(), size = TabletSize.Tablet10Port)
+        }
+    }
+
+    private fun useTabletDeviceConfig(
+        width: Int,
+        height: Int,
+    ) {
+        paparazzi.unsafeUpdateConfig(
+            deviceConfig =
+                DeviceConfig.PIXEL_5.copy(
+                    screenWidth = width,
+                    screenHeight = height,
+                    xdpi = 160,
+                    ydpi = 160,
+                    density = Density.MEDIUM,
+                ),
+        )
+    }
 }
 
 @Composable

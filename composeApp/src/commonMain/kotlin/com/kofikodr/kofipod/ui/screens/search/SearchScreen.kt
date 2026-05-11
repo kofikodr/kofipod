@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -111,9 +112,11 @@ fun SearchScreen(
 
 /**
  * Stateless Search body. Phone (`size == null`) renders today's single-column layout
- * unchanged. Tablet branches are intentionally not implemented yet — Tasks 3.2 / 3.3
- * / 3.5 will add tablet-portrait, tablet-landscape master-detail, and Discover-hero
- * variants respectively. `internal` so Paparazzi tests can construct it directly.
+ * unchanged. Tablet portraits (Tablet8Port / Tablet10Port) route to
+ * [SearchContentTabletSingle], which keeps the same chrome + result list but caps the
+ * content column width for comfortable reading on wider screens. Tablet landscapes
+ * still fall through to today's body — Task 3.3 will replace them with master-detail.
+ * `internal` so Paparazzi tests can construct it directly.
  */
 @Composable
 internal fun SearchContent(
@@ -126,102 +129,224 @@ internal fun SearchContent(
     onLoadMore: () -> Unit,
     onPickTopic: (String) -> Unit,
     onOpenPodcast: (String) -> Unit,
-    @Suppress("UNUSED_PARAMETER") size: TabletSize?,
+    size: TabletSize?,
 ) {
-    // TODO(tablet-phase-3.2/3.3/3.5): branch on size for tablet layouts.
+    when (size) {
+        TabletSize.Tablet8Port, TabletSize.Tablet10Port -> {
+            SearchContentTabletSingle(
+                state = state,
+                toastText = toastText,
+                onToastDone = onToastDone,
+                onQueryChange = onQueryChange,
+                onTabSelect = onTabSelect,
+                onReshuffle = onReshuffle,
+                onLoadMore = onLoadMore,
+                onPickTopic = onPickTopic,
+                onOpenPodcast = onOpenPodcast,
+                size = size,
+            )
+        }
+        // TODO(tablet-phase-3.3/3.5): tablet landscapes route to master-detail.
+        else ->
+            SearchContentPhone(
+                state = state,
+                toastText = toastText,
+                onToastDone = onToastDone,
+                onQueryChange = onQueryChange,
+                onTabSelect = onTabSelect,
+                onReshuffle = onReshuffle,
+                onLoadMore = onLoadMore,
+                onPickTopic = onPickTopic,
+                onOpenPodcast = onOpenPodcast,
+            )
+    }
+}
+
+@Composable
+private fun SearchContentPhone(
+    state: SearchUiState,
+    toastText: String?,
+    onToastDone: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onTabSelect: (SearchTab) -> Unit,
+    onReshuffle: () -> Unit,
+    onLoadMore: () -> Unit,
+    onPickTopic: (String) -> Unit,
+    onOpenPodcast: (String) -> Unit,
+) {
     val c = LocalKofipodColors.current
     Box(Modifier.fillMaxSize().background(c.bg)) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
-            Spacer(Modifier.height(24.dp))
-            Text(
-                "Search",
-                color = c.text,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 32.sp,
+            SearchBodyContent(
+                state = state,
+                onQueryChange = onQueryChange,
+                onTabSelect = onTabSelect,
+                onReshuffle = onReshuffle,
+                onLoadMore = onLoadMore,
+                onPickTopic = onPickTopic,
+                onOpenPodcast = onOpenPodcast,
             )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                "Powered by the Podcast Index",
-                color = c.textMute,
-                fontSize = 13.sp,
-            )
-            Spacer(Modifier.height(16.dp))
-            SearchBar(
-                value = state.query,
-                onValueChange = onQueryChange,
-                onClear = { onQueryChange("") },
-            )
-            Spacer(Modifier.height(14.dp))
-            TabRow(current = state.tab, onSelect = onTabSelect)
-            Spacer(Modifier.height(16.dp))
+        }
+        SearchToast(text = toastText, onDone = onToastDone)
+    }
+}
 
-            when {
-                state.loading ->
-                    Box(Modifier.fillMaxSize(), Alignment.Center) {
-                        CircularProgressIndicator(color = c.pink)
-                    }
-                state.error != null ->
-                    Box(Modifier.fillMaxSize(), Alignment.Center) {
-                        Text(state.error!!, color = c.danger)
-                    }
-                state.results.isEmpty() && state.query.isNotBlank() ->
-                    Box(
-                        Modifier.fillMaxSize(),
-                        Alignment.Center,
-                    ) {
-                        Text("No results", color = c.textMute)
-                    }
-                state.results.isEmpty() -> {
-                    val target =
-                        when {
-                            state.recommendations.isEmpty() && state.recsLoading -> EmptyQueryContent.Loading
-                            state.recommendations.isNotEmpty() -> EmptyQueryContent.ForYou
-                            else -> EmptyQueryContent.ColdStart
-                        }
-                    Crossfade(targetState = target, label = "empty-query-content") { which ->
-                        when (which) {
-                            EmptyQueryContent.Loading ->
-                                RecommendationsLoading(quip = state.recsLoadingQuip)
-                            EmptyQueryContent.ForYou ->
-                                ForYouSection(
-                                    items = state.recommendations,
-                                    inlineLoading = state.recsLoading,
-                                    inlineQuip = state.recsLoadingQuip,
-                                    onReshuffle = onReshuffle,
-                                    onOpenPodcast = onOpenPodcast,
-                                )
-                            EmptyQueryContent.ColdStart ->
-                                SearchEmptyState(
-                                    categories = state.popularCategories,
-                                    onPickTopic = onPickTopic,
-                                )
-                        }
-                    }
+/**
+ * Tablet portrait layout (8" / 10" portrait). Same single-column body as phone, but
+ * the content column is capped at 720 dp and centered so result rows don't sprawl on
+ * wider screens. Horizontal padding is bumped to 28 dp for breathing room.
+ *
+ * The first-run empty state today renders the hero card + popular-categories chips
+ * (see [SearchEmptyState]). The plan calls out a future "starter packs horizontal
+ * scroll" treatment with a reusable `StarterPackCard`; that affordance doesn't yet
+ * exist on the Search side (starter packs live in Library), so we render today's
+ * cold-start content as-is. Follow-up: lift Library's starter packs into a shared
+ * composable and surface them here when the design lands.
+ */
+@Composable
+private fun SearchContentTabletSingle(
+    state: SearchUiState,
+    toastText: String?,
+    onToastDone: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onTabSelect: (SearchTab) -> Unit,
+    onReshuffle: () -> Unit,
+    onLoadMore: () -> Unit,
+    onPickTopic: (String) -> Unit,
+    onOpenPodcast: (String) -> Unit,
+    @Suppress("UNUSED_PARAMETER") size: TabletSize,
+) {
+    val c = LocalKofipodColors.current
+    Box(Modifier.fillMaxSize().background(c.bg)) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Column(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .widthIn(max = 720.dp)
+                        .padding(horizontal = 28.dp),
+            ) {
+                SearchBodyContent(
+                    state = state,
+                    onQueryChange = onQueryChange,
+                    onTabSelect = onTabSelect,
+                    onReshuffle = onReshuffle,
+                    onLoadMore = onLoadMore,
+                    onPickTopic = onPickTopic,
+                    onOpenPodcast = onOpenPodcast,
+                )
+            }
+        }
+        SearchToast(text = toastText, onDone = onToastDone)
+    }
+}
+
+/**
+ * Shared body content used by both phone and tablet-portrait wrappers. Header +
+ * search bar + scope tabs + the empty/loading/results switch — identical across
+ * form factors. Layout differences (padding, max-width cap) live in the wrappers.
+ */
+@Composable
+private fun SearchBodyContent(
+    state: SearchUiState,
+    onQueryChange: (String) -> Unit,
+    onTabSelect: (SearchTab) -> Unit,
+    onReshuffle: () -> Unit,
+    onLoadMore: () -> Unit,
+    onPickTopic: (String) -> Unit,
+    onOpenPodcast: (String) -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Spacer(Modifier.height(24.dp))
+    Text(
+        "Search",
+        color = c.text,
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 32.sp,
+    )
+    Spacer(Modifier.height(2.dp))
+    Text(
+        "Powered by the Podcast Index",
+        color = c.textMute,
+        fontSize = 13.sp,
+    )
+    Spacer(Modifier.height(16.dp))
+    SearchBar(
+        value = state.query,
+        onValueChange = onQueryChange,
+        onClear = { onQueryChange("") },
+    )
+    Spacer(Modifier.height(14.dp))
+    TabRow(current = state.tab, onSelect = onTabSelect)
+    Spacer(Modifier.height(16.dp))
+
+    when {
+        state.loading ->
+            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                CircularProgressIndicator(color = c.pink)
+            }
+        state.error != null ->
+            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                Text(state.error!!, color = c.danger)
+            }
+        state.results.isEmpty() && state.query.isNotBlank() ->
+            Box(
+                Modifier.fillMaxSize(),
+                Alignment.Center,
+            ) {
+                Text("No results", color = c.textMute)
+            }
+        state.results.isEmpty() -> {
+            val target =
+                when {
+                    state.recommendations.isEmpty() && state.recsLoading -> EmptyQueryContent.Loading
+                    state.recommendations.isNotEmpty() -> EmptyQueryContent.ForYou
+                    else -> EmptyQueryContent.ColdStart
                 }
-                else -> {
-                    ResultsCaption(count = state.results.size)
-                    Spacer(Modifier.height(12.dp))
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(bottom = 24.dp),
-                    ) {
-                        itemsIndexed(state.results, key = { _, p -> p.id }) { index, p ->
-                            ResultCard(
-                                p = p,
-                                isTopMatch = index == 0,
-                                onClick = { onOpenPodcast(p.id) },
-                            )
-                        }
-                        if (state.hasMore) {
-                            item(key = "load-more") {
-                                LoadMoreRow(loading = state.loadingMore, onClick = onLoadMore)
-                            }
-                        }
+            Crossfade(targetState = target, label = "empty-query-content") { which ->
+                when (which) {
+                    EmptyQueryContent.Loading ->
+                        RecommendationsLoading(quip = state.recsLoadingQuip)
+                    EmptyQueryContent.ForYou ->
+                        ForYouSection(
+                            items = state.recommendations,
+                            inlineLoading = state.recsLoading,
+                            inlineQuip = state.recsLoadingQuip,
+                            onReshuffle = onReshuffle,
+                            onOpenPodcast = onOpenPodcast,
+                        )
+                    EmptyQueryContent.ColdStart ->
+                        SearchEmptyState(
+                            categories = state.popularCategories,
+                            onPickTopic = onPickTopic,
+                        )
+                }
+            }
+        }
+        else -> {
+            ResultsCaption(count = state.results.size)
+            Spacer(Modifier.height(12.dp))
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(bottom = 24.dp),
+            ) {
+                itemsIndexed(state.results, key = { _, p -> p.id }) { index, p ->
+                    ResultCard(
+                        p = p,
+                        isTopMatch = index == 0,
+                        onClick = { onOpenPodcast(p.id) },
+                    )
+                }
+                if (state.hasMore) {
+                    item(key = "load-more") {
+                        LoadMoreRow(loading = state.loadingMore, onClick = onLoadMore)
                     }
                 }
             }
         }
-        SearchToast(text = toastText, onDone = onToastDone)
     }
 }
 
