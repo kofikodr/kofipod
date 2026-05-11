@@ -43,7 +43,7 @@ import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
  * Mode-aware tablet navigation rail. Phase 1 Task 1.3 of
  * `docs/superpowers/plans/2026-05-11-tablet-phase-01-foundation.md`.
  *
- * Renders the 5 tablet destinations (Library, Search, Downloads, Stats, Settings) in
+ * Renders the 6 tablet destinations (Library, Search, Downloads, Stats, Bookmarks, Settings) in
  * icon-only, icon+label, or expanded layout per [TabletSize.railMode]. Selection
  * mechanics mirror the phone bottom nav: pop-to-start, launchSingleTop, no-op on
  * re-selecting the active tab.
@@ -108,6 +108,12 @@ internal val TABS_TABLET =
             Route.Stats::class.qualifiedName!!,
             "Stats",
             KPIconName.Chart,
+        ),
+        RailDestination(
+            Route.Bookmarks,
+            Route.Bookmarks::class.qualifiedName!!,
+            "Bookmarks",
+            KPIconName.Bookmark,
         ),
         RailDestination(
             Route.Settings,

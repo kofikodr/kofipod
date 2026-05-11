@@ -416,22 +416,26 @@ internal fun LibraryHeader(
             fontSize = 32.sp,
             modifier = Modifier.weight(1f),
         )
-        Box(
-            Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(c.bgSubtle)
-                .clickable(onClick = onOpenBookmarks),
-            contentAlignment = Alignment.Center,
-        ) {
-            KPIcon(
-                name = KPIconName.Bookmark,
-                color = c.purple,
-                size = 20.dp,
-            )
+        // Bookmarks header icon is the only entry point on phone (no rail). On tablet
+        // the rail carries a Bookmarks destination, so we hide this to avoid redundancy.
+        if (LocalTabletSize.current == null) {
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(c.bgSubtle)
+                    .clickable(onClick = onOpenBookmarks),
+                contentAlignment = Alignment.Center,
+            ) {
+                KPIcon(
+                    name = KPIconName.Bookmark,
+                    color = c.purple,
+                    size = 20.dp,
+                )
+            }
         }
         if (showAddButton) {
-            Spacer(Modifier.width(10.dp))
+            if (LocalTabletSize.current == null) Spacer(Modifier.width(10.dp))
             Box(
                 Modifier
                     .size(44.dp)
