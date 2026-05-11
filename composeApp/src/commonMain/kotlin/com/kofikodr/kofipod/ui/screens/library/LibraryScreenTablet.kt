@@ -268,8 +268,6 @@ internal fun LibraryContentTabletMasterDetail(
                     onOpenList = onOpenList,
                     onOpenSearch = onOpenSearch,
                     onOpenStarterPack = onOpenStarterPack,
-                    onOpenBookmarks = onOpenBookmarks,
-                    onOpenStats = onOpenStats,
                     onOpenLibrarySearch = onOpenLibrarySearch,
                     onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
                     onNewList = onNewList,
