@@ -651,7 +651,7 @@ private fun TileSurface(
  * matching the `RecentRow` convention.
  */
 @Composable
-private fun ListMosaic(
+internal fun ListMosaic(
     members: List<Podcast>,
     size: Dp,
     seed: Int,
@@ -787,7 +787,7 @@ private fun UnfiledTile(
     }
 }
 
-private val UNFILED_SEED = "unfiled".hashCode()
+internal val UNFILED_SEED = "unfiled".hashCode()
 
 @Composable
 private fun NewListTile(

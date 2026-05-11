@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import com.android.resources.Density
@@ -15,6 +16,8 @@ import com.kofikodr.kofipod.db.PodcastList
 import com.kofikodr.kofipod.playlists.SmartPlaylist
 import com.kofikodr.kofipod.playlists.SmartPlaylistPredicate
 import com.kofikodr.kofipod.ui.layout.TabletSize
+import com.kofikodr.kofipod.ui.palette.PaletteCache
+import com.kofikodr.kofipod.ui.palette.PalettePort
 import com.kofikodr.kofipod.ui.screens.library.LibraryContent
 import com.kofikodr.kofipod.ui.screens.library.LibraryGroup
 import com.kofikodr.kofipod.ui.screens.library.LibraryUiState
@@ -22,8 +25,12 @@ import com.kofikodr.kofipod.ui.screens.library.SmartPlaylistTileData
 import com.kofikodr.kofipod.ui.theme.KofipodTheme
 import com.kofikodr.kofipod.ui.theme.KofipodThemeMode
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
+import org.junit.After
 import org.junit.Rule
 import org.junit.Test
+import org.koin.compose.KoinApplication
+import org.koin.core.context.stopKoin
+import org.koin.dsl.module
 
 /**
  * Paparazzi baselines for [LibraryContent].
@@ -40,6 +47,14 @@ import org.junit.Test
  * SmartPlaylist chrome is exercised by its own snapshot suite.
  */
 class LibraryScreenSnapshots {
+    @After
+    fun tearDownKoin() {
+        // Defensive: Koin-compose's KoinApplication composable uses a scoped context
+        // on current versions, but stopping the global context between snapshots
+        // guarantees isolation regardless of which Koin-compose version is in use.
+        runCatching { stopKoin() }
+    }
+
     @get:Rule
     val paparazzi =
         Paparazzi(
@@ -162,31 +177,45 @@ class LibraryScreenSnapshots {
     }
 }
 
+private val NoOpPalettePort =
+    object : PalettePort {
+        override suspend fun extract(model: Any?): Pair<Color, Color>? = null
+    }
+
 @Composable
 private fun LibraryHarness(
     state: LibraryUiState,
     size: TabletSize?,
 ) {
-    KofipodTheme(KofipodThemeMode.Light) {
-        val c = LocalKofipodColors.current
-        Box(modifier = Modifier.fillMaxSize().background(c.bg)) {
-            LibraryContent(
-                state = state,
-                onOpenPodcast = {},
-                onOpenList = {},
-                onOpenSearch = {},
-                onOpenStarterPack = {},
-                onOpenBookmarks = {},
-                onOpenStats = {},
-                onOpenLibrarySearch = {},
-                onOpenSmartPlaylistDetail = {},
-                onNewList = {},
-                onLongPressPodcast = {},
-                onLongPressList = {},
-                onLongPressSmartPlaylist = {},
-                onImportOpml = {},
-                size = size,
-            )
+    KoinApplication(application = {
+        modules(
+            module {
+                single<PalettePort> { NoOpPalettePort }
+                single { PaletteCache(port = get()) }
+            },
+        )
+    }) {
+        KofipodTheme(KofipodThemeMode.Light) {
+            val c = LocalKofipodColors.current
+            Box(modifier = Modifier.fillMaxSize().background(c.bg)) {
+                LibraryContent(
+                    state = state,
+                    onOpenPodcast = {},
+                    onOpenList = {},
+                    onOpenSearch = {},
+                    onOpenStarterPack = {},
+                    onOpenBookmarks = {},
+                    onOpenStats = {},
+                    onOpenLibrarySearch = {},
+                    onOpenSmartPlaylistDetail = {},
+                    onNewList = {},
+                    onLongPressPodcast = {},
+                    onLongPressList = {},
+                    onLongPressSmartPlaylist = {},
+                    onImportOpml = {},
+                    size = size,
+                )
+            }
         }
     }
 }

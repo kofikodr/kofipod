@@ -3,14 +3,15 @@ package com.kofikodr.kofipod.ui.screens.library
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -37,6 +39,7 @@ import com.kofikodr.kofipod.db.Podcast
 import com.kofikodr.kofipod.db.PodcastList
 import com.kofikodr.kofipod.ui.layout.MasterDetailPane
 import com.kofikodr.kofipod.ui.layout.TabletSize
+import com.kofikodr.kofipod.ui.palette.rememberTileVisuals
 import com.kofikodr.kofipod.ui.primitives.KPIcon
 import com.kofikodr.kofipod.ui.primitives.KPIconName
 import com.kofikodr.kofipod.ui.primitives.SectionLabel
@@ -84,7 +87,15 @@ internal fun LibraryContentTabletSingle(
     val cardWidth = if (size == TabletSize.Tablet10Port) 320.dp else 260.dp
     val gridCellMin = if (size == TabletSize.Tablet10Port) 300.dp else 260.dp
 
-    val recent: List<Podcast> = podcasts.sortedByDescending { it.addedAt }.take(RECENT_LIMIT)
+    // Only sort/take when the Recently opened section is actually about to render;
+    // master-detail callers pass `showRecentlyOpened = false` and would otherwise
+    // pay for the derivation on every recomposition while not using the result.
+    val recent: List<Podcast> =
+        if (showRecentlyOpened) {
+            podcasts.sortedByDescending { it.addedAt }.take(RECENT_LIMIT)
+        } else {
+            emptyList()
+        }
 
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = gridCellMin),
@@ -138,7 +149,8 @@ internal fun LibraryContentTabletSingle(
                         TabletFolderCard(
                             width = cardWidth,
                             title = list.name,
-                            subtitle = "${members.size} SHOWS",
+                            members = members,
+                            seed = list.id.hashCode(),
                             hasNew = list.id in state.groupsWithNew,
                             onClick = { onOpenList(list.id) },
                             onLongClick = { onLongPressList(list) },
@@ -149,7 +161,8 @@ internal fun LibraryContentTabletSingle(
                             TabletFolderCard(
                                 width = cardWidth,
                                 title = "Unfiled",
-                                subtitle = "${unfiledPodcasts.size} SHOWS",
+                                members = unfiledPodcasts,
+                                seed = UNFILED_SEED,
                                 hasNew = null in state.groupsWithNew,
                                 onClick = { onOpenList(null) },
                                 onLongClick = null,
@@ -301,6 +314,8 @@ internal fun LibraryContentTabletMasterDetail(
                 onLongPressPodcast = onLongPressPodcast,
             )
         },
+        // We've already filtered out the empty-recent case above, so the detail
+        // pane is always non-empty by the time we reach this branch.
         hasSelection = true,
     )
 }
@@ -338,67 +353,91 @@ internal fun TabletRecentlyOpenedPane(
 
 /**
  * Folder card used in the tablet Folders horizontal-scroll row. Fixed [width]
- * (260 dp on 8"P / 320 dp on 10"P), 120 dp tall, rounded surface with the folder
- * glyph, name, "N SHOWS" subtitle, and an optional NEW dot.
+ * (260 dp on 8"P / 320 dp on 10"P), 120 dp tall. Brings the phone tile look-and-feel
+ * into the strip: sampled-palette background derived from [members]' artwork, a
+ * mosaic of up to 4 thumbnails on the right, folder glyph + title + "N SHOWS" on
+ * the left, and an optional NEW dot.
+ *
+ * Falls back to a seeded gradient + muted icon when no member has artwork yet.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun TabletFolderCard(
     width: Dp,
     title: String,
-    subtitle: String,
+    members: List<Podcast>,
+    seed: Int,
     hasNew: Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)?,
 ) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
+    val visuals = rememberTileVisuals(members = members, fallbackSeed = seed)
+
+    val onSampledBg = visuals.sampled
+    val textColor = if (onSampledBg) Color.White else c.text
+    val subTextColor = if (onSampledBg) Color.White.copy(alpha = 0.85f) else c.textMute
+    val folderColor = if (onSampledBg) Color.White.copy(alpha = 0.9f) else c.purple
+
     val clickModifier =
         if (onLongClick != null) {
             Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
         } else {
             Modifier.clickable(onClick = onClick)
         }
-    Box(
+    Row(
         Modifier
             .width(width)
             .height(120.dp)
             .clip(RoundedCornerShape(r.md))
-            .background(c.surface)
-            .border(1.dp, c.border, RoundedCornerShape(r.md))
+            .background(visuals.brush)
             .then(clickModifier)
             .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        KPIcon(
-            name = KPIconName.Folder,
-            color = c.purple,
-            size = 22.dp,
-            modifier = Modifier.align(Alignment.TopStart),
-        )
-        if (hasNew) {
-            NewDot(
-                ringColor = c.surface,
-                modifier = Modifier.align(Alignment.TopEnd),
+        Column(
+            Modifier.weight(1f).fillMaxHeight(),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            KPIcon(
+                name = KPIconName.Folder,
+                color = folderColor,
+                size = 22.dp,
             )
+            Column {
+                Text(
+                    title,
+                    color = textColor,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "${members.size} SHOWS",
+                    color = subTextColor,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 0.6.sp,
+                )
+            }
         }
-        Column(Modifier.align(Alignment.BottomStart)) {
-            Text(
-                title,
-                color = c.text,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+        Spacer(Modifier.width(12.dp))
+        Box(Modifier.fillMaxHeight()) {
+            ListMosaic(
+                members = members,
+                size = 92.dp,
+                seed = seed,
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                subtitle,
-                color = c.textMute,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                letterSpacing = 0.6.sp,
-            )
+            if (hasNew) {
+                NewDot(
+                    ringColor = if (onSampledBg) Color.White else c.surface,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(end = 2.dp, top = 2.dp),
+                )
+            }
         }
     }
 }

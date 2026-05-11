@@ -53,7 +53,7 @@ data class LibraryUiState(
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryViewModel(
     private val repo: LibraryRepository,
-    episodes: EpisodeSource,
+    private val episodes: EpisodeSource,
     stats: StatsRepository,
     private val opml: OpmlController,
     private val pro: ProEntitlementRepository,
