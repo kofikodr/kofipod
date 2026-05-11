@@ -68,7 +68,14 @@ fun EpisodeDetailScreen(
     onOpenAiSetup: () -> Unit,
     onOpenAskGemini: (String) -> Unit,
     onOpenSnippetEditor: (String) -> Unit,
-    viewModel: EpisodeDetailViewModel = koinViewModel(parameters = { parametersOf(episodeId) }),
+    hostMode: HostMode = HostMode.Standalone,
+    // `key = episodeId` is load-bearing for embedded use (Podcast detail
+    // tablet-landscape master-detail): the ViewModelStoreOwner stays the same as
+    // the user picks different episodes in the master list, so without a per-id
+    // key Koin would hand out the FIRST VM for every subsequent selection — the
+    // right pane would stick on episode #1.
+    viewModel: EpisodeDetailViewModel =
+        koinViewModel(key = episodeId, parameters = { parametersOf(episodeId) }),
 ) {
     val state by viewModel.state.collectAsState()
     val savedItems by viewModel.saved.collectAsState()
@@ -77,6 +84,7 @@ fun EpisodeDetailScreen(
         state = state,
         saved = savedItems,
         size = tabletSize,
+        hostMode = hostMode,
         onBack = onBack,
         onShare = viewModel::share,
         onPlay = {
@@ -181,10 +189,16 @@ internal fun EpisodeDetailContent(
     }
 
     if (hostMode == HostMode.MasterDetailPane) {
-        // Host (Podcast detail master-detail in Phase 8) owns scroll, padding,
-        // background and the back/share affordances. Render only the content
-        // column — no TopBar, no width cap, no outer Box.
-        Column(Modifier.fillMaxWidth()) {
+        // Host (Podcast detail master-detail) owns padding, background and the
+        // back/share affordances. We still own scroll: the embedded body
+        // (artwork strip, description, AI tabs, bookmarks/snippets) is taller
+        // than the right pane on real episodes, so without a scroll container
+        // its tail would clip silently.
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+        ) {
             content()
         }
         return
@@ -237,7 +251,7 @@ internal fun EpisodeDetailContent(
  * embedded in a host that provides scroll, padding, background, and navigation
  * affordances ([MasterDetailPane], used by Podcast detail's right pane in Phase 8).
  */
-internal enum class HostMode { Standalone, MasterDetailPane }
+enum class HostMode { Standalone, MasterDetailPane }
 
 @Composable
 private fun TopBar(

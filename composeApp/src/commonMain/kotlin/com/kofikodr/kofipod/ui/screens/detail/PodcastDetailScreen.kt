@@ -22,6 +22,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -45,7 +46,6 @@ import com.kofikodr.kofipod.ui.layout.LocalTabletSize
 import com.kofikodr.kofipod.ui.layout.MasterDetailPane
 import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.permission.rememberNotificationPermissionRequester
-import com.kofikodr.kofipod.ui.primitives.KPButton
 import com.kofikodr.kofipod.ui.primitives.KPIcon
 import com.kofikodr.kofipod.ui.primitives.KPIconName
 import com.kofikodr.kofipod.ui.primitives.KofipodArtwork
@@ -70,6 +70,13 @@ fun PodcastDetailScreen(
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
     onOpenEpisode: (String) -> Unit,
+    // Defaults so the SearchScreen embed (which renders this screen with
+    // LocalTabletSize forced to `null`, i.e. phone single-column) doesn't need
+    // to plumb master-detail-only callbacks it can't trigger. Real navigation
+    // is supplied by the standalone NavHost call site.
+    onOpenAiSetup: () -> Unit = {},
+    onOpenAskGemini: (String) -> Unit = {},
+    onOpenSnippetEditor: (String) -> Unit = {},
     // `key = podcastId` is load-bearing for embedded use (Search tablet-landscape
     // master-detail): the ViewModelStoreOwner stays the same as the user clicks
     // through results, so without a per-id key Koin would hand out the FIRST VM
@@ -159,11 +166,14 @@ fun PodcastDetailScreen(
         },
         onToggleAutoDownload = { viewModel.toggleAutoDownload(it) },
         onEpisodeTap = onEpisodeTap,
-        onEpisodeOpen = onOpenEpisode,
         onPlayEpisode = { viewModel.play(it) },
         onDownloadEpisode = { viewModel.download(it) },
         onShareEpisode = { viewModel.shareEpisode(it) },
         onLoadMore = { viewModel.loadMoreEpisodes() },
+        onOpenPlayer = onOpenPlayer,
+        onOpenAiSetup = onOpenAiSetup,
+        onOpenAskGemini = onOpenAskGemini,
+        onOpenSnippetEditor = onOpenSnippetEditor,
     )
 
     if (listPickerOpen) {
@@ -184,17 +194,12 @@ fun PodcastDetailScreen(
  *  - Phone (`null`) and tablet portraits (`Tablet8Port` / `Tablet10Port`): today's
  *    single-column LazyColumn body — unchanged from pre-Phase-8.
  *  - Tablet landscape (`Tablet8Land` / `Tablet10Land`): master-detail. Master is the
- *    same single-column body; detail pane previews the selected episode and offers an
- *    "Open" CTA that navigates to the full Episode detail route.
+ *    same single-column body; detail pane embeds the full [EpisodeDetailScreen] for
+ *    the selected episode via `HostMode.MasterDetailPane`.
  *
  * `selectedEpisode` is only consumed by the landscape branch but lives on the signature
  * so the screen-level hoist stays uniform. `onEpisodeTap` is the single size-aware
- * row-tap callback (see [routeEpisodeTap] upstream); `onEpisodeOpen` is the separate
- * "Open" gesture in the landscape detail pane and the phone/portrait navigate path.
- *
- * The full tab-embedded detail pane (Overview / Chapters / Mentioned / Discuss) from
- * the spec is deliberately deferred — see the plan doc's "Tab embedding deferred" note.
- * This Phase 8 ships the preview-pane variant, mirroring Library and Search.
+ * row-tap callback (see [routeEpisodeTap] upstream).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -213,11 +218,14 @@ internal fun PodcastDetailContent(
     onDownloadNewest: () -> Unit,
     onToggleAutoDownload: (Boolean) -> Unit,
     onEpisodeTap: (String) -> Unit,
-    onEpisodeOpen: (String) -> Unit,
     onPlayEpisode: (String) -> Unit,
     onDownloadEpisode: (String) -> Unit,
     onShareEpisode: (String) -> Unit,
     onLoadMore: () -> Unit,
+    onOpenPlayer: () -> Unit = {},
+    onOpenAiSetup: () -> Unit = {},
+    onOpenAskGemini: (String) -> Unit = {},
+    onOpenSnippetEditor: (String) -> Unit = {},
 ) {
     val summary = state.summary ?: return
     val isLandscape = size == TabletSize.Tablet8Land || size == TabletSize.Tablet10Land
@@ -256,16 +264,26 @@ internal fun PodcastDetailContent(
         detail = {
             val ep = selectedEpisode
             if (ep != null) {
-                EpisodePreviewPane(
-                    episode = ep,
-                    podcastTitle = summary.title,
-                    onPlay = { onPlayEpisode(ep.id) },
-                    onOpen = { onEpisodeOpen(ep.id) },
-                )
+                // `key(ep.id)` forces a fresh subtree (and therefore a fresh
+                // `koinViewModel` keyed by episodeId via the wrapper) when the
+                // user picks a different episode in the master list — otherwise
+                // Compose would reuse the same EpisodeDetailViewModel instance
+                // for every selection in this ViewModelStoreOwner scope.
+                key(ep.id) {
+                    EpisodeDetailScreen(
+                        episodeId = ep.id,
+                        onBack = {},
+                        onOpenPlayer = onOpenPlayer,
+                        onOpenAiSetup = onOpenAiSetup,
+                        onOpenAskGemini = onOpenAskGemini,
+                        onOpenSnippetEditor = onOpenSnippetEditor,
+                        hostMode = HostMode.MasterDetailPane,
+                    )
+                }
             }
         },
         hasSelection = selectedEpisode != null,
-        masterWeight = 0.46f,
+        masterWeight = 0.5f,
         emptyDetail = { EmptyDetailHint(text = "Tap an episode to preview") },
     )
 }
@@ -455,98 +473,6 @@ private fun PodcastDetailSingleColumn(
             }
 
             item { Spacer(Modifier.height(24.dp)) }
-        }
-    }
-}
-
-/**
- * Right-pane preview for the selected episode (tablet landscapes). Eyebrow date +
- * duration, title, podcast name + duration meta, Resume/Play CTA, "Open" affordance
- * that navigates to the full Episode detail route, and the truncated description.
- *
- * No tabs (Chapters / Mentioned / Discuss) — those are deferred to a follow-up; the
- * "Open" button is the bridge to the full experience in the meantime.
- */
-@Composable
-internal fun EpisodePreviewPane(
-    episode: Episode,
-    podcastTitle: String,
-    onPlay: () -> Unit,
-    onOpen: () -> Unit,
-) {
-    val c = LocalKofipodColors.current
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(c.bg)
-            .padding(24.dp),
-    ) {
-        val durationSec = episode.durationSec.toInt()
-        val eyebrowParts = mutableListOf<String>()
-        episode.episodeNumber?.let { eyebrowParts += "EP $it" }
-        if (episode.publishedAt > 0) eyebrowParts += formatDate(episode.publishedAt)
-        if (eyebrowParts.isNotEmpty()) {
-            Text(
-                eyebrowParts.joinToString("  ·  "),
-                color = c.pink,
-                fontWeight = FontWeight.Bold,
-                fontSize = 11.sp,
-                letterSpacing = 0.08.em,
-            )
-            Spacer(Modifier.height(8.dp))
-        }
-        Text(
-            episode.title,
-            color = c.text,
-            fontWeight = FontWeight.ExtraBold,
-            fontSize = 22.sp,
-            lineHeight = 28.sp,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(8.dp))
-        val metaParts = mutableListOf(podcastTitle)
-        if (durationSec > 0) metaParts += formatDuration(durationSec)
-        if (episode.fileSizeBytes > 0) metaParts += formatMb(episode.fileSizeBytes)
-        Text(
-            metaParts.joinToString("  ·  "),
-            color = c.textMute,
-            fontSize = 13.sp,
-            fontFamily = FontFamily.Monospace,
-        )
-        Spacer(Modifier.height(20.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            KPButton(
-                label = "Play",
-                onClick = onPlay,
-            )
-            Spacer(Modifier.width(12.dp))
-            Box(
-                Modifier
-                    .clip(RoundedCornerShape(999.dp))
-                    .border(1.dp, c.border, RoundedCornerShape(999.dp))
-                    .clickable { onOpen() }
-                    .padding(horizontal = 18.dp, vertical = 12.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    "Open",
-                    color = c.textSoft,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                )
-            }
-        }
-        if (episode.description.isNotBlank()) {
-            Spacer(Modifier.height(20.dp))
-            Text(
-                episode.description,
-                color = c.textSoft,
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-                maxLines = 10,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }
@@ -1070,11 +996,11 @@ private fun PickerRow(
     }
 }
 
-// Projects an unsubscribed-feed `EpisodePreview` into a transient `Episode` that
-// `EpisodePreviewPane` can render. Never persisted — only used to feed the
-// landscape preview pane when the user is browsing a podcast they haven't saved.
-// Missing fields (description, fileSizeBytes, imageUrl, etc.) collapse to the
-// SQLDelight schema's NOT-NULL defaults so the pane just elides them.
+// Projects an unsubscribed-feed `EpisodePreview` into a transient `Episode` so the
+// landscape master row can identify the selected episode and pass its id into the
+// embedded `EpisodeDetailScreen`. Never persisted — `EpisodeDetailViewModel`
+// resolves unsubscribed ids through `RemoteEpisodeCache`. Missing fields collapse
+// to the SQLDelight schema's NOT-NULL defaults.
 private fun EpisodePreview.toTransientEpisode(podcastId: String): Episode =
     Episode(
         id = id,

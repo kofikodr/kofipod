@@ -87,26 +87,21 @@ class PodcastDetailScreenSnapshots {
         }
     }
 
+    // Landscape `withSelection` baselines were retired in the slice that wired the
+    // right pane to the full `EpisodeDetailScreen` (Koin-backed + stateful) — that
+    // composable can't be driven from Paparazzi without standing up Koin and the
+    // playback / repository graph. Coverage of the embedded body lives in
+    // `EpisodeDetailScreenSnapshots` (which drives the stateless `EpisodeDetailContent`
+    // directly in `HostMode.MasterDetailPane`). What's still snap-checked here is the
+    // landscape master pane + empty-detail geometry via the `noSelection` cases.
     @Test
-    fun podcastDetail_populated_tablet8Land_withSelection_light() {
+    fun podcastDetail_populated_tablet8Land_noSelection_light() {
         useLandscapeTabletConfig(width = 1200, height = 800)
         paparazzi.snapshot {
             PodcastDetailHarness(
                 state = POPULATED_FIXTURE,
                 size = TabletSize.Tablet8Land,
-                selectedEpisode = POPULATED_FIXTURE.storedEpisodes.first(),
-            )
-        }
-    }
-
-    @Test
-    fun podcastDetail_populated_tablet10Land_withSelection_light() {
-        useLandscapeTabletConfig(width = 1400, height = 1000)
-        paparazzi.snapshot {
-            PodcastDetailHarness(
-                state = POPULATED_FIXTURE,
-                size = TabletSize.Tablet10Land,
-                selectedEpisode = POPULATED_FIXTURE.storedEpisodes.first(),
+                selectedEpisode = null,
             )
         }
     }
@@ -181,7 +176,6 @@ private fun PodcastDetailHarness(
                 onDownloadNewest = {},
                 onToggleAutoDownload = {},
                 onEpisodeTap = {},
-                onEpisodeOpen = {},
                 onPlayEpisode = {},
                 onDownloadEpisode = {},
                 onShareEpisode = {},

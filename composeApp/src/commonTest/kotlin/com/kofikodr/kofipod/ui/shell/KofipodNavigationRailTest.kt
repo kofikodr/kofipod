@@ -14,10 +14,13 @@ import kotlin.test.assertSame
  */
 class KofipodNavigationRailTest {
     @Test
-    fun `TABS_TABLET lists five destinations in spec order`() {
+    fun `TABS_TABLET lists six destinations in spec order`() {
         val labels = TABS_TABLET.map { it.label }
-        assertEquals(listOf("Library", "Search", "Downloads", "Stats", "Settings"), labels)
-        assertEquals(5, TABS_TABLET.size)
+        assertEquals(
+            listOf("Library", "Search", "Downloads", "Stats", "Bookmarks", "Settings"),
+            labels,
+        )
+        assertEquals(6, TABS_TABLET.size)
     }
 
     @Test
