@@ -99,6 +99,30 @@ class LibraryScreenSnapshots {
     }
 
     @Test
+    fun libraryPopulated_tablet8Land_noSelection_light() {
+        useLandscapeTabletConfig(width = 1200, height = 800)
+        paparazzi.snapshot {
+            LibraryHarness(
+                state = POPULATED_FIXTURE,
+                size = TabletSize.Tablet8Land,
+            )
+        }
+    }
+
+    @Test
+    fun libraryPopulated_tablet8Land_withSelection_light() {
+        useLandscapeTabletConfig(width = 1200, height = 800)
+        paparazzi.snapshot {
+            LibraryHarness(
+                state = POPULATED_FIXTURE,
+                size = TabletSize.Tablet8Land,
+                selectedPodcastId = "p1",
+                selectedEpisodes = PREVIEW_EPISODES_FIXTURE,
+            )
+        }
+    }
+
+    @Test
     fun libraryPopulated_tablet10Land_noSelection_light() {
         useLandscapeTabletConfig(width = 1400, height = 1000)
         paparazzi.snapshot {

@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.kofikodr.kofipod.ui.screens.library
 
+// TODO(library-file-split): This file has grown past 1800 lines as tablet
+// variants accreted (Phase 2 Tasks 2.2-2.3). The tablet-landscape composables
+// (LibraryContentTabletMasterDetail, SubscriptionPreviewPane, PreviewEpisodeRow)
+// can be extracted into a sibling LibraryTabletMasterDetail.kt to keep both
+// files under ~1400 lines. Track for a Phase 2 cleanup commit after Tasks 2.4
+// land — splitting now would conflict with the routing changes that task
+// brings in.
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
