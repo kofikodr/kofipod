@@ -139,7 +139,7 @@ Each phase has its own implementation plan under `docs/superpowers/plans/`. Phas
 
 1. **Foundation & navigation** — `TabletSize`, `KofipodScaffold`, rail, docked mini-player, Stats promoted to rail. (Plan: `2026-05-11-tablet-phase-01-foundation.md`)
 2. **Library** — shelves + folders + subscriptions, with landscape master-detail preview. (`-phase-02-library.md`)
-3. **Search** — master-detail with podcast preview pane and first-run starter packs. (`-phase-03-search.md`)
+3. **Search** — master-detail with podcast preview pane. (`-phase-03-search.md`) First-run starter packs in Search are **deferred** — see Phase 3 plan §3.5 deferral note.
 4. **Downloads** — header, capacity, Active / Completed sections at tablet widths. (`-phase-04-downloads.md`)
 5. **Stats** — Pour Over hero + KPIs + by-show list, single-column at all tablet sizes. (`-phase-05-stats.md`)
 6. **Settings** — index + panel master-detail on landscape, nested on portrait, Daily check-in explainer mock. (`-phase-06-settings.md`)

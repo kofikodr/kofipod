@@ -40,10 +40,16 @@
 - Phone, tablet portraits: result tap navigates to `Route.PodcastDetail` (today's behavior).
 - Tablet landscapes: result tap sets selection; the detail pane's `Latest` button navigates to `Route.PodcastDetail`. Subscribe button calls existing `SubscriptionRepository.subscribe(...)`.
 
-### 3.5 First-run starter-pack tile layout
-- Tablet portraits: starter packs as horizontal scroll of `StarterPackCard` (existing data).
-- Tablet landscapes: starter packs occupy the detail pane initially (before any search) — "Try a topic, host, or RSS link" hero in master pane + starter packs in detail. After first character typed, detail pane goes empty (or selected result).
-- **Tests:** Paparazzi for the first-run state at all 4 tablet sizes.
+### 3.5 First-run starter-pack tile layout — **DEFERRED**
+
+The original plan assumed starter-pack data and a `StarterPackCard` were available for reuse on the Search side. Implementation revealed starter packs exist as a **full screen** in Library only (`ui/screens/library/StarterPackScreen.kt` + `StarterPackViewModel.kt`), not as a reusable card-level surface. Lifting them into Search first-run would require:
+
+1. Extracting a shared `StarterPackCluster` composable from `StarterPackScreen`, **and**
+2. Wiring `StarterPackViewModel` (or a slice of it) into `SearchScreen`'s Koin factory and DI module.
+
+Both are new-feature work, not layout adaptation, so this task is **out of scope** for the tablet-layout effort. The decision is recorded in code at `composeApp/src/commonMain/kotlin/com/kofikodr/kofipod/ui/screens/search/SearchScreen.kt:947` (see TODO(tablet-design) above `SearchEmptyState`). Today's first-run cold-state (hero + categories + recents) renders unchanged at all tablet sizes — covered by the Paparazzi baselines in tasks 3.1–3.4.
+
+If product later confirms the design intent, file a follow-up plan covering the shared composable extraction and the VM wiring.
 
 ## Acceptance
 
