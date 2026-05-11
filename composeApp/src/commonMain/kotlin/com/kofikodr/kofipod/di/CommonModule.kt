@@ -255,6 +255,7 @@ val commonDataModule =
                 repo = get(),
                 port = get(),
                 store = get<BackupFolderStore>(),
+                settings = get(),
                 bus = get(),
                 appScope = get(org.koin.core.qualifier.named("appScope")),
             )
@@ -534,7 +535,7 @@ val commonDataModule =
             )
         }
         viewModel { DownloadsViewModel(get(), get()) }
-        viewModel { SchedulerInfoViewModel(get()) }
+        viewModel { SchedulerInfoViewModel(settings = get(), scheduler = get()) }
         viewModel { (podcastId: String) ->
             PodcastDetailViewModel(podcastId, get(), get(), get(), get(), get(), get(), get(), get(), get(), get())
         }

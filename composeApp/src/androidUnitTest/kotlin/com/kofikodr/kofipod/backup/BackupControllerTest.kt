@@ -283,6 +283,7 @@ class BackupControllerTest {
                     repo = realRepo(),
                     port = FakePort(),
                     store = store,
+                    settings = newSettings(),
                     bus = bus,
                     appScope = TestScope(UnconfinedTestDispatcher(testScheduler)),
                     clock = fixedClock,
@@ -315,6 +316,7 @@ class BackupControllerTest {
                     repo = realRepo(),
                     port = FakePort(),
                     store = store,
+                    settings = newSettings(),
                     bus = bus,
                     appScope = TestScope(UnconfinedTestDispatcher(testScheduler)),
                     clock = fixedClock,
@@ -352,15 +354,163 @@ class BackupControllerTest {
             assertNotNull(store.recordedLastBackupAt, "lastBackupAt updated on worker success")
         }
 
+    @Test
+    fun runBackup_logsBackupRun_inSchedulerRunLog() =
+        runTest {
+            // Auto-backup must be distinguishable from podcast-download runs in the
+            // Last-7-runs chart — pin the SchedulerRunLog `kind` field landing.
+            val settings = newSettings()
+            val store = FakeStore(initialTreeUri = "tree://test")
+            val port = FakePort()
+            val controller =
+                newController(
+                    port = port,
+                    store = store,
+                    scope = TestScope(UnconfinedTestDispatcher(testScheduler)),
+                    settings = settings,
+                )
+
+            controller.runBackup()
+            advanceUntilIdle()
+
+            val runs = com.kofikodr.kofipod.background.SchedulerRunLog.read(settings)
+            assertEquals(1, runs.size, "exactly one run appended")
+            assertEquals(
+                com.kofikodr.kofipod.background.SchedulerRunKind.Backup,
+                runs.single().runKind,
+                "appended run is tagged as a backup",
+            )
+            assertEquals(0, runs.single().inserted, "backup runs do not carry insertion counts")
+            // Pin that the injected clock — not wall time — reaches `appendBackup`.
+            // A regression to `System.currentTimeMillis()` would silently land here.
+            assertEquals(1_750_000_000_000L, runs.single().at, "run.at uses injected clock")
+        }
+
+    @Test
+    fun runBackup_pruneRetainsLastFive_andDeletesOlder() =
+        runTest {
+            // Eight pre-existing files in the folder — none of them today's run. After the
+            // controller writes the 9th, retention keeps the most recent five (by
+            // lastModified) and deletes the rest. We use filename-timestamp fallback by
+            // setting lastModifiedMs = 0 so the controller's sortKey() exercises the
+            // parseBackupFilenameTimestamp path.
+            val existing =
+                listOf(
+                    BackupFileInfo("kofipod-backup-20260101-100000.kpbak", 0L),
+                    BackupFileInfo("kofipod-backup-20260102-100000.kpbak", 0L),
+                    BackupFileInfo("kofipod-backup-20260103-100000.kpbak", 0L),
+                    BackupFileInfo("kofipod-backup-20260104-100000.kpbak", 0L),
+                    BackupFileInfo("kofipod-backup-20260105-100000.kpbak", 0L),
+                    BackupFileInfo("kofipod-backup-20260106-100000.kpbak", 0L),
+                    BackupFileInfo("kofipod-backup-20260107-100000.kpbak", 0L),
+                    BackupFileInfo(LEGACY_BACKUP_FILENAME, 0L),
+                )
+            val port = FakePort(initialBackups = existing)
+            val store = FakeStore(initialTreeUri = "tree://test")
+            val controller =
+                newController(
+                    port = port,
+                    store = store,
+                    scope = TestScope(UnconfinedTestDispatcher(testScheduler)),
+                )
+
+            controller.runBackup()
+            advanceUntilIdle()
+
+            // 8 existing + 1 new write = 9 total; retention deletes 4 oldest.
+            // Pin BOTH partitions — deleted set AND retained set — so a sort-direction
+            // bug that flips which end is "newest" would surface here.
+            assertEquals(4, port.deletes.size, "four oldest entries pruned")
+            assertTrue(LEGACY_BACKUP_FILENAME in port.deletes, "legacy filename treated as oldest backup")
+            assertTrue("kofipod-backup-20260101-100000.kpbak" in port.deletes)
+            assertTrue("kofipod-backup-20260102-100000.kpbak" in port.deletes)
+            assertTrue("kofipod-backup-20260103-100000.kpbak" in port.deletes)
+
+            // Survivor assertions: the five most recent files (by parsed filename
+            // timestamp, since lastModifiedMs is 0 in this fixture) must NOT be in
+            // the delete list. This catches a reversed-sort regression that would
+            // otherwise silently delete the wrong half.
+            val newWriteFilename = port.writes.single().filename
+            listOf(
+                "kofipod-backup-20260104-100000.kpbak",
+                "kofipod-backup-20260105-100000.kpbak",
+                "kofipod-backup-20260106-100000.kpbak",
+                "kofipod-backup-20260107-100000.kpbak",
+                newWriteFilename,
+            ).forEach { survivor ->
+                assertFalse(survivor in port.deletes, "expected $survivor to be retained")
+            }
+        }
+
+    @Test
+    fun runBackup_pruneFailure_doesNotFailTheBackup() =
+        runTest {
+            // Pruning is best-effort. If the provider refuses a delete, the backup itself
+            // still succeeded — we must surface success, not turn this into a user error.
+            // Six pre-existing files plus the new write = 7 total, which crosses the
+            // retention cap so the prune actually fires and reaches the throwing delete.
+            val files =
+                List(6) { i ->
+                    BackupFileInfo("kofipod-backup-2025010${i + 1}-100000.kpbak", 0L)
+                }.toMutableList()
+            val refusingPort =
+                object : BackupFilePort {
+                    val writes = mutableListOf<String>()
+
+                    override suspend fun pickFolder(): String? = null
+
+                    override suspend fun writeBackup(
+                        treeUri: String,
+                        filename: String,
+                        content: ByteArray,
+                    ) {
+                        writes += filename
+                        // Reflect the write so the subsequent prune sees 7 entries (real
+                        // providers expose the new file on the next list call).
+                        files += BackupFileInfo(filename, lastModifiedMs = 9_999_999_999_999L)
+                    }
+
+                    override suspend fun pickAndReadBackup(): ByteArray? = null
+
+                    override suspend fun listBackups(treeUri: String): List<BackupFileInfo> = files.toList()
+
+                    override suspend fun deleteBackup(
+                        treeUri: String,
+                        filename: String,
+                    ): Boolean = throw RuntimeException("provider refused deletion")
+                }
+            val store = FakeStore(initialTreeUri = "tree://test")
+            val controller =
+                BackupController(
+                    repo = realRepo(),
+                    port = refusingPort,
+                    store = store,
+                    settings = newSettings(),
+                    bus = UiEventBus(),
+                    appScope = TestScope(UnconfinedTestDispatcher(testScheduler)),
+                    clock = fixedClock,
+                    exitProcess = {},
+                )
+
+            controller.runBackup()
+            advanceUntilIdle()
+
+            assertEquals(1, refusingPort.writes.size, "the backup write itself completed")
+            assertEquals(BackupAction.Idle, controller.action.value, "controller is idle, not in Error")
+            assertNotNull(store.recordedLastBackupAt, "lastBackupAt is still recorded")
+        }
+
     private fun newController(
         port: FakePort,
         store: FakeStore,
         scope: CoroutineScope,
         exitProcess: () -> Unit = {},
+        settings: com.kofikodr.kofipod.data.repo.SettingsRepository = newSettings(),
     ) = BackupController(
         repo = realRepo(),
         port = port,
         store = store,
+        settings = settings,
         bus = UiEventBus(),
         appScope = scope,
         clock = fixedClock,
@@ -370,23 +520,59 @@ class BackupControllerTest {
     private class FakePort(
         private val restorePayload: ByteArray? = null,
         private val writeBlock: (suspend (String, ByteArray) -> Unit)? = null,
+        private val initialBackups: List<BackupFileInfo> = emptyList(),
     ) : BackupFilePort {
-        data class WriteCall(val treeUri: String, val content: ByteArray)
+        data class WriteCall(val treeUri: String, val filename: String, val content: ByteArray)
 
         val writes = mutableListOf<WriteCall>()
+        val deletes = mutableListOf<String>()
+        private val files = initialBackups.toMutableList()
+
+        // Far-future marker that always wins over realistic 2025/2026 timestamps used
+        // in fixture filenames. Sentinel rather than `Long.MAX_VALUE` so a debug print
+        // stays readable.
+        private val writeMarkerMs = 9_999_999_999_999L
 
         override suspend fun pickFolder(): String? = null
 
         override suspend fun writeBackup(
             treeUri: String,
+            filename: String,
             content: ByteArray,
         ) {
-            writes += WriteCall(treeUri, content)
+            writes += WriteCall(treeUri, filename, content)
             writeBlock?.invoke(treeUri, content)
+            // Reflect the write in the listing so subsequent prune sees the new file.
+            // Real providers stamp newly written documents with the current wall clock;
+            // we mirror that with a marker high enough to beat the test fixtures' parsed
+            // filename timestamps. Tests that need a specific value can replace the file
+            // entry afterwards.
+            files.removeAll { it.filename == filename }
+            files += BackupFileInfo(filename = filename, lastModifiedMs = writeMarkerMs)
         }
 
         override suspend fun pickAndReadBackup(): ByteArray? = restorePayload
+
+        override suspend fun listBackups(treeUri: String): List<BackupFileInfo> = files.toList()
+
+        override suspend fun deleteBackup(
+            treeUri: String,
+            filename: String,
+        ): Boolean {
+            deletes += filename
+            return files.removeAll { it.filename == filename }
+        }
     }
+
+    /**
+     * Real SettingsRepository backed by an in-memory SQLDelight DB. SchedulerRunLog
+     * reads/writes through `getMetaNow` + `put`; the in-memory driver makes those
+     * trivially observable without faking the repository surface.
+     */
+    private fun newSettings() =
+        com.kofikodr.kofipod.data.repo.SettingsRepository(
+            db = com.kofikodr.kofipod.testing.inMemoryDatabase(),
+        )
 
     private class FakeStore(
         initialTreeUri: String? = null,

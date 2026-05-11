@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,6 +44,10 @@ import com.kofikodr.kofipod.ui.primitives.KPIcon
 import com.kofikodr.kofipod.ui.primitives.KPIconName
 import com.kofikodr.kofipod.ui.primitives.SectionLabel
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
+import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
@@ -91,6 +96,7 @@ fun SchedulerInfoScreen(
             StatusCard(
                 enabled = state.dailyEnabled,
                 lastRun = state.runs.lastOrNull(),
+                onToggle = viewModel::setDailyCheckEnabled,
             )
 
             SectionLabel("What \"roughly once a day\" means", topSpacing = 20.dp)
@@ -113,8 +119,8 @@ fun SchedulerInfoScreen(
                 body = "If you open the app, Kofipod checks right away and resets the clock.",
             )
 
-            SectionLabel("Last 7 runs", topSpacing = 20.dp)
-            LastRunsChart(runs = state.runs.takeLast(7))
+            SectionLabel("Last 7 days", topSpacing = 20.dp)
+            LastRunsChart(runs = state.runs)
 
             Spacer(Modifier.height(32.dp))
         }
@@ -200,6 +206,7 @@ private fun HeroCard() {
 private fun StatusCard(
     enabled: Boolean,
     lastRun: SchedulerRun?,
+    onToggle: (Boolean) -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Row(
@@ -238,10 +245,12 @@ private fun StatusCard(
         Spacer(Modifier.width(8.dp))
         Switch(
             checked = enabled,
-            // SchedulerInfoViewModel is currently read-only (no toggle setter).
-            // Keep the switch interactive-looking but make it a no-op. STUB:
-            // wire through to scheduler + SettingsRepository when VM exposes it.
-            onCheckedChange = {},
+            // Toggles `KEY_DAILY_CHECK` via the VM. This flag gates both the episode-
+            // check worker AND the SAF auto-backup worker, so flipping it off here
+            // pauses every automated scheduled task; manual actions in Settings still
+            // work. The setter also calls Scheduler.enable/disable so WorkManager
+            // doesn't sit on a registered-but-suppressed periodic worker.
+            onCheckedChange = onToggle,
             colors =
                 SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
@@ -271,16 +280,18 @@ private fun buildStatusSubtitle(
 }
 
 /**
- * Format a millis-since-epoch timestamp as HH:MM in local time.
- * Pure arithmetic on epoch-ms — no timezone handling — since the run log is
- * stored in local wall time (see SchedulerRunLog). Good enough for the mock
- * display and stable across KMP targets without pulling kotlinx-datetime.
+ * Render a UTC epoch-ms timestamp as `HH:MM` in the device's local time zone.
+ * Run-log entries are written with `Clock.System.now().toEpochMilliseconds()`
+ * (UTC), so the display must convert before formatting — otherwise users on
+ * any non-UTC offset see the wrong hour.
  */
 private fun formatTimeOfDay(epochMs: Long): String {
-    val secondsOfDay = ((epochMs / 1000L) % 86400L + 86400L) % 86400L
-    val hh = (secondsOfDay / 3600L).toInt()
-    val mm = ((secondsOfDay / 60L) % 60L).toInt()
-    return "${hh.toString().padStart(2, '0')}:${mm.toString().padStart(2, '0')}"
+    val local =
+        Instant.fromEpochMilliseconds(epochMs)
+            .toLocalDateTime(TimeZone.currentSystemDefault())
+    val hh = local.hour.toString().padStart(2, '0')
+    val mm = local.minute.toString().padStart(2, '0')
+    return "$hh:$mm"
 }
 
 // --------------------------------------------------------------------------
@@ -344,6 +355,15 @@ private fun NumberedCard(
 @Composable
 private fun LastRunsChart(runs: List<SchedulerRun>) {
     val c = LocalKofipodColors.current
+    // Cache zone + today per `runs` identity. The chart re-runs on every recompose
+    // triggered by playback state etc.; the calendar date doesn't change within
+    // a screen visit, so there is no reason to re-read the system clock each frame.
+    val (today, zone) =
+        remember(runs) {
+            val z = TimeZone.currentSystemDefault()
+            Clock.System.now().toLocalDateTime(z).date to z
+        }
+    val buckets = remember(runs, today, zone) { bucketRunsByLocalDay(runs, today, zone) }
 
     Column(
         modifier =
@@ -354,39 +374,71 @@ private fun LastRunsChart(runs: List<SchedulerRun>) {
                 .border(1.dp, c.border, RoundedCornerShape(14.dp))
                 .padding(horizontal = 14.dp, vertical = 16.dp),
     ) {
-        BarChart(
-            runs = runs,
-            purple = c.purple,
-            pink = c.pink,
+        KindAwareChart(
+            buckets = buckets,
+            episodeCheck = c.purple,
+            backup = c.pink,
             track = c.purpleTint,
             textMute = c.textMute,
         )
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Start,
+        ) {
+            LegendDot(color = c.purple)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "Daily check",
+                color = c.textMute,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.width(14.dp))
+            LegendDot(color = c.pink)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "Backup",
+                color = c.textMute,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
     }
 }
 
+@Composable
+private fun LegendDot(color: Color) {
+    Box(
+        Modifier
+            .size(8.dp)
+            .clip(CircleShape)
+            .background(color),
+    )
+}
+
 /**
- * Seven thin vertical bars, one highlighted pink (most recent), the rest purple.
- * Bar height = run duration when derivable; otherwise scales to `inserted` count
- * (matches SchedulerRun shape). If fewer than 7 runs are available, the empty
- * slots show a short flat stub so the weekday axis stays aligned.
+ * One slot per calendar day in the trailing [SCHEDULER_CHART_DAYS] window, oldest on
+ * the left and today on the right. Within each slot we draw up to two mini-bars
+ * side-by-side:
+ *  - episode-check bar (left half), height scaled to the window's max daily inserted;
+ *  - backup bar (right half), fixed-height presence marker.
+ *
+ * Single-kind days get a centred mini-bar instead of two; empty days show a muted
+ * track stub. Weekday labels are derived from each bucket's real date.
  */
 @Composable
-private fun BarChart(
-    runs: List<SchedulerRun>,
-    purple: Color,
-    pink: Color,
+internal fun KindAwareChart(
+    buckets: List<DayBucket>,
+    episodeCheck: Color,
+    backup: Color,
     track: Color,
     textMute: Color,
 ) {
-    val slots = 7
-    // Newest run is the pink highlight; list is oldest-first.
-    val highlightIndex = (runs.size - 1).coerceAtLeast(0)
-    val values: List<Int> =
-        List(slots) { i ->
-            val offset = slots - runs.size
-            if (i < offset) 0 else runs[i - offset].inserted
-        }
-    val maxValue = (values.maxOrNull() ?: 0).coerceAtLeast(1)
+    val slots = buckets.size
+    val maxInserted =
+        buckets.mapNotNull { it.episodeInserted }.maxOrNull()?.coerceAtLeast(1) ?: 1
 
     Column(Modifier.fillMaxWidth()) {
         Canvas(
@@ -397,30 +449,47 @@ private fun BarChart(
             val w = size.width
             val h = size.height
             val gap = 10.dp.toPx()
-            val barWidth = ((w - gap * (slots - 1)) / slots).coerceAtLeast(1f)
-            val radius = CornerRadius(6.dp.toPx(), 6.dp.toPx())
+            val slotWidth = ((w - gap * (slots - 1)) / slots).coerceAtLeast(1f)
+            val radius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
             val minBarPx = 8.dp.toPx()
+            val backupHeightPx = (h * BACKUP_BAR_HEIGHT_RATIO).coerceAtLeast(minBarPx)
+            val miniGap = 3.dp.toPx()
+            val pairWidth = ((slotWidth - miniGap) / 2f).coerceAtLeast(1f)
 
-            values.forEachIndexed { i, v ->
-                val normalized = v.toFloat() / maxValue
-                val barH = (normalized * h).coerceAtLeast(if (v == 0) 4.dp.toPx() else minBarPx)
-                val x = i * (barWidth + gap)
-                val y = h - barH
-                val highlighted =
-                    (i == slots - 1) && runs.isNotEmpty() &&
-                        highlightIndex == runs.size - 1
-                val color =
-                    when {
-                        v == 0 -> track
-                        highlighted -> pink
-                        else -> purple
-                    }
-                drawRoundRect(
-                    color = color,
-                    topLeft = Offset(x, y),
-                    size = Size(barWidth, barH),
-                    cornerRadius = radius,
-                )
+            buckets.forEachIndexed { i, bucket ->
+                val slotLeft = i * (slotWidth + gap)
+                val hasEpisode = bucket.episodeInserted != null
+                val hasBackup = bucket.hasBackup
+                if (!hasEpisode && !hasBackup) {
+                    drawRoundRect(
+                        color = track,
+                        topLeft = Offset(slotLeft, h - 4.dp.toPx()),
+                        size = Size(slotWidth, 4.dp.toPx()),
+                        cornerRadius = radius,
+                    )
+                    return@forEachIndexed
+                }
+                if (hasEpisode) {
+                    val normalized = bucket.episodeInserted!!.toFloat() / maxInserted
+                    val barH = (normalized * h).coerceAtLeast(minBarPx)
+                    val barW = if (hasBackup) pairWidth else slotWidth
+                    drawRoundRect(
+                        color = episodeCheck,
+                        topLeft = Offset(slotLeft, h - barH),
+                        size = Size(barW, barH),
+                        cornerRadius = radius,
+                    )
+                }
+                if (hasBackup) {
+                    val barW = if (hasEpisode) pairWidth else slotWidth
+                    val barLeft = if (hasEpisode) slotLeft + pairWidth + miniGap else slotLeft
+                    drawRoundRect(
+                        color = backup,
+                        topLeft = Offset(barLeft, h - backupHeightPx),
+                        size = Size(barW, backupHeightPx),
+                        cornerRadius = radius,
+                    )
+                }
             }
         }
 
@@ -430,9 +499,9 @@ private fun BarChart(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            weekdayLabels().forEach { label ->
+            buckets.forEach { bucket ->
                 Text(
-                    label,
+                    weekdayLetter(bucket.date),
                     color = textMute,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -442,4 +511,4 @@ private fun BarChart(
     }
 }
 
-private fun weekdayLabels(): List<String> = listOf("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
+private const val BACKUP_BAR_HEIGHT_RATIO = 0.45f

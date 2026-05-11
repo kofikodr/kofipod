@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.kofikodr.kofipod.backup
 
+import com.kofikodr.kofipod.background.SchedulerRunLog
+import com.kofikodr.kofipod.data.repo.SettingsRepository
 import com.kofikodr.kofipod.ui.UiEvent
 import com.kofikodr.kofipod.ui.UiEventBus
 import kotlinx.coroutines.CoroutineScope
@@ -30,6 +32,7 @@ class BackupController(
     private val repo: BackupRepository,
     private val port: BackupFilePort,
     private val store: BackupFolderStore,
+    private val settings: SettingsRepository,
     private val bus: UiEventBus,
     private val appScope: CoroutineScope,
     private val clock: Clock = Clock.System,
@@ -85,17 +88,43 @@ class BackupController(
             return
         }
         backupMutex.withLock {
+            val now = clock.now().toEpochMilliseconds()
+            val filename = currentBackupFilename(now)
             runCatching {
                 val payload = repo.buildBackup()
-                port.writeBackup(treeUri, payload)
+                port.writeBackup(treeUri, filename, payload)
             }.onSuccess {
-                store.setLastBackupAt(clock.now().toEpochMilliseconds())
+                store.setLastBackupAt(now)
+                // Retention + run-log are both best-effort: a failure here must not
+                // surface a backup error — the user's data is already safely written.
+                runCatching { pruneBackups(treeUri) }
+                runCatching { SchedulerRunLog.appendBackup(settings, now) }
                 _action.value = BackupAction.Idle
                 bus.emit(UiEvent.Snackbar("Backup saved"))
             }.onFailure { t ->
                 _action.value = BackupAction.Error(mapBackupError(t))
             }
         }
+    }
+
+    /**
+     * Keep only [BACKUP_RETENTION_KEEP] most recent backup files in [treeUri]. Sort
+     * order is provider `lastModified` desc, with a fallback to the embedded filename
+     * timestamp for providers that don't expose a real modification time (notably Drive,
+     * which can return 0 for both `lastModified()` and `findFile().lastModified()`).
+     */
+    private suspend fun pruneBackups(treeUri: String) {
+        val files = port.listBackups(treeUri)
+        if (files.size <= BACKUP_RETENTION_KEEP) return
+        val sorted = files.sortedByDescending { it.sortKey() }
+        sorted.drop(BACKUP_RETENTION_KEEP).forEach { stale ->
+            runCatching { port.deleteBackup(treeUri, stale.filename) }
+        }
+    }
+
+    private fun BackupFileInfo.sortKey(): Long {
+        if (lastModifiedMs > 0L) return lastModifiedMs
+        return parseBackupFilenameTimestamp(filename) ?: 0L
     }
 
     fun runRestore() {
