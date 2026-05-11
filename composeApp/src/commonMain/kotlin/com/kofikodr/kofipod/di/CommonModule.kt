@@ -112,6 +112,7 @@ val commonDataModule =
         single<RecommendationsSource> { get<RecommendationsRepository>() }
         single { EpisodesRepository(get(), get()) }
         single<EpisodeSource> { get<EpisodesRepository>() }
+        single { com.kofikodr.kofipod.data.repo.RemoteEpisodeCache() }
         single { SettingsRepository(get()) }
         single { StatsRepository(get(), get()) }
         single { UpdateRepository(settings = get(), localApk = get()) }
@@ -534,7 +535,7 @@ val commonDataModule =
         viewModel { DownloadsViewModel(get(), get()) }
         viewModel { SchedulerInfoViewModel(get()) }
         viewModel { (podcastId: String) ->
-            PodcastDetailViewModel(podcastId, get(), get(), get(), get(), get(), get(), get(), get(), get())
+            PodcastDetailViewModel(podcastId, get(), get(), get(), get(), get(), get(), get(), get(), get(), get())
         }
         viewModel { (episodeId: String) ->
             EpisodeDetailViewModel(
@@ -553,6 +554,7 @@ val commonDataModule =
                 pkmExport = get(),
                 paywallRouter = get(),
                 pro = get(),
+                remoteCache = get(),
             )
         }
         viewModel {
