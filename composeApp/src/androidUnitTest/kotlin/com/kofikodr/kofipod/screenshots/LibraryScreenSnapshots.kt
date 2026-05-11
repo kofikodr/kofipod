@@ -9,6 +9,8 @@ import androidx.compose.ui.Modifier
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import com.android.resources.Density
+import com.android.resources.ScreenOrientation
+import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.db.Podcast
 import com.kofikodr.kofipod.db.PodcastList
 import com.kofikodr.kofipod.ui.layout.TabletSize
@@ -80,6 +82,46 @@ class LibraryScreenSnapshots {
         }
     }
 
+    @Test
+    fun libraryEmpty_tablet8Land_light() {
+        useLandscapeTabletConfig(width = 1200, height = 800)
+        paparazzi.snapshot {
+            LibraryHarness(state = LibraryUiState(), size = TabletSize.Tablet8Land)
+        }
+    }
+
+    @Test
+    fun libraryEmpty_tablet10Land_light() {
+        useLandscapeTabletConfig(width = 1400, height = 1000)
+        paparazzi.snapshot {
+            LibraryHarness(state = LibraryUiState(), size = TabletSize.Tablet10Land)
+        }
+    }
+
+    @Test
+    fun libraryPopulated_tablet10Land_noSelection_light() {
+        useLandscapeTabletConfig(width = 1400, height = 1000)
+        paparazzi.snapshot {
+            LibraryHarness(
+                state = POPULATED_FIXTURE,
+                size = TabletSize.Tablet10Land,
+            )
+        }
+    }
+
+    @Test
+    fun libraryPopulated_tablet10Land_withSelection_light() {
+        useLandscapeTabletConfig(width = 1400, height = 1000)
+        paparazzi.snapshot {
+            LibraryHarness(
+                state = POPULATED_FIXTURE,
+                size = TabletSize.Tablet10Land,
+                selectedPodcastId = "p1",
+                selectedEpisodes = PREVIEW_EPISODES_FIXTURE,
+            )
+        }
+    }
+
     private fun useTabletDeviceConfig(
         width: Int,
         height: Int,
@@ -95,18 +137,42 @@ class LibraryScreenSnapshots {
                 ),
         )
     }
+
+    // Landscape configs need an explicit ScreenOrientation override; without it
+    // Paparazzi rotates the canvas to portrait and width/height arguments swap.
+    private fun useLandscapeTabletConfig(
+        width: Int,
+        height: Int,
+    ) {
+        paparazzi.unsafeUpdateConfig(
+            deviceConfig =
+                DeviceConfig.PIXEL_5.copy(
+                    screenWidth = width,
+                    screenHeight = height,
+                    xdpi = 160,
+                    ydpi = 160,
+                    density = Density.MEDIUM,
+                    orientation = ScreenOrientation.LANDSCAPE,
+                ),
+        )
+    }
 }
 
 @Composable
 private fun LibraryHarness(
     state: LibraryUiState,
     size: TabletSize?,
+    selectedPodcastId: String? = null,
+    selectedEpisodes: List<Episode> = emptyList(),
 ) {
     KofipodTheme(KofipodThemeMode.Light) {
         val c = LocalKofipodColors.current
         Box(modifier = Modifier.fillMaxSize().background(c.bg)) {
             LibraryContent(
                 state = state,
+                selectedPodcastId = selectedPodcastId,
+                selectedEpisodes = selectedEpisodes,
+                onSelectPodcast = {},
                 onOpenPodcast = {},
                 onOpenList = {},
                 onOpenSearch = {},
@@ -159,6 +225,40 @@ private fun list(
         position = position,
         createdAt = 0L,
     )
+
+private fun previewEpisode(
+    podcastId: String,
+    seq: Int,
+    title: String,
+    durationSec: Long,
+): Episode =
+    Episode(
+        id = "$podcastId-ep$seq",
+        podcastId = podcastId,
+        guid = "$podcastId-ep$seq",
+        title = title,
+        description = "",
+        publishedAt = 0L,
+        durationSec = durationSec,
+        enclosureUrl = "",
+        enclosureMimeType = "audio/mpeg",
+        fileSizeBytes = 0L,
+        seasonNumber = null,
+        episodeNumber = seq.toLong(),
+        imageUrl = "",
+        chaptersUrl = null,
+        transcriptUrl = null,
+    )
+
+private val PREVIEW_EPISODES_FIXTURE: List<Episode> by lazy {
+    listOf(
+        previewEpisode("p1", 5, "How the world's smallest engines work", 42L * 60),
+        previewEpisode("p1", 4, "Field guide to weak ties", 36L * 60),
+        previewEpisode("p1", 3, "When clocks disagree", 51L * 60),
+        previewEpisode("p1", 2, "Soft systems, hard limits", 28L * 60),
+        previewEpisode("p1", 1, "Pilot: signal & noise", 19L * 60),
+    )
+}
 
 private val POPULATED_FIXTURE: LibraryUiState by lazy {
     val morning = list("morning", "Morning", 0)

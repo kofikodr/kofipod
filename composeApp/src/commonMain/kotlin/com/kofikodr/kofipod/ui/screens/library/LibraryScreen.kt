@@ -59,9 +59,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.db.Podcast
 import com.kofikodr.kofipod.db.PodcastList
+import com.kofikodr.kofipod.ui.layout.EmptyDetailHint
 import com.kofikodr.kofipod.ui.layout.LocalTabletSize
+import com.kofikodr.kofipod.ui.layout.MasterDetailPane
 import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.palette.rememberTileVisuals
 import com.kofikodr.kofipod.ui.primitives.KPButton
@@ -88,6 +91,8 @@ fun LibraryScreen(
     viewModel: LibraryViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
+    val selectedPodcastId by viewModel.selectedPodcastId.collectAsState()
+    val selectedEpisodes by viewModel.selectedEpisodes.collectAsState()
 
     var newListOpen by remember { mutableStateOf(false) }
     var pendingDeletePodcast by remember { mutableStateOf<Podcast?>(null) }
@@ -96,6 +101,9 @@ fun LibraryScreen(
 
     LibraryContent(
         state = state,
+        selectedPodcastId = selectedPodcastId,
+        selectedEpisodes = selectedEpisodes,
+        onSelectPodcast = { viewModel.selectPodcast(it) },
         onOpenPodcast = onOpenPodcast,
         onOpenList = onOpenList,
         onOpenSearch = onOpenSearch,
@@ -178,13 +186,22 @@ fun LibraryScreen(
 }
 
 /**
- * Stateless Library body. Phone branch (`size == null`) renders the today's layout
- * unchanged; the `size` parameter is a placeholder for Tasks 2.2 / 2.3 which will
- * branch on tablet portrait / master-detail variants.
+ * Stateless Library body. Branches by [size]:
+ *  - Phone (`null`): today's single-column LazyColumn body (unchanged from Slice 1).
+ *  - Tablet portrait (`Tablet8Port` / `Tablet10Port`): single-column body from Task 2.2.
+ *  - Tablet landscape (`Tablet8Land` / `Tablet10Land`): Task 2.3's master-detail body —
+ *    master pane reuses the tablet-portrait grid; detail pane previews the selected
+ *    subscription's last [LibraryViewModel.PREVIEW_EPISODE_LIMIT] episodes.
+ *
+ * `selectedPodcastId` / `selectedEpisodes` / `onSelectPodcast` are only consumed by the
+ * landscape branch but live on the signature so the screen-level hoist stays uniform.
  */
 @Composable
 internal fun LibraryContent(
     state: LibraryUiState,
+    selectedPodcastId: String?,
+    selectedEpisodes: List<Episode>,
+    onSelectPodcast: (String?) -> Unit,
     onOpenPodcast: (String) -> Unit,
     onOpenList: (String?) -> Unit,
     onOpenSearch: () -> Unit,
@@ -200,9 +217,6 @@ internal fun LibraryContent(
     onImportOpml: () -> Unit,
     size: TabletSize?,
 ) {
-    // Tablet portraits get the new single-column layout (header + folder row +
-    // adaptive grid). Phone (size == null) and tablet landscapes (8L / 10L) fall
-    // through to today's body — Task 2.3 will swap landscapes for master-detail.
     if (size == TabletSize.Tablet8Port || size == TabletSize.Tablet10Port) {
         LibraryContentTabletSingle(
             state = state,
@@ -220,6 +234,42 @@ internal fun LibraryContent(
             onLongPressSmartPlaylist = onLongPressSmartPlaylist,
             onImportOpml = onImportOpml,
             size = size,
+        )
+        return
+    }
+
+    if (size == TabletSize.Tablet8Land || size == TabletSize.Tablet10Land) {
+        // Master-detail: master mirrors portrait, detail previews the selected
+        // subscription. Tile taps in this mode select rather than navigate; the
+        // "Open" CTA in the detail pane handles navigation.
+        val masterSize = if (size == TabletSize.Tablet10Land) TabletSize.Tablet10Port else TabletSize.Tablet8Port
+        val selected: Podcast? =
+            remember(selectedPodcastId, state.groups) {
+                if (selectedPodcastId == null) {
+                    null
+                } else {
+                    state.groups.flatMap { it.podcasts }.firstOrNull { it.id == selectedPodcastId }
+                }
+            }
+        LibraryContentTabletMasterDetail(
+            state = state,
+            selectedPodcast = selected,
+            selectedEpisodes = selectedEpisodes,
+            onSelectPodcast = onSelectPodcast,
+            onOpenPodcastDetail = onOpenPodcast,
+            onOpenList = onOpenList,
+            onOpenSearch = onOpenSearch,
+            onOpenStarterPack = onOpenStarterPack,
+            onOpenBookmarks = onOpenBookmarks,
+            onOpenStats = onOpenStats,
+            onOpenLibrarySearch = onOpenLibrarySearch,
+            onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
+            onNewList = onNewList,
+            onLongPressPodcast = onLongPressPodcast,
+            onLongPressList = onLongPressList,
+            onLongPressSmartPlaylist = onLongPressSmartPlaylist,
+            onImportOpml = onImportOpml,
+            masterSize = masterSize,
         )
         return
     }
@@ -495,6 +545,193 @@ private fun LibraryContentTabletSingle(
             }
         }
     }
+}
+
+/**
+ * Tablet landscape (8"L / 10"L) master-detail layout. Master reuses the tablet-portrait
+ * single-column body verbatim (so the rail-only chrome and grid sizing already work);
+ * tile taps go through [onSelectPodcast] instead of [onOpenPodcastDetail] — the only
+ * navigation in this branch is the detail pane's "Open" CTA.
+ *
+ * The detail pane renders [SubscriptionPreviewPane] when a subscription is selected,
+ * or [EmptyDetailHint] otherwise. Per plan §2.3 the preview pulls the last
+ * [LibraryViewModel.PREVIEW_EPISODE_LIMIT] episodes via the existing
+ * `EpisodeSource.episodesFlow` — no new repo methods.
+ */
+@Composable
+private fun LibraryContentTabletMasterDetail(
+    state: LibraryUiState,
+    selectedPodcast: Podcast?,
+    selectedEpisodes: List<Episode>,
+    onSelectPodcast: (String?) -> Unit,
+    onOpenPodcastDetail: (String) -> Unit,
+    onOpenList: (String?) -> Unit,
+    onOpenSearch: () -> Unit,
+    onOpenStarterPack: () -> Unit,
+    onOpenBookmarks: () -> Unit,
+    onOpenStats: () -> Unit,
+    onOpenLibrarySearch: () -> Unit,
+    onOpenSmartPlaylistDetail: (String) -> Unit,
+    onNewList: () -> Unit,
+    onLongPressPodcast: (Podcast) -> Unit,
+    onLongPressList: (PodcastList) -> Unit,
+    onLongPressSmartPlaylist: (SmartPlaylistDomain) -> Unit,
+    onImportOpml: () -> Unit,
+    masterSize: TabletSize,
+) {
+    MasterDetailPane(
+        master = {
+            LibraryContentTabletSingle(
+                state = state,
+                onOpenPodcast = { onSelectPodcast(it) },
+                onOpenList = onOpenList,
+                onOpenSearch = onOpenSearch,
+                onOpenStarterPack = onOpenStarterPack,
+                onOpenBookmarks = onOpenBookmarks,
+                onOpenStats = onOpenStats,
+                onOpenLibrarySearch = onOpenLibrarySearch,
+                onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
+                onNewList = onNewList,
+                onLongPressPodcast = onLongPressPodcast,
+                onLongPressList = onLongPressList,
+                onLongPressSmartPlaylist = onLongPressSmartPlaylist,
+                onImportOpml = onImportOpml,
+                size = masterSize,
+            )
+        },
+        detail = {
+            // selectedPodcast == null is filtered out by hasSelection upstream, but
+            // we still guard the cast so the composable stays total.
+            val pc = selectedPodcast
+            if (pc != null) {
+                SubscriptionPreviewPane(
+                    podcast = pc,
+                    episodes = selectedEpisodes,
+                    onOpen = { onOpenPodcastDetail(pc.id) },
+                )
+            }
+        },
+        hasSelection = selectedPodcast != null,
+        emptyDetail = { EmptyDetailHint(text = "Pick a subscription to preview") },
+    )
+}
+
+/**
+ * Right-pane preview for a selected subscription. Renders a small podcast header,
+ * a "Latest" subhead, the last N episodes as compact rows, and an "Open" CTA at the
+ * bottom that navigates to the full podcast detail screen.
+ */
+@Composable
+private fun SubscriptionPreviewPane(
+    podcast: Podcast,
+    episodes: List<Episode>,
+    onOpen: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(c.bg)
+            .padding(20.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            KofipodArtwork(
+                size = 64.dp,
+                seed = podcast.id.hashCode(),
+                label = podcast.title,
+                radius = 12.dp,
+                model = podcast.artworkUrl.ifBlank { null },
+                contentDescription = podcast.title,
+            )
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    podcast.title,
+                    color = c.text,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (podcast.author.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        podcast.author,
+                        color = c.textMute,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+        SectionLabel(title = "Latest", topSpacing = 22.dp)
+        if (episodes.isEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "No episodes yet.",
+                color = c.textMute,
+                fontSize = 13.sp,
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 8.dp),
+            ) {
+                items(episodes.size) { idx ->
+                    val ep = episodes[idx]
+                    PreviewEpisodeRow(
+                        episode = ep,
+                        showDivider = idx < episodes.lastIndex,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        KPButton(
+            label = "Open",
+            onClick = onOpen,
+        )
+    }
+}
+
+@Composable
+private fun PreviewEpisodeRow(
+    episode: Episode,
+    showDivider: Boolean,
+) {
+    val c = LocalKofipodColors.current
+    Column(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(vertical = 10.dp)) {
+            Text(
+                episode.title,
+                color = c.text,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (episode.durationSec > 0) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    formatDurationMinutes(episode.durationSec),
+                    color = c.textMute,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 0.6.sp,
+                )
+            }
+        }
+        if (showDivider) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+        }
+    }
+}
+
+private fun formatDurationMinutes(durationSec: Long): String {
+    val minutes = (durationSec / 60).coerceAtLeast(0)
+    return "$minutes MIN"
 }
 
 /**
