@@ -459,11 +459,11 @@ val commonDataModule =
                 telemetry = get(),
             )
         }
-        // 8 positional deps (slice 7 task 10): repo, episodes, stats, opml, pro,
-        // paywallRouter, smartPlaylistRepo, smartPlaylistResolver. Bump in lockstep
-        // with the LibraryViewModel ctor declaration order — Koin throws at runtime
-        // if these drift.
-        viewModel { LibraryViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
+        // 7 positional deps: repo, episodes, opml, pro, paywallRouter,
+        // smartPlaylistRepo, smartPlaylistResolver. Bump in lockstep with the
+        // LibraryViewModel ctor declaration order — Koin throws at runtime if
+        // these drift.
+        viewModel { LibraryViewModel(get(), get(), get(), get(), get(), get(), get()) }
         viewModel {
             com.kofikodr.kofipod.ui.screens.bookmarks.BookmarksViewModel(
                 bookmarks = get(),

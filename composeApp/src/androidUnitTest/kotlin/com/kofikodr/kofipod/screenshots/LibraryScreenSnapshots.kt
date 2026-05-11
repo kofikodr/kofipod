@@ -204,8 +204,6 @@ private fun LibraryHarness(
                     onOpenList = {},
                     onOpenSearch = {},
                     onOpenStarterPack = {},
-                    onOpenBookmarks = {},
-                    onOpenStats = {},
                     onOpenLibrarySearch = {},
                     onOpenSmartPlaylistDetail = {},
                     onNewList = {},
@@ -286,7 +284,6 @@ private val POPULATED_FIXTURE: LibraryUiState by lazy {
     LibraryUiState(
         groups = groups,
         groupsWithNew = setOf("morning"),
-        statsHasUnseenTierChange = false,
         smartPlaylists = emptyList(),
     )
 }
@@ -319,7 +316,6 @@ private val POPULATED_WITH_SMART_PLAYLISTS_FIXTURE: LibraryUiState by lazy {
     LibraryUiState(
         groups = groups,
         groupsWithNew = setOf("morning"),
-        statsHasUnseenTierChange = false,
         smartPlaylists =
             listOf(
                 SmartPlaylistTileData(

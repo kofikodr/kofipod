@@ -5,7 +5,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kofikodr.kofipod.data.repo.EpisodeSource
 import com.kofikodr.kofipod.data.repo.LibraryRepository
-import com.kofikodr.kofipod.data.repo.StatsRepository
 import com.kofikodr.kofipod.db.Podcast
 import com.kofikodr.kofipod.db.PodcastList
 import com.kofikodr.kofipod.opml.OpmlAction
@@ -46,7 +45,6 @@ data class LibraryUiState(
     val groups: List<LibraryGroup> = emptyList(),
     // Folder listId (or null for Unfiled) → true when any podcast in that bucket has a new episode.
     val groupsWithNew: Set<String?> = emptySet(),
-    val statsHasUnseenTierChange: Boolean = false,
     val smartPlaylists: List<SmartPlaylistTileData> = emptyList(),
 )
 
@@ -54,7 +52,6 @@ data class LibraryUiState(
 class LibraryViewModel(
     private val repo: LibraryRepository,
     private val episodes: EpisodeSource,
-    stats: StatsRepository,
     private val opml: OpmlController,
     private val pro: ProEntitlementRepository,
     private val paywallRouter: PaywallRouter,
@@ -87,9 +84,8 @@ class LibraryViewModel(
             repo.listsFlow(),
             repo.podcastsFlow(),
             episodes.newEpisodeCountsFlow(),
-            stats.hasUnseenTierChange(),
             smartPlaylistTilesFlow,
-        ) { lists, podcasts, newCounts, statsBadge, plTiles ->
+        ) { lists, podcasts, newCounts, plTiles ->
             val byList = podcasts.groupBy { it.listId }
             val named = lists.map { l -> LibraryGroup(l, byList[l.id].orEmpty()) }
             val unfiled = byList[null].orEmpty()
@@ -104,7 +100,6 @@ class LibraryViewModel(
             LibraryUiState(
                 groups = groups,
                 groupsWithNew = groupsWithNew,
-                statsHasUnseenTierChange = statsBadge,
                 smartPlaylists = plTiles,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryUiState())
@@ -124,17 +119,10 @@ class LibraryViewModel(
     fun importOpml() = opml.importOpml()
 
     /**
-     * Returns true when the caller should navigate to the Bookmarks screen.
-     * Returns false (and opens the paywall) when the user is Free or Unknown.
-     * Mirrors `PlayerViewModel.onBookmarkTapped` gate semantics.
-     */
-    fun onBookmarksTapped(): Boolean = gate("paywall_bookmark")
-
-    /**
      * Returns true when the caller should navigate to the Library search screen.
      * Returns false (and opens the paywall) when the user is Free or Unknown.
-     * Same gate semantics as [onBookmarksTapped]. Distinct trigger key so future
-     * conversion analytics can attribute paywall opens by surface.
+     * Distinct trigger key so future conversion analytics can attribute paywall
+     * opens by surface.
      */
     fun onLibrarySearchTapped(): Boolean = gate("paywall_library_search")
 
