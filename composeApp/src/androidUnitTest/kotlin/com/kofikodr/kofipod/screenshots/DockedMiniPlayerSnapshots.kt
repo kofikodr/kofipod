@@ -104,6 +104,7 @@ private fun DockedMiniPlayerHarness() {
                 state = STUB_STATE,
                 onOpen = {},
                 onPlayPause = {},
+                onDismiss = {},
             )
         }
     }
