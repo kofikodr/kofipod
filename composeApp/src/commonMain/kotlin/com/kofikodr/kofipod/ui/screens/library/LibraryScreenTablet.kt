@@ -170,11 +170,16 @@ internal fun LibraryContentTabletSingle(
                             )
                         }
                     }
-                    // TODO(tablet-phase-2): Smart playlists in the tablet folders row need a
-                    // dedicated card composable. SmartPlaylistTile applies aspectRatio(1f)
-                    // which conflicts with the 120 dp fixed-height folder row. Render them
-                    // inline once a SmartPlaylistFolderCard variant exists; until then they
-                    // only appear in the phone library.
+                    items(state.smartPlaylists.size) { idx ->
+                        val tile = state.smartPlaylists[idx]
+                        SmartPlaylistFolderCard(
+                            width = cardWidth,
+                            playlist = tile.playlist,
+                            matchedCount = tile.matchedCount,
+                            onClick = { onOpenSmartPlaylistDetail(tile.playlist.id) },
+                            onLongClick = { onLongPressSmartPlaylist(tile.playlist) },
+                        )
+                    }
                 }
             }
         }

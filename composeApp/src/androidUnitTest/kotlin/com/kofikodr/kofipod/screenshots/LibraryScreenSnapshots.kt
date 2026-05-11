@@ -13,10 +13,13 @@ import com.android.resources.ScreenOrientation
 import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.db.Podcast
 import com.kofikodr.kofipod.db.PodcastList
+import com.kofikodr.kofipod.playlists.SmartPlaylist
+import com.kofikodr.kofipod.playlists.SmartPlaylistPredicate
 import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.screens.library.LibraryContent
 import com.kofikodr.kofipod.ui.screens.library.LibraryGroup
 import com.kofikodr.kofipod.ui.screens.library.LibraryUiState
+import com.kofikodr.kofipod.ui.screens.library.SmartPlaylistTileData
 import com.kofikodr.kofipod.ui.theme.KofipodTheme
 import com.kofikodr.kofipod.ui.theme.KofipodThemeMode
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
@@ -71,6 +74,14 @@ class LibraryScreenSnapshots {
         useTabletDeviceConfig(width = 1000, height = 1400)
         paparazzi.snapshot {
             LibraryHarness(state = POPULATED_FIXTURE, size = TabletSize.Tablet10Port)
+        }
+    }
+
+    @Test
+    fun libraryFoldersRow_smartPlaylist_tablet10Port_light() {
+        useTabletDeviceConfig(width = 1000, height = 1400)
+        paparazzi.snapshot {
+            LibraryHarness(state = POPULATED_WITH_SMART_PLAYLISTS_FIXTURE, size = TabletSize.Tablet10Port)
         }
     }
 
@@ -318,5 +329,60 @@ private val POPULATED_FIXTURE: LibraryUiState by lazy {
         groupsWithNew = setOf("morning"),
         statsHasUnseenTierChange = false,
         smartPlaylists = emptyList(),
+    )
+}
+
+// Trims the populated fixture to a single regular folder so the smart-playlist cards
+// land inside the 10"P viewport (~3 cards visible at 320 dp + 12 dp gap inside 960 dp
+// of content). Order in the row is: regular lists → Unfiled → smart playlists, so the
+// baseline shows: Morning (regular) → Unfiled → Unplayed (smart playlist).
+private val POPULATED_WITH_SMART_PLAYLISTS_FIXTURE: LibraryUiState by lazy {
+    val morning = list("morning", "Morning", 0)
+    val groups =
+        listOf(
+            LibraryGroup(
+                list = morning,
+                podcasts =
+                    listOf(
+                        pod("p1", "Signal & Noise", "Eve Hartwell", "morning", 1_000L),
+                        pod("p2", "The Morning Brief", "Daniel Ortiz", "morning", 2_000L),
+                    ),
+            ),
+            LibraryGroup(
+                list = null,
+                podcasts =
+                    listOf(
+                        pod("p4", "Unboxed", "Olu Adeyemi", null, 3_000L),
+                        pod("p5", "Field Notes", "Iris Park", null, 2_500L),
+                    ),
+            ),
+        )
+    LibraryUiState(
+        groups = groups,
+        groupsWithNew = setOf("morning"),
+        statsHasUnseenTierChange = false,
+        smartPlaylists =
+            listOf(
+                SmartPlaylistTileData(
+                    playlist =
+                        SmartPlaylist(
+                            id = "sp1",
+                            name = "Unplayed",
+                            predicate = SmartPlaylistPredicate.EMPTY,
+                            createdAtMs = 0L,
+                        ),
+                    matchedCount = 12,
+                ),
+                SmartPlaylistTileData(
+                    playlist =
+                        SmartPlaylist(
+                            id = "sp2",
+                            name = "Recent downloads",
+                            predicate = SmartPlaylistPredicate.EMPTY,
+                            createdAtMs = 0L,
+                        ),
+                    matchedCount = 1,
+                ),
+            ),
     )
 }
