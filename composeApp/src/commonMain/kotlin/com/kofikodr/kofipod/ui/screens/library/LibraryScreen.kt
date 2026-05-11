@@ -885,7 +885,7 @@ internal fun NewDot(
     }
 }
 
-private fun Modifier.dashedBorder(
+internal fun Modifier.dashedBorder(
     color: Color,
     cornerRadius: Dp,
     strokeWidth: Dp = 1.5.dp,

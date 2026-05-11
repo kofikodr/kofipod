@@ -112,8 +112,12 @@ internal fun LibraryContentTabletSingle(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
+            // Tablet always shows the header "+" so the create-list affordance is
+            // reachable even when no lists exist yet (mobile compensates for that
+            // state with an inline NewListTile in its 2-up grid; tablet's
+            // horizontal folder strip is mirrored below via TabletNewListCard).
             LibraryHeader(
-                showAddButton = lists.isNotEmpty(),
+                showAddButton = true,
                 onNewList = onNewList,
                 onOpenStats = onOpenStats,
                 statsHasBadge = state.statsHasUnseenTierChange,
@@ -167,6 +171,18 @@ internal fun LibraryContentTabletSingle(
                                 hasNew = null in state.groupsWithNew,
                                 onClick = { onOpenList(null) },
                                 onLongClick = null,
+                            )
+                        }
+                    }
+                    // Inline "+ New list" card — mirrors mobile's NewListTile contextually
+                    // in the Folders strip while no user-defined lists exist. Once any
+                    // list is created, the affordance is the header "+" alone (matching
+                    // mobile's once-list-exists behavior).
+                    if (lists.isEmpty()) {
+                        item {
+                            TabletNewListCard(
+                                width = cardWidth,
+                                onClick = onNewList,
                             )
                         }
                     }
@@ -451,6 +467,46 @@ internal fun TabletFolderCard(
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
                 letterSpacing = 0.6.sp,
+            )
+        }
+    }
+}
+
+/**
+ * "+ New list" card rendered inline in the tablet Folders horizontal strip while no
+ * user-defined lists exist yet. Matches [TabletFolderCard]'s width/height so the
+ * strip's rhythm is preserved; uses a dashed border + Plus glyph styled like mobile's
+ * `NewListTile`.
+ */
+@Composable
+internal fun TabletNewListCard(
+    width: Dp,
+    onClick: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    val r = LocalKofipodRadii.current
+    Box(
+        Modifier
+            .width(width)
+            .height(120.dp)
+            .clip(RoundedCornerShape(r.md))
+            .dashedBorder(color = c.borderStrong, cornerRadius = r.md)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            KPIcon(
+                name = KPIconName.Plus,
+                color = c.textSoft,
+                size = 24.dp,
+                strokeWidth = 2.2f,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "New list",
+                color = c.textSoft,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
             )
         }
     }
