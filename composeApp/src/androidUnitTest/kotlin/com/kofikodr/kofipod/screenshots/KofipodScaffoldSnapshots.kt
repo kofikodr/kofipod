@@ -116,6 +116,7 @@ private fun TabletScaffoldHarness(
                     state = FAKE_PLAYER_STATE,
                     onOpen = {},
                     onPlayPause = {},
+                    onDismiss = {},
                 )
             },
             content = {

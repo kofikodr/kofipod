@@ -23,15 +23,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kofikodr.kofipod.playback.KofipodPlayer
 import com.kofikodr.kofipod.playback.PlayerState
+import com.kofikodr.kofipod.ui.primitives.KPIcon
+import com.kofikodr.kofipod.ui.primitives.KPIconName
 import com.kofikodr.kofipod.ui.primitives.KofipodArtwork
 import com.kofikodr.kofipod.ui.screens.player.formatMs
-import com.kofikodr.kofipod.ui.screens.player.formatSpeed
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
 import org.koin.compose.koinInject
 
@@ -55,6 +57,7 @@ fun DockedMiniPlayer(
         state = state,
         onOpen = onOpen,
         onPlayPause = { if (state.isPlaying) player.pause() else player.resume() },
+        onDismiss = { player.stop() },
         modifier = modifier,
     )
 }
@@ -68,6 +71,7 @@ fun DockedMiniPlayerContent(
     state: PlayerState,
     onOpen: () -> Unit,
     onPlayPause: () -> Unit,
+    onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalKofipodColors.current
@@ -122,8 +126,28 @@ fun DockedMiniPlayerContent(
             )
         }
         Spacer(Modifier.width(12.dp))
-        SpeedChip(state.speed)
-        Spacer(Modifier.width(12.dp))
+        if (!state.isPlaying) {
+            // Mirror phone MiniPlayer: only offer dismiss while paused so an in-progress
+            // listen can't be ended by a mistaken tap.
+            Box(
+                Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .clickable(
+                        onClickLabel = "Dismiss player",
+                        role = Role.Button,
+                    ) { onDismiss() }
+                    .testTag("dockedMiniPlayerDismiss"),
+                contentAlignment = Alignment.Center,
+            ) {
+                KPIcon(
+                    name = KPIconName.Close,
+                    color = c.textMute,
+                    size = 18.dp,
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+        }
         Box(
             Modifier
                 .size(40.dp)
@@ -152,23 +176,4 @@ private fun subtitleLine(state: PlayerState): String {
     state.episodeNumber?.let { parts += "Ep $it" }
     parts += "${formatMs(state.positionMs)} / ${formatMs(state.durationMs)}"
     return parts.joinToString(" · ")
-}
-
-@Composable
-private fun SpeedChip(speed: Float) {
-    val c = LocalKofipodColors.current
-    Box(
-        Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(c.purpleTint)
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-            .testTag("dockedMiniPlayerSpeedChip"),
-    ) {
-        Text(
-            text = "${formatSpeed(speed)}×",
-            color = c.text,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 12.sp,
-        )
-    }
 }
