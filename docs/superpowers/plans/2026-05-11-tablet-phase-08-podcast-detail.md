@@ -52,3 +52,14 @@
 - Subscribe / unsubscribe flow changes.
 - Filter chip behavior changes.
 - AI tabs (Summary content lives in `Route.EpisodeDetail`'s tabs — covered by Phases 9 / 10).
+
+## Deferred — tab embedding in landscape detail pane
+
+Task 8.3's original design embedded the full `EpisodeDetailContent(hostMode = MasterDetailPane)` (with Overview / Chapters / Mentioned / Discuss tabs) in the right pane, hoisting a Koin `EpisodeDetailViewModel` per `episodeId`. **This is deferred to a follow-up.** Phase 8 ships the simpler preview-pane variant instead — same shape as Library's `SubscriptionPreviewPane` and Search's preview pane — to keep Phase 8 scoped to layout adaptation and avoid the risk of per-episode VM hoisting + tab-state rehydration on rotation.
+
+What landed in Phase 8:
+- Right pane shows episode metadata only (eyebrow with episode number + date, title, podcast title · duration · size meta line, Play button, "Open" affordance, truncated description).
+- "Open" navigates to `Route.EpisodeDetail` for the full tabs experience.
+- No `EpisodeDetailViewModel` hoist, no tab state, no chapters / mentioned / discuss surfaces in the right pane.
+
+Follow-up will add the embedded tabs once the rotation-survival story for `EpisodeDetailViewModel` (and its dependent `AiSummaryViewModel`) is designed alongside the AI-tab phases. The selection mechanism (`selectedEpisodeId` on `PodcastDetailViewModel`) is already in place, so the follow-up is additive — replace `EpisodePreviewPane`'s body with the embedded tabs, keep the selection wire-up untouched.
