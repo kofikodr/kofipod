@@ -101,18 +101,28 @@ fun LibraryScreen(
     val state by viewModel.state.collectAsState()
     val selectedPodcastId by viewModel.selectedPodcastId.collectAsState()
     val selectedEpisodes by viewModel.selectedEpisodes.collectAsState()
+    val tabletSize = LocalTabletSize.current
 
     var newListOpen by remember { mutableStateOf(false) }
     var pendingDeletePodcast by remember { mutableStateOf<Podcast?>(null) }
     var pendingDeleteList by remember { mutableStateOf<PodcastList?>(null) }
     var pendingDeleteSmartPlaylist by remember { mutableStateOf<SmartPlaylistDomain?>(null) }
 
+    // Size-aware routing for tile taps — see routeLibraryPodcastTap. Phone +
+    // tablet portraits navigate; tablet landscapes preview-first via selection.
+    val onPodcastTap: (String) -> Unit = { podcastId ->
+        when (val action = routeLibraryPodcastTap(tabletSize, podcastId)) {
+            is PodcastTapAction.Navigate -> onOpenPodcast(action.podcastId)
+            is PodcastTapAction.Select -> viewModel.selectPodcast(action.podcastId)
+        }
+    }
+
     LibraryContent(
         state = state,
         selectedPodcastId = selectedPodcastId,
         selectedEpisodes = selectedEpisodes,
-        onSelectPodcast = { viewModel.selectPodcast(it) },
-        onOpenPodcast = onOpenPodcast,
+        onPodcastTap = onPodcastTap,
+        onOpenPodcastDetail = onOpenPodcast,
         onOpenList = onOpenList,
         onOpenSearch = onOpenSearch,
         onOpenStarterPack = onOpenStarterPack,
@@ -201,16 +211,18 @@ fun LibraryScreen(
  *    master pane reuses the tablet-portrait grid; detail pane previews the selected
  *    subscription's last [LibraryViewModel.PREVIEW_EPISODE_LIMIT] episodes.
  *
- * `selectedPodcastId` / `selectedEpisodes` / `onSelectPodcast` are only consumed by the
- * landscape branch but live on the signature so the screen-level hoist stays uniform.
+ * `selectedPodcastId` / `selectedEpisodes` are only consumed by the landscape branch
+ * but live on the signature so the screen-level hoist stays uniform. `onPodcastTap`
+ * is the single size-aware tile-tap callback (see routeLibraryPodcastTap upstream);
+ * `onOpenPodcastDetail` is the separate "Open" gesture in the landscape detail pane.
  */
 @Composable
 internal fun LibraryContent(
     state: LibraryUiState,
     selectedPodcastId: String?,
     selectedEpisodes: List<Episode>,
-    onSelectPodcast: (String?) -> Unit,
-    onOpenPodcast: (String) -> Unit,
+    onPodcastTap: (String) -> Unit,
+    onOpenPodcastDetail: (String) -> Unit,
     onOpenList: (String?) -> Unit,
     onOpenSearch: () -> Unit,
     onOpenStarterPack: () -> Unit,
@@ -228,7 +240,7 @@ internal fun LibraryContent(
     if (size == TabletSize.Tablet8Port || size == TabletSize.Tablet10Port) {
         LibraryContentTabletSingle(
             state = state,
-            onOpenPodcast = onOpenPodcast,
+            onOpenPodcast = onPodcastTap,
             onOpenList = onOpenList,
             onOpenSearch = onOpenSearch,
             onOpenStarterPack = onOpenStarterPack,
@@ -263,8 +275,8 @@ internal fun LibraryContent(
             state = state,
             selectedPodcast = selected,
             selectedEpisodes = selectedEpisodes,
-            onSelectPodcast = onSelectPodcast,
-            onOpenPodcastDetail = onOpenPodcast,
+            onPodcastTap = onPodcastTap,
+            onOpenPodcastDetail = onOpenPodcastDetail,
             onOpenList = onOpenList,
             onOpenSearch = onOpenSearch,
             onOpenStarterPack = onOpenStarterPack,
@@ -399,7 +411,7 @@ internal fun LibraryContent(
                         podcast = p,
                         episodeCount = placeholderEpisodeCount(p),
                         showDivider = idx < recent.lastIndex,
-                        onClick = { onOpenPodcast(p.id) },
+                        onClick = { onPodcastTap(p.id) },
                         onLongClick = { onLongPressPodcast(p) },
                     )
                 }
@@ -558,8 +570,9 @@ private fun LibraryContentTabletSingle(
 /**
  * Tablet landscape (8"L / 10"L) master-detail layout. Master reuses the tablet-portrait
  * single-column body verbatim (so the rail-only chrome and grid sizing already work);
- * tile taps go through [onSelectPodcast] instead of [onOpenPodcastDetail] — the only
- * navigation in this branch is the detail pane's "Open" CTA.
+ * tile taps come in pre-routed via [onPodcastTap] (which Task 2.4's
+ * `routeLibraryPodcastTap` already mapped to selection for this size). The detail
+ * pane's "Open" CTA is a separate gesture and goes through [onOpenPodcastDetail].
  *
  * The detail pane renders [SubscriptionPreviewPane] when a subscription is selected,
  * or [EmptyDetailHint] otherwise. Per plan §2.3 the preview pulls the last
@@ -571,7 +584,7 @@ private fun LibraryContentTabletMasterDetail(
     state: LibraryUiState,
     selectedPodcast: Podcast?,
     selectedEpisodes: List<Episode>,
-    onSelectPodcast: (String?) -> Unit,
+    onPodcastTap: (String) -> Unit,
     onOpenPodcastDetail: (String) -> Unit,
     onOpenList: (String?) -> Unit,
     onOpenSearch: () -> Unit,
@@ -591,7 +604,7 @@ private fun LibraryContentTabletMasterDetail(
         master = {
             LibraryContentTabletSingle(
                 state = state,
-                onOpenPodcast = { onSelectPodcast(it) },
+                onOpenPodcast = onPodcastTap,
                 onOpenList = onOpenList,
                 onOpenSearch = onOpenSearch,
                 onOpenStarterPack = onOpenStarterPack,
