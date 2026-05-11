@@ -3,7 +3,6 @@ package com.kofikodr.kofipod.ui.screens.library
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,34 +28,35 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.db.Podcast
 import com.kofikodr.kofipod.db.PodcastList
-import com.kofikodr.kofipod.ui.layout.EmptyDetailHint
 import com.kofikodr.kofipod.ui.layout.MasterDetailPane
 import com.kofikodr.kofipod.ui.layout.TabletSize
-import com.kofikodr.kofipod.ui.primitives.KPButton
+import com.kofikodr.kofipod.ui.palette.rememberTileVisuals
 import com.kofikodr.kofipod.ui.primitives.KPIcon
 import com.kofikodr.kofipod.ui.primitives.KPIconName
-import com.kofikodr.kofipod.ui.primitives.KofipodArtwork
 import com.kofikodr.kofipod.ui.primitives.SectionLabel
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
 import com.kofikodr.kofipod.ui.theme.LocalKofipodRadii
 import com.kofikodr.kofipod.playlists.SmartPlaylist as SmartPlaylistDomain
 
+private const val RECENT_LIMIT = 6
+
 /**
- * Tablet portrait (8"P / 10"P) layout for the Library: a single LazyVerticalGrid whose
- * top rows span the full width (header, in-library search, optional Folders horizontal
- * scroll) and whose trailing rows render subscriptions as adaptive grid tiles.
+ * Tablet portrait (8"P / 10"P) single-column body. Mirrors phone IA: Header,
+ * library search entry, Folders horizontal strip, then "Recently opened". The
+ * Subscriptions flat grid that previously lived here was dropped — discover-by-
+ * folder + recency is the only IA across all form factors now.
  *
- * One outer grid (with `GridItemSpan(maxLineSpan)` spanning items for non-grid sections)
- * avoids nested LazyColumn/LazyVerticalGrid scroll containers.
+ * Re-used as the master pane for landscape master-detail with [showRecentlyOpened]
+ * = false, since landscape moves Recently opened into the detail pane.
  */
 @Composable
 internal fun LibraryContentTabletSingle(
@@ -74,6 +75,7 @@ internal fun LibraryContentTabletSingle(
     onLongPressSmartPlaylist: (SmartPlaylistDomain) -> Unit,
     onImportOpml: () -> Unit,
     size: TabletSize,
+    showRecentlyOpened: Boolean = true,
 ) {
     val c = LocalKofipodColors.current
 
@@ -83,25 +85,16 @@ internal fun LibraryContentTabletSingle(
     val isEmpty = lists.isEmpty() && podcasts.isEmpty()
 
     val cardWidth = if (size == TabletSize.Tablet10Port) 320.dp else 260.dp
-    // Grid cell min is decoupled from folder-card width: spec mandates the
-    // folder cards stay at 260/320 dp, but the subscriptions grid wants 3
-    // columns on 10"P (the 320 dp value would resolve to 2 once 14 dp
-    // horizontal spacing is applied to a 960 dp content area).
     val gridCellMin = if (size == TabletSize.Tablet10Port) 300.dp else 260.dp
 
-    val sortedPodcasts =
-        podcasts.sortedByDescending { it.addedAt }
-
-    // Identify which podcasts roll up into a folder/group that has new content. The
-    // existing groupsWithNew set is keyed by listId; we surface the same NEW badge on
-    // the per-podcast tile by checking whether the podcast's listId is in the set.
-    val podcastsWithNew: Set<String> =
-        buildSet {
-            sortedPodcasts.forEach { p ->
-                if (p.listId in state.groupsWithNew || (p.listId == null && null in state.groupsWithNew)) {
-                    add(p.id)
-                }
-            }
+    // Only sort/take when the Recently opened section is actually about to render;
+    // master-detail callers pass `showRecentlyOpened = false` and would otherwise
+    // pay for the derivation on every recomposition while not using the result.
+    val recent: List<Podcast> =
+        if (showRecentlyOpened) {
+            podcasts.sortedByDescending { it.addedAt }.take(RECENT_LIMIT)
+        } else {
+            emptyList()
         }
 
     LazyVerticalGrid(
@@ -113,9 +106,9 @@ internal fun LibraryContentTabletSingle(
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             // Tablet always shows the header "+" so the create-list affordance is
-            // reachable even when no lists exist yet (mobile compensates for that
-            // state with an inline NewListTile in its 2-up grid; tablet's
-            // horizontal folder strip is mirrored below via TabletNewListCard).
+            // reachable even when no lists exist yet (phone compensates with an
+            // inline NewListTile in its 2-up grid; tablet's horizontal folder
+            // strip is mirrored below via TabletNewListCard).
             LibraryHeader(
                 showAddButton = true,
                 onNewList = onNewList,
@@ -156,7 +149,8 @@ internal fun LibraryContentTabletSingle(
                         TabletFolderCard(
                             width = cardWidth,
                             title = list.name,
-                            subtitle = "${members.size} SHOWS",
+                            members = members,
+                            seed = list.id.hashCode(),
                             hasNew = list.id in state.groupsWithNew,
                             onClick = { onOpenList(list.id) },
                             onLongClick = { onLongPressList(list) },
@@ -167,17 +161,17 @@ internal fun LibraryContentTabletSingle(
                             TabletFolderCard(
                                 width = cardWidth,
                                 title = "Unfiled",
-                                subtitle = "${unfiledPodcasts.size} SHOWS",
+                                members = unfiledPodcasts,
+                                seed = UNFILED_SEED,
                                 hasNew = null in state.groupsWithNew,
                                 onClick = { onOpenList(null) },
                                 onLongClick = null,
                             )
                         }
                     }
-                    // Inline "+ New list" card — mirrors mobile's NewListTile contextually
-                    // in the Folders strip while no user-defined lists exist. Once any
-                    // list is created, the affordance is the header "+" alone (matching
-                    // mobile's once-list-exists behavior).
+                    // Inline "+ New list" card — mirrors phone's NewListTile while
+                    // no user-defined lists exist. Once any list is created, the
+                    // affordance is the header "+" alone.
                     if (lists.isEmpty()) {
                         item {
                             TabletNewListCard(
@@ -200,42 +194,53 @@ internal fun LibraryContentTabletSingle(
             }
         }
 
-        if (sortedPodcasts.isNotEmpty()) {
+        if (showRecentlyOpened) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                SectionLabel(title = "Subscriptions", topSpacing = 22.dp)
+                SectionLabel(title = "Recently opened", topSpacing = 22.dp)
             }
-            items(sortedPodcasts.size) { idx ->
-                val p = sortedPodcasts[idx]
-                SubscriptionGridTile(
-                    podcast = p,
-                    hasNew = p.id in podcastsWithNew,
-                    onClick = { onOpenPodcast(p.id) },
-                    onLongClick = { onLongPressPodcast(p) },
-                )
+            if (recent.isEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Text(
+                        "Nothing here yet.",
+                        color = c.textMute,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+                }
+            } else {
+                items(
+                    count = recent.size,
+                    span = { GridItemSpan(maxLineSpan) },
+                ) { idx ->
+                    val p = recent[idx]
+                    RecentRow(
+                        podcast = p,
+                        episodeCount = placeholderEpisodeCount(p),
+                        showDivider = idx < recent.lastIndex,
+                        onClick = { onOpenPodcast(p.id) },
+                        onLongClick = { onLongPressPodcast(p) },
+                    )
+                }
             }
         }
     }
 }
 
 /**
- * Tablet landscape (8"L / 10"L) master-detail layout. Master reuses the tablet-portrait
- * single-column body verbatim (so the rail-only chrome and grid sizing already work);
- * tile taps come in pre-routed via [onPodcastTap] (which Task 2.4's
- * `routeLibraryPodcastTap` already mapped to selection for this size). The detail
- * pane's "Open" CTA is a separate gesture and goes through [onOpenPodcastDetail].
+ * Tablet landscape (8"L / 10"L) master-detail body. Master pane mirrors the tablet
+ * portrait body minus its "Recently opened" section; the detail pane renders the
+ * Recently opened list instead. When the library has no recently-opened podcasts
+ * (i.e. the library itself is empty), the detail pane is hidden and the master
+ * takes the full width.
  *
- * The detail pane renders [SubscriptionPreviewPane] when a subscription is selected,
- * or [EmptyDetailHint] otherwise. Per plan §2.3 the preview pulls the last
- * [LibraryViewModel.PREVIEW_EPISODE_LIMIT] episodes via the existing
- * `EpisodeSource.episodesFlow` — no new repo methods.
+ * Tile taps in the master always navigate (no preview-first selection on this
+ * screen anymore); tile taps in the detail's Recently opened list also navigate
+ * to the podcast detail route.
  */
 @Composable
 internal fun LibraryContentTabletMasterDetail(
     state: LibraryUiState,
-    selectedPodcast: Podcast?,
-    selectedEpisodes: List<Episode>,
-    onPodcastTap: (String) -> Unit,
-    onOpenPodcastDetail: (String) -> Unit,
+    onOpenPodcast: (String) -> Unit,
     onOpenList: (String?) -> Unit,
     onOpenSearch: () -> Unit,
     onOpenStarterPack: () -> Unit,
@@ -250,11 +255,42 @@ internal fun LibraryContentTabletMasterDetail(
     onImportOpml: () -> Unit,
     masterSize: TabletSize,
 ) {
+    val recent: List<Podcast> =
+        state.groups
+            .flatMap { it.podcasts }
+            .sortedByDescending { it.addedAt }
+            .take(RECENT_LIMIT)
+
+    if (recent.isEmpty()) {
+        // No detail content → drop the split pane so the master gets full width
+        // (matters most when the library is empty and the empty-state card needs
+        // breathing room).
+        LibraryContentTabletSingle(
+            state = state,
+            onOpenPodcast = onOpenPodcast,
+            onOpenList = onOpenList,
+            onOpenSearch = onOpenSearch,
+            onOpenStarterPack = onOpenStarterPack,
+            onOpenBookmarks = onOpenBookmarks,
+            onOpenStats = onOpenStats,
+            onOpenLibrarySearch = onOpenLibrarySearch,
+            onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
+            onNewList = onNewList,
+            onLongPressPodcast = onLongPressPodcast,
+            onLongPressList = onLongPressList,
+            onLongPressSmartPlaylist = onLongPressSmartPlaylist,
+            onImportOpml = onImportOpml,
+            size = masterSize,
+            showRecentlyOpened = false,
+        )
+        return
+    }
+
     MasterDetailPane(
         master = {
             LibraryContentTabletSingle(
                 state = state,
-                onOpenPodcast = onPodcastTap,
+                onOpenPodcast = onOpenPodcast,
                 onOpenList = onOpenList,
                 onOpenSearch = onOpenSearch,
                 onOpenStarterPack = onOpenStarterPack,
@@ -268,215 +304,148 @@ internal fun LibraryContentTabletMasterDetail(
                 onLongPressSmartPlaylist = onLongPressSmartPlaylist,
                 onImportOpml = onImportOpml,
                 size = masterSize,
+                showRecentlyOpened = false,
             )
         },
         detail = {
-            // selectedPodcast == null is filtered out by hasSelection upstream, but
-            // we still guard the cast so the composable stays total.
-            val pc = selectedPodcast
-            if (pc != null) {
-                SubscriptionPreviewPane(
-                    podcast = pc,
-                    episodes = selectedEpisodes,
-                    onOpen = { onOpenPodcastDetail(pc.id) },
-                )
-            }
+            TabletRecentlyOpenedPane(
+                recent = recent,
+                onOpenPodcast = onOpenPodcast,
+                onLongPressPodcast = onLongPressPodcast,
+            )
         },
-        hasSelection = selectedPodcast != null,
-        emptyDetail = { EmptyDetailHint(text = "Pick a subscription to preview") },
+        // We've already filtered out the empty-recent case above, so the detail
+        // pane is always non-empty by the time we reach this branch.
+        hasSelection = true,
     )
 }
 
 /**
- * Right-pane preview for a selected subscription. Renders a small podcast header,
- * a "Latest" subhead, the last N episodes as compact rows, and an "Open" CTA at the
- * bottom that navigates to the full podcast detail screen.
+ * Right-pane "Recently opened" list for tablet landscape. Reuses [RecentRow] from
+ * the phone body so a row tap navigates straight to the podcast detail route.
  */
 @Composable
-internal fun SubscriptionPreviewPane(
-    podcast: Podcast,
-    episodes: List<Episode>,
-    onOpen: () -> Unit,
+internal fun TabletRecentlyOpenedPane(
+    recent: List<Podcast>,
+    onOpenPodcast: (String) -> Unit,
+    onLongPressPodcast: (Podcast) -> Unit,
 ) {
     val c = LocalKofipodColors.current
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(c.bg)
-            .padding(20.dp),
+    LazyColumn(
+        Modifier.fillMaxSize().background(c.bg),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            KofipodArtwork(
-                size = 64.dp,
-                seed = podcast.id.hashCode(),
-                label = podcast.title,
-                radius = 12.dp,
-                model = podcast.artworkUrl.ifBlank { null },
-                contentDescription = podcast.title,
-            )
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    podcast.title,
-                    color = c.text,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (podcast.author.isNotBlank()) {
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        podcast.author,
-                        color = c.textMute,
-                        fontSize = 13.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
+        item {
+            SectionLabel(title = "Recently opened", topSpacing = 0.dp)
         }
-        SectionLabel(title = "Latest", topSpacing = 22.dp)
-        if (episodes.isEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "No episodes yet.",
-                color = c.textMute,
-                fontSize = 13.sp,
+        items(recent.size) { idx ->
+            val p = recent[idx]
+            RecentRow(
+                podcast = p,
+                episodeCount = placeholderEpisodeCount(p),
+                showDivider = idx < recent.lastIndex,
+                onClick = { onOpenPodcast(p.id) },
+                onLongClick = { onLongPressPodcast(p) },
             )
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(top = 8.dp, bottom = 8.dp),
-            ) {
-                items(episodes.size) { idx ->
-                    val ep = episodes[idx]
-                    PreviewEpisodeRow(
-                        episode = ep,
-                        showDivider = idx < episodes.lastIndex,
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        KPButton(
-            label = "Open",
-            onClick = onOpen,
-        )
-    }
-}
-
-@Composable
-internal fun PreviewEpisodeRow(
-    episode: Episode,
-    showDivider: Boolean,
-) {
-    val c = LocalKofipodColors.current
-    Column(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(vertical = 10.dp)) {
-            Text(
-                episode.title,
-                color = c.text,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 14.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (episode.durationSec > 0) {
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    formatDurationMinutes(episode.durationSec),
-                    color = c.textMute,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    fontFamily = FontFamily.Monospace,
-                    letterSpacing = 0.6.sp,
-                )
-            }
-        }
-        if (showDivider) {
-            Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
         }
     }
-}
-
-internal fun formatDurationMinutes(durationSec: Long): String {
-    val minutes = (durationSec / 60).coerceAtLeast(0)
-    return "$minutes MIN"
 }
 
 /**
- * Folder card used in the tablet portrait Folders horizontal-scroll row. Fixed
- * `width` (260 dp on 8"P / 320 dp on 10"P), 120 dp tall, rounded surface with the
- * folder glyph, name, "N SHOWS" subtitle, and an optional NEW dot.
+ * Folder card used in the tablet Folders horizontal-scroll row. Fixed [width]
+ * (260 dp on 8"P / 320 dp on 10"P), 120 dp tall. Brings the phone tile look-and-feel
+ * into the strip: sampled-palette background derived from [members]' artwork, a
+ * mosaic of up to 4 thumbnails on the right, folder glyph + title + "N SHOWS" on
+ * the left, and an optional NEW dot.
+ *
+ * Falls back to a seeded gradient + muted icon when no member has artwork yet.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun TabletFolderCard(
     width: Dp,
     title: String,
-    subtitle: String,
+    members: List<Podcast>,
+    seed: Int,
     hasNew: Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)?,
 ) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
+    val visuals = rememberTileVisuals(members = members, fallbackSeed = seed)
+
+    val onSampledBg = visuals.sampled
+    val textColor = if (onSampledBg) Color.White else c.text
+    val subTextColor = if (onSampledBg) Color.White.copy(alpha = 0.85f) else c.textMute
+    val folderColor = if (onSampledBg) Color.White.copy(alpha = 0.9f) else c.purple
+
     val clickModifier =
         if (onLongClick != null) {
             Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
         } else {
             Modifier.clickable(onClick = onClick)
         }
-    Box(
+    Row(
         Modifier
             .width(width)
             .height(120.dp)
             .clip(RoundedCornerShape(r.md))
-            .background(c.surface)
-            .border(1.dp, c.border, RoundedCornerShape(r.md))
+            .background(visuals.brush)
             .then(clickModifier)
             .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        KPIcon(
-            name = KPIconName.Folder,
-            color = c.purple,
-            size = 22.dp,
-            modifier = Modifier.align(Alignment.TopStart),
-        )
-        if (hasNew) {
-            NewDot(
-                ringColor = c.surface,
-                modifier = Modifier.align(Alignment.TopEnd),
+        Column(
+            Modifier.weight(1f).fillMaxHeight(),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            KPIcon(
+                name = KPIconName.Folder,
+                color = folderColor,
+                size = 22.dp,
             )
+            Column {
+                Text(
+                    title,
+                    color = textColor,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "${members.size} SHOWS",
+                    color = subTextColor,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 0.6.sp,
+                )
+            }
         }
-        Column(Modifier.align(Alignment.BottomStart)) {
-            Text(
-                title,
-                color = c.text,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+        Spacer(Modifier.width(12.dp))
+        Box(Modifier.fillMaxHeight()) {
+            ListMosaic(
+                members = members,
+                size = 92.dp,
+                seed = seed,
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                subtitle,
-                color = c.textMute,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                letterSpacing = 0.6.sp,
-            )
+            if (hasNew) {
+                NewDot(
+                    ringColor = if (onSampledBg) Color.White else c.surface,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(end = 2.dp, top = 2.dp),
+                )
+            }
         }
     }
 }
 
 /**
- * "+ New list" card rendered inline in the tablet Folders horizontal strip while no
- * user-defined lists exist yet. Matches [TabletFolderCard]'s width/height so the
- * strip's rhythm is preserved; uses a dashed border + Plus glyph styled like mobile's
- * `NewListTile`.
+ * "+ New list" card rendered inline in the tablet Folders horizontal strip while
+ * no user-defined lists exist. Matches [TabletFolderCard]'s width/height so the
+ * strip's rhythm is preserved.
  */
 @Composable
 internal fun TabletNewListCard(
@@ -507,68 +476,6 @@ internal fun TabletNewListCard(
                 color = c.textSoft,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp,
-            )
-        }
-    }
-}
-
-/**
- * Subscription grid tile rendered inside the tablet `LazyVerticalGrid`. Square-ish
- * surface with artwork, title (up to 2 lines), author (1 line muted), and an
- * optional NEW badge in the top-right.
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-internal fun SubscriptionGridTile(
-    podcast: Podcast,
-    hasNew: Boolean,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-) {
-    val c = LocalKofipodColors.current
-    val r = LocalKofipodRadii.current
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(r.md))
-            .background(c.surface)
-            .border(1.dp, c.border, RoundedCornerShape(r.md))
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(12.dp),
-    ) {
-        Box(Modifier.fillMaxWidth()) {
-            KofipodArtwork(
-                size = 96.dp,
-                seed = podcast.id.hashCode(),
-                label = podcast.title,
-                radius = 12.dp,
-                model = podcast.artworkUrl.ifBlank { null },
-                contentDescription = podcast.title,
-            )
-            if (hasNew) {
-                NewDot(
-                    ringColor = c.surface,
-                    modifier = Modifier.align(Alignment.TopEnd),
-                )
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        Text(
-            podcast.title,
-            color = c.text,
-            fontWeight = FontWeight.Bold,
-            fontSize = 15.sp,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (podcast.author.isNotBlank()) {
-            Spacer(Modifier.height(2.dp))
-            Text(
-                podcast.author,
-                color = c.textMute,
-                fontSize = 12.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }

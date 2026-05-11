@@ -461,8 +461,7 @@ private fun PodcastDetailSingleColumn(
  * that navigates to the full Episode detail route, and the truncated description.
  *
  * No tabs (Chapters / Mentioned / Discuss) — those are deferred to a follow-up; the
- * "Open" button is the bridge to the full experience in the meantime. Mirrors
- * [com.kofikodr.kofipod.ui.screens.library.SubscriptionPreviewPane]'s shape.
+ * "Open" button is the bridge to the full experience in the meantime.
  */
 @Composable
 internal fun EpisodePreviewPane(
