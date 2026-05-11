@@ -9,6 +9,9 @@ import androidx.compose.ui.Modifier
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import com.android.resources.Density
+import com.android.resources.ScreenOrientation
+import com.kofikodr.kofipod.db.Episode
+import com.kofikodr.kofipod.domain.PodcastSummary
 import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.screens.search.SearchContent
 import com.kofikodr.kofipod.ui.screens.search.SearchUiState
@@ -70,6 +73,56 @@ class SearchScreenSnapshots {
         }
     }
 
+    @Test
+    fun searchEmpty_tablet8Land_light() {
+        useLandscapeTabletConfig(width = 1200, height = 800)
+        paparazzi.snapshot {
+            SearchHarness(state = SearchUiState(), size = TabletSize.Tablet8Land)
+        }
+    }
+
+    @Test
+    fun searchEmpty_tablet10Land_light() {
+        useLandscapeTabletConfig(width = 1400, height = 1000)
+        paparazzi.snapshot {
+            SearchHarness(state = SearchUiState(), size = TabletSize.Tablet10Land)
+        }
+    }
+
+    @Test
+    fun searchPopulated_tablet10Land_noSelection_light() {
+        useLandscapeTabletConfig(width = 1400, height = 1000)
+        paparazzi.snapshot {
+            SearchHarness(state = POPULATED_FIXTURE, size = TabletSize.Tablet10Land)
+        }
+    }
+
+    @Test
+    fun searchPopulated_tablet10Land_withSelection_light() {
+        useLandscapeTabletConfig(width = 1400, height = 1000)
+        paparazzi.snapshot {
+            SearchHarness(
+                state = POPULATED_FIXTURE,
+                size = TabletSize.Tablet10Land,
+                selectedSearchResultId = "1001",
+                selectedRecentEpisodes = PREVIEW_EPISODES_FIXTURE,
+            )
+        }
+    }
+
+    @Test
+    fun searchPopulated_tablet8Land_withSelection_light() {
+        useLandscapeTabletConfig(width = 1200, height = 800)
+        paparazzi.snapshot {
+            SearchHarness(
+                state = POPULATED_FIXTURE,
+                size = TabletSize.Tablet8Land,
+                selectedSearchResultId = "1001",
+                selectedRecentEpisodes = PREVIEW_EPISODES_FIXTURE,
+            )
+        }
+    }
+
     private fun useTabletDeviceConfig(
         width: Int,
         height: Int,
@@ -85,12 +138,33 @@ class SearchScreenSnapshots {
                 ),
         )
     }
+
+    // Landscape configs need an explicit ScreenOrientation override; without it
+    // Paparazzi rotates the canvas to portrait and width/height arguments swap.
+    private fun useLandscapeTabletConfig(
+        width: Int,
+        height: Int,
+    ) {
+        paparazzi.unsafeUpdateConfig(
+            deviceConfig =
+                DeviceConfig.PIXEL_5.copy(
+                    screenWidth = width,
+                    screenHeight = height,
+                    xdpi = 160,
+                    ydpi = 160,
+                    density = Density.MEDIUM,
+                    orientation = ScreenOrientation.LANDSCAPE,
+                ),
+        )
+    }
 }
 
 @Composable
 private fun SearchHarness(
     state: SearchUiState,
     size: com.kofikodr.kofipod.ui.layout.TabletSize?,
+    selectedSearchResultId: String? = null,
+    selectedRecentEpisodes: List<Episode> = emptyList(),
 ) {
     KofipodTheme(KofipodThemeMode.Light) {
         val c = LocalKofipodColors.current
@@ -106,7 +180,108 @@ private fun SearchHarness(
                 onPickTopic = {},
                 onOpenPodcast = {},
                 size = size,
+                selectedSearchResultId = selectedSearchResultId,
+                selectedRecentEpisodes = selectedRecentEpisodes,
+                onSelectSearchResult = {},
+                onSubscribe = {},
             )
         }
     }
+}
+
+private fun summary(
+    id: String,
+    feedId: Long,
+    title: String,
+    author: String,
+    description: String,
+    category: String,
+    episodeCount: Int,
+): PodcastSummary =
+    PodcastSummary(
+        id = id,
+        feedId = feedId,
+        title = title,
+        author = author,
+        description = description,
+        artworkUrl = "",
+        feedUrl = "https://example.test/$id.xml",
+        category = category,
+        episodeCount = episodeCount,
+    )
+
+private fun previewEpisode(
+    podcastId: String,
+    seq: Int,
+    title: String,
+    durationSec: Long,
+): Episode =
+    Episode(
+        id = "$podcastId-ep$seq",
+        podcastId = podcastId,
+        guid = "$podcastId-ep$seq",
+        title = title,
+        description = "",
+        publishedAt = 0L,
+        durationSec = durationSec,
+        enclosureUrl = "",
+        enclosureMimeType = "audio/mpeg",
+        fileSizeBytes = 0L,
+        seasonNumber = null,
+        episodeNumber = seq.toLong(),
+        imageUrl = "",
+        chaptersUrl = null,
+        transcriptUrl = null,
+    )
+
+private val POPULATED_FIXTURE: SearchUiState by lazy {
+    SearchUiState(
+        query = "long form interviews",
+        results =
+            listOf(
+                summary(
+                    id = "1001",
+                    feedId = 1001L,
+                    title = "Long Form Interviews",
+                    author = "Marigold Studios",
+                    description =
+                        "Hour-plus conversations with builders, writers, and scientists. " +
+                            "Each guest sits down for a wide-ranging chat about craft, taste, " +
+                            "and the long arc of getting good at something hard.",
+                    category = "Interviews",
+                    episodeCount = 184,
+                ),
+                summary(
+                    id = "1002",
+                    feedId = 1002L,
+                    title = "Slow Conversations",
+                    author = "The Library Society",
+                    description =
+                        "A quiet show about deep work, attention, and the people who " +
+                            "practice it. Released monthly. No ads, no urgency.",
+                    category = "Society",
+                    episodeCount = 42,
+                ),
+                summary(
+                    id = "1003",
+                    feedId = 1003L,
+                    title = "On The Record",
+                    author = "Caraway House",
+                    description =
+                        "Working journalists explain how they reported the year's most " +
+                            "consequential stories — sources, drafts, dead ends and all.",
+                    category = "News",
+                    episodeCount = 67,
+                ),
+            ),
+    )
+}
+
+private val PREVIEW_EPISODES_FIXTURE: List<Episode> by lazy {
+    listOf(
+        previewEpisode("1001", 184, "Ada Palmer on the very long now", 78L * 60),
+        previewEpisode("1001", 183, "Field notes from the slow software movement", 64L * 60),
+        previewEpisode("1001", 182, "A reading list for difficult years", 71L * 60),
+        previewEpisode("1001", 181, "Why patient capital still matters", 59L * 60),
+    )
 }

@@ -61,9 +61,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.domain.PodcastSummary
+import com.kofikodr.kofipod.ui.layout.EmptyDetailHint
 import com.kofikodr.kofipod.ui.layout.LocalTabletSize
+import com.kofikodr.kofipod.ui.layout.MasterDetailPane
 import com.kofikodr.kofipod.ui.layout.TabletSize
+import com.kofikodr.kofipod.ui.primitives.KPButton
+import com.kofikodr.kofipod.ui.primitives.KPButtonStyle
 import com.kofikodr.kofipod.ui.primitives.KPChip
 import com.kofikodr.kofipod.ui.primitives.KPChipTone
 import com.kofikodr.kofipod.ui.primitives.KPIcon
@@ -84,6 +89,8 @@ fun SearchScreen(
     viewModel: SearchViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
+    val selectedSearchResultId by viewModel.selectedSearchResultId.collectAsState()
+    val selectedRecentEpisodes by viewModel.selectedRecentEpisodes.collectAsState()
 
     // Surface "out of reshuffles" as a transient toast string, consumed by the rendering below.
     var toastText by remember { mutableStateOf<String?>(null) }
@@ -106,6 +113,12 @@ fun SearchScreen(
         onLoadMore = viewModel::loadMore,
         onPickTopic = viewModel::setQuery,
         onOpenPodcast = onOpenPodcast,
+        selectedSearchResultId = selectedSearchResultId,
+        selectedRecentEpisodes = selectedRecentEpisodes,
+        onSelectSearchResult = viewModel::selectSearchResult,
+        // Task 3.4 will wire this to SubscriptionRepository.subscribe(...). For now
+        // the button is present in the preview pane but the click is a no-op.
+        onSubscribe = {},
         size = LocalTabletSize.current,
     )
 }
@@ -115,8 +128,13 @@ fun SearchScreen(
  * unchanged. Tablet portraits (Tablet8Port / Tablet10Port) route to
  * [SearchContentTabletSingle], which keeps the same chrome + result list but caps the
  * content column width for comfortable reading on wider screens. Tablet landscapes
- * still fall through to today's body — Task 3.3 will replace them with master-detail.
- * `internal` so Paparazzi tests can construct it directly.
+ * route to [SearchContentTabletMasterDetail] — master = scope tabs + results column,
+ * detail = [SearchPreviewPane] for the selected result.
+ *
+ * `selectedSearchResultId` / `selectedRecentEpisodes` / `onSelectSearchResult` /
+ * `onSubscribe` are only consumed by the landscape branch but are accepted on every
+ * call so the public `SearchScreen` doesn't have to fork its argument list per form
+ * factor. `internal` so Paparazzi tests can construct it directly.
  */
 @Composable
 internal fun SearchContent(
@@ -130,6 +148,10 @@ internal fun SearchContent(
     onPickTopic: (String) -> Unit,
     onOpenPodcast: (String) -> Unit,
     size: TabletSize?,
+    selectedSearchResultId: String? = null,
+    selectedRecentEpisodes: List<Episode> = emptyList(),
+    onSelectSearchResult: (String?) -> Unit = {},
+    onSubscribe: (String) -> Unit = {},
 ) {
     when (size) {
         TabletSize.Tablet8Port, TabletSize.Tablet10Port -> {
@@ -146,7 +168,31 @@ internal fun SearchContent(
                 size = size,
             )
         }
-        // TODO(tablet-phase-3.3/3.5): tablet landscapes route to master-detail.
+        TabletSize.Tablet8Land, TabletSize.Tablet10Land -> {
+            val selectedSummary =
+                remember(selectedSearchResultId, state.results) {
+                    if (selectedSearchResultId == null) {
+                        null
+                    } else {
+                        state.results.firstOrNull { it.id == selectedSearchResultId }
+                    }
+                }
+            SearchContentTabletMasterDetail(
+                state = state,
+                toastText = toastText,
+                onToastDone = onToastDone,
+                onQueryChange = onQueryChange,
+                onTabSelect = onTabSelect,
+                onReshuffle = onReshuffle,
+                onLoadMore = onLoadMore,
+                onPickTopic = onPickTopic,
+                onOpenPodcast = onOpenPodcast,
+                selectedSummary = selectedSummary,
+                selectedRecentEpisodes = selectedRecentEpisodes,
+                onSelectSearchResult = onSelectSearchResult,
+                onSubscribe = onSubscribe,
+            )
+        }
         else ->
             SearchContentPhone(
                 state = state,
@@ -245,9 +291,218 @@ private fun SearchContentTabletSingle(
 }
 
 /**
- * Shared body content used by both phone and tablet-portrait wrappers. Header +
- * search bar + scope tabs + the empty/loading/results switch — identical across
- * form factors. Layout differences (padding, max-width cap) live in the wrappers.
+ * Tablet landscape master-detail layout (8" / 10" landscape). Master pane (~46%) is
+ * the existing [SearchBodyContent] (header + scope tabs + results list) with the
+ * result-tap callback routed to selection instead of navigation. Detail pane (~54%)
+ * is [SearchPreviewPane] for the selected result, or an [EmptyDetailHint] when
+ * nothing is selected — the hint copy varies based on whether the query is empty.
+ *
+ * Per plan §3.3 the master/detail split is ~46/54 (wider detail than Library's
+ * 62/38), since the preview card is denser than Library's episode list.
+ */
+@Composable
+private fun SearchContentTabletMasterDetail(
+    state: SearchUiState,
+    toastText: String?,
+    onToastDone: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onTabSelect: (SearchTab) -> Unit,
+    onReshuffle: () -> Unit,
+    onLoadMore: () -> Unit,
+    onPickTopic: (String) -> Unit,
+    onOpenPodcast: (String) -> Unit,
+    selectedSummary: PodcastSummary?,
+    selectedRecentEpisodes: List<Episode>,
+    onSelectSearchResult: (String?) -> Unit,
+    onSubscribe: (String) -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    val emptyHint =
+        if (state.query.isBlank()) "Search to find shows" else "Pick a result to preview"
+    Box(Modifier.fillMaxSize().background(c.bg)) {
+        MasterDetailPane(
+            master = {
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+                ) {
+                    SearchBodyContent(
+                        state = state,
+                        onQueryChange = onQueryChange,
+                        onTabSelect = onTabSelect,
+                        onReshuffle = onReshuffle,
+                        onLoadMore = onLoadMore,
+                        onPickTopic = onPickTopic,
+                        onOpenPodcast = onOpenPodcast,
+                        onResultTap = { onSelectSearchResult(it) },
+                        selectedResultId = selectedSummary?.id,
+                    )
+                }
+            },
+            detail = {
+                val s = selectedSummary
+                if (s != null) {
+                    SearchPreviewPane(
+                        summary = s,
+                        recentEpisodes = selectedRecentEpisodes,
+                        onOpenPodcast = { onOpenPodcast(s.id) },
+                        onSubscribe = { onSubscribe(s.id) },
+                    )
+                }
+            },
+            hasSelection = selectedSummary != null,
+            masterWeight = 0.46f,
+            emptyDetail = { EmptyDetailHint(text = emptyHint) },
+        )
+        SearchToast(text = toastText, onDone = onToastDone)
+    }
+}
+
+/**
+ * Right-pane preview for a selected search result. Renders a podcast header (artwork
+ * + title + author + category), the Subscribe + Latest CTA pair, the blurb, and the
+ * last [SearchViewModel.PREVIEW_EPISODE_LIMIT] episodes (sourced from the DB; empty
+ * for unsubscribed shows, which is the common case in Search).
+ */
+@Composable
+private fun SearchPreviewPane(
+    summary: PodcastSummary,
+    recentEpisodes: List<Episode>,
+    onOpenPodcast: () -> Unit,
+    onSubscribe: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(c.bg)
+            .padding(20.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            KofipodArtwork(
+                size = 72.dp,
+                seed = summary.feedId.toInt(),
+                label = summary.title,
+                radius = 14.dp,
+                model = summary.artworkUrl.ifBlank { null },
+                contentDescription = summary.title,
+            )
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    summary.title,
+                    color = c.text,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 19.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (summary.author.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        summary.author,
+                        color = c.textMute,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (summary.category.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    CategoryTag(summary.category)
+                }
+            }
+        }
+        Spacer(Modifier.height(18.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            KPButton(
+                label = "Subscribe",
+                onClick = onSubscribe,
+                style = KPButtonStyle.PrimaryPink,
+            )
+            KPButton(
+                label = "Latest",
+                onClick = onOpenPodcast,
+                style = KPButtonStyle.Outline,
+            )
+        }
+        if (summary.description.isNotBlank()) {
+            Spacer(Modifier.height(18.dp))
+            Text(
+                summary.description,
+                color = c.textSoft,
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+                maxLines = 5,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        SectionLabel(title = "Latest episodes", topSpacing = 22.dp)
+        if (recentEpisodes.isEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "No episodes cached yet — subscribe to load the feed.",
+                color = c.textMute,
+                fontSize = 13.sp,
+            )
+        } else {
+            Spacer(Modifier.height(8.dp))
+            Column(Modifier.fillMaxWidth()) {
+                recentEpisodes.forEachIndexed { idx, ep ->
+                    SearchPreviewEpisodeRow(
+                        episode = ep,
+                        showDivider = idx < recentEpisodes.lastIndex,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchPreviewEpisodeRow(
+    episode: Episode,
+    showDivider: Boolean,
+) {
+    val c = LocalKofipodColors.current
+    Column(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(vertical = 10.dp)) {
+            Text(
+                episode.title,
+                color = c.text,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (episode.durationSec > 0) {
+                Spacer(Modifier.height(2.dp))
+                val minutes = (episode.durationSec / 60).coerceAtLeast(0)
+                Text(
+                    "$minutes MIN",
+                    color = c.textMute,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 0.6.sp,
+                )
+            }
+        }
+        if (showDivider) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+        }
+    }
+}
+
+/**
+ * Shared body content used by phone, tablet-portrait, and tablet-landscape (master
+ * pane) wrappers. Header + search bar + scope tabs + the empty/loading/results
+ * switch — identical across form factors. Layout differences (padding, max-width
+ * cap, chrome) live in the wrappers.
+ *
+ * `onResultTap` lets phone / portraits route to navigation (`onOpenPodcast`) while
+ * landscapes route to selection (`onSelectSearchResult`). `onOpenPodcast` is still
+ * accepted because the "For you" recommendations row inside the empty-state always
+ * navigates — selection only applies to the typed-query results list.
  */
 @Composable
 private fun SearchBodyContent(
@@ -258,6 +513,8 @@ private fun SearchBodyContent(
     onLoadMore: () -> Unit,
     onPickTopic: (String) -> Unit,
     onOpenPodcast: (String) -> Unit,
+    onResultTap: (String) -> Unit = onOpenPodcast,
+    selectedResultId: String? = null,
 ) {
     val c = LocalKofipodColors.current
     Spacer(Modifier.height(24.dp))
@@ -337,7 +594,8 @@ private fun SearchBodyContent(
                     ResultCard(
                         p = p,
                         isTopMatch = index == 0,
-                        onClick = { onOpenPodcast(p.id) },
+                        selected = p.id == selectedResultId,
+                        onClick = { onResultTap(p.id) },
                     )
                 }
                 if (state.hasMore) {
@@ -449,15 +707,18 @@ private fun ResultCard(
     p: PodcastSummary,
     isTopMatch: Boolean,
     onClick: () -> Unit,
+    selected: Boolean = false,
 ) {
     val c = LocalKofipodColors.current
     val r = LocalKofipodRadii.current
+    val borderColor = if (selected) c.pink else c.border
+    val borderWidth = if (selected) 2.dp else 1.dp
     Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(r.md))
             .background(c.surface)
-            .border(1.dp, c.border, RoundedCornerShape(r.md))
+            .border(borderWidth, borderColor, RoundedCornerShape(r.md))
             .clickable { onClick() }
             .padding(12.dp),
         verticalAlignment = Alignment.Top,

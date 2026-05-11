@@ -9,18 +9,26 @@ import com.kofikodr.kofipod.data.recommend.RecommendationsRepository
 import com.kofikodr.kofipod.data.recommend.RecommendationsSource
 import com.kofikodr.kofipod.data.recommend.ReshuffleResult
 import com.kofikodr.kofipod.data.repo.CategoriesSource
+import com.kofikodr.kofipod.data.repo.EpisodeSource
 import com.kofikodr.kofipod.data.repo.SearchSource
+import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.domain.PodcastSummary
 import com.mr3y.podcastindex.model.Category
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
@@ -46,10 +54,12 @@ data class SearchUiState(
     val recsReshufflesRemaining: Int = RecommendationsRepository.MAX_DAILY_RESHUFFLES,
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class SearchViewModel(
     private val repo: SearchSource,
     categories: CategoriesSource,
     private val recommendations: RecommendationsSource,
+    private val episodes: EpisodeSource,
     private val appScope: CoroutineScope,
     private val errors: NetworkErrorHandler,
     private val telemetry: com.kofikodr.kofipod.diagnostics.Telemetry,
@@ -62,6 +72,37 @@ class SearchViewModel(
 
     private var searchJob: Job? = null
     private var currentLimit: Int = PodcastIndexApi.PAGE_SIZE
+
+    /**
+     * Currently selected result for the tablet-landscape master-detail preview pane.
+     * VM-local UI state — not persisted across process death, not routed (the URL only
+     * changes when the user explicitly opens the podcast via the detail pane's
+     * "Latest" CTA). `null` means "show the empty-detail hint."
+     */
+    private val _selectedSearchResultId = MutableStateFlow<String?>(null)
+    val selectedSearchResultId: StateFlow<String?> = _selectedSearchResultId.asStateFlow()
+
+    /**
+     * Last [PREVIEW_EPISODE_LIMIT] episodes for the selected result, sourced from the
+     * existing [EpisodeSource.episodesFlow]. Search results are usually unsubscribed,
+     * so the table is typically empty — the preview pane handles that case by showing
+     * an "No episodes cached yet" hint. `flatMapLatest` cancels the previous
+     * episodesFlow subscription when the selection changes so we never accumulate
+     * orphaned collectors as the user clicks through results.
+     */
+    val selectedRecentEpisodes: StateFlow<List<Episode>> =
+        _selectedSearchResultId
+            .flatMapLatest { id ->
+                if (id == null) {
+                    flowOf(emptyList())
+                } else {
+                    episodes.episodesFlow(id).map { it.take(PREVIEW_EPISODE_LIMIT) }
+                }
+            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun selectSearchResult(podcastId: String?) {
+        _selectedSearchResultId.value = podcastId
+    }
 
     init {
         viewModelScope.launch {
@@ -190,6 +231,12 @@ class SearchViewModel(
 
     companion object {
         const val DEBOUNCE_MS: Long = 600
+
+        /**
+         * How many recent episodes the tablet-landscape preview pane surfaces for the
+         * selected search result. Matches plan §3.3's "last 4 episodes" guideline.
+         */
+        const val PREVIEW_EPISODE_LIMIT: Int = 4
 
         // Long enough for PullToRefreshBox to observe recsLoading=true and play its retract
         // animation cleanly when we short-circuit (e.g. daily cap hit, no API call needed).
