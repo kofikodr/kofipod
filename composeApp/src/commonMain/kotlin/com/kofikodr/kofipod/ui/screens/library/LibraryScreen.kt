@@ -384,7 +384,11 @@ private fun LibraryContentTabletSingle(
     val isEmpty = lists.isEmpty() && podcasts.isEmpty()
 
     val cardWidth = if (size == TabletSize.Tablet10Port) 320.dp else 260.dp
-    val gridMinTile = cardWidth
+    // Grid cell min is decoupled from folder-card width: spec mandates the
+    // folder cards stay at 260/320 dp, but the subscriptions grid wants 3
+    // columns on 10"P (the 320 dp value would resolve to 2 once 14 dp
+    // horizontal spacing is applied to a 960 dp content area).
+    val gridCellMin = if (size == TabletSize.Tablet10Port) 300.dp else 260.dp
 
     val sortedPodcasts =
         podcasts.sortedByDescending { it.addedAt }
@@ -402,7 +406,7 @@ private fun LibraryContentTabletSingle(
         }
 
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = gridMinTile),
+        columns = GridCells.Adaptive(minSize = gridCellMin),
         modifier = Modifier.fillMaxSize().background(c.bg),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 24.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -467,16 +471,11 @@ private fun LibraryContentTabletSingle(
                             )
                         }
                     }
-                    items(state.smartPlaylists.size) { idx ->
-                        val tile = state.smartPlaylists[idx]
-                        SmartPlaylistTile(
-                            modifier = Modifier.width(cardWidth).height(120.dp),
-                            playlist = tile.playlist,
-                            matchedCount = tile.matchedCount,
-                            onClick = { onOpenSmartPlaylistDetail(tile.playlist.id) },
-                            onLongClick = { onLongPressSmartPlaylist(tile.playlist) },
-                        )
-                    }
+                    // TODO(tablet-phase-2): Smart playlists in the tablet folders row need a
+                    // dedicated card composable. SmartPlaylistTile applies aspectRatio(1f)
+                    // which conflicts with the 120 dp fixed-height folder row. Render them
+                    // inline once a SmartPlaylistFolderCard variant exists; until then they
+                    // only appear in the phone library.
                 }
             }
         }
