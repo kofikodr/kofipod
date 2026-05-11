@@ -76,6 +76,7 @@ internal fun LibraryContentTabletSingle(
     onImportOpml: () -> Unit,
     size: TabletSize,
     showRecentlyOpened: Boolean = true,
+    showEmptyHero: Boolean = true,
 ) {
     val c = LocalKofipodColors.current
 
@@ -129,6 +130,7 @@ internal fun LibraryContentTabletSingle(
                     onCreateList = onNewList,
                     onOpenStarterPack = onOpenStarterPack,
                     onImportOpml = onImportOpml,
+                    showHero = showEmptyHero,
                 )
             }
             return@LazyVerticalGrid
@@ -255,16 +257,56 @@ internal fun LibraryContentTabletMasterDetail(
     onImportOpml: () -> Unit,
     masterSize: TabletSize,
 ) {
+    val lists: List<PodcastList> = state.groups.mapNotNull { it.list }
+    val podcasts: List<Podcast> = state.groups.flatMap { it.podcasts }
+    val isLibraryEmpty = lists.isEmpty() && podcasts.isEmpty()
+
+    if (isLibraryEmpty) {
+        // Empty library: keep a 50/50 split. Master pane shows the empty-state
+        // action list (no hero), detail pane shows the hero graphic so it gets
+        // room to breathe on landscape.
+        MasterDetailPane(
+            masterWeight = 0.5f,
+            hasSelection = true,
+            master = {
+                LibraryContentTabletSingle(
+                    state = state,
+                    onOpenPodcast = onOpenPodcast,
+                    onOpenList = onOpenList,
+                    onOpenSearch = onOpenSearch,
+                    onOpenStarterPack = onOpenStarterPack,
+                    onOpenBookmarks = onOpenBookmarks,
+                    onOpenStats = onOpenStats,
+                    onOpenLibrarySearch = onOpenLibrarySearch,
+                    onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
+                    onNewList = onNewList,
+                    onLongPressPodcast = onLongPressPodcast,
+                    onLongPressList = onLongPressList,
+                    onLongPressSmartPlaylist = onLongPressSmartPlaylist,
+                    onImportOpml = onImportOpml,
+                    size = masterSize,
+                    showRecentlyOpened = false,
+                    showEmptyHero = false,
+                )
+            },
+            detail = {
+                EmptyHeroDetailPane(
+                    onFindPodcast = onOpenSearch,
+                    onCreateList = onNewList,
+                )
+            },
+        )
+        return
+    }
+
     val recent: List<Podcast> =
-        state.groups
-            .flatMap { it.podcasts }
+        podcasts
             .sortedByDescending { it.addedAt }
             .take(RECENT_LIMIT)
 
     if (recent.isEmpty()) {
-        // No detail content → drop the split pane so the master gets full width
-        // (matters most when the library is empty and the empty-state card needs
-        // breathing room).
+        // Library has folders but no podcasts yet → no recently-opened content.
+        // Drop the split pane so the master folder strip gets full width.
         LibraryContentTabletSingle(
             state = state,
             onOpenPodcast = onOpenPodcast,
@@ -318,6 +360,32 @@ internal fun LibraryContentTabletMasterDetail(
         // pane is always non-empty by the time we reach this branch.
         hasSelection = true,
     )
+}
+
+/**
+ * Right-pane hero for the empty-library state in tablet landscape. Wraps
+ * [EmptyHeroCard] in a vertically-centered container with breathing-room padding
+ * so the gradient card stands alone as the visual anchor of the detail pane.
+ */
+@Composable
+private fun EmptyHeroDetailPane(
+    onFindPodcast: () -> Unit,
+    onCreateList: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    Box(
+        modifier = Modifier.fillMaxSize().background(c.bg),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+        ) {
+            EmptyHeroCard(
+                onFindPodcast = onFindPodcast,
+                onCreateList = onCreateList,
+            )
+        }
+    }
 }
 
 /**

@@ -959,12 +959,15 @@ internal fun LibraryEmptyState(
     onCreateList: () -> Unit,
     onOpenStarterPack: () -> Unit,
     onImportOpml: () -> Unit,
+    showHero: Boolean = true,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
     ) {
-        EmptyHeroCard(onFindPodcast = onFindPodcast, onCreateList = onCreateList)
-        SectionLabel(title = "Three ways to start", topSpacing = 22.dp)
+        if (showHero) {
+            EmptyHeroCard(onFindPodcast = onFindPodcast, onCreateList = onCreateList)
+        }
+        SectionLabel(title = "Three ways to start", topSpacing = if (showHero) 22.dp else 0.dp)
         StartActionRow(
             icon = KPIconName.Search,
             iconBg = EmptyStateIconBg.Pink,
@@ -991,8 +994,13 @@ internal fun LibraryEmptyState(
     }
 }
 
+/**
+ * Purple gradient hero card with the "A clean shelf" headline and primary CTAs.
+ * Internal (rather than private) so the tablet body can render it standalone in
+ * the landscape empty-state detail pane.
+ */
 @Composable
-private fun EmptyHeroCard(
+internal fun EmptyHeroCard(
     onFindPodcast: () -> Unit,
     onCreateList: () -> Unit,
 ) {
