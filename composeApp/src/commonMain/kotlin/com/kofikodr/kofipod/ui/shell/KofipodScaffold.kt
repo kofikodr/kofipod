@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.kofikodr.kofipod.ui.shell
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -89,7 +93,20 @@ private fun PhoneScaffold(
         },
         bottomBar = {
             Column {
-                if (!onPlayerScreen) {
+                // MiniPlayer visibility is animated with an asymmetric enter/exit:
+                // - Entering Player: hide immediately (exit duration 0) so the
+                //   MiniPlayer never co-exists on screen with the expanded Player
+                //   during nav's pop/push transition.
+                // - Leaving Player: fade in over the Player's exit animation so
+                //   the chrome flip isn't a visible single-frame flash.
+                // Replaces a hard `if (!onPlayerScreen)` gate, which let
+                // currentBackStack flip to false at the start of the pop while
+                // PlayerScreen was still rendering its exit transition.
+                AnimatedVisibility(
+                    visible = !onPlayerScreen,
+                    enter = fadeIn(tween(MINIPLAYER_FADE_IN_MS)),
+                    exit = ExitTransition.None,
+                ) {
                     MiniPlayer(
                         onOpen = {
                             nav.navigate(
@@ -184,10 +201,18 @@ internal fun TabletScaffoldContent(
                     .fillMaxHeight(),
             ) {
                 Box(Modifier.weight(1f)) { content() }
-                if (showDockedMiniPlayer) {
+                // Same asymmetric fade as PhoneScaffold's MiniPlayer — mask the
+                // single-frame overlap when the Player route pops/pushes.
+                AnimatedVisibility(
+                    visible = showDockedMiniPlayer,
+                    enter = fadeIn(tween(MINIPLAYER_FADE_IN_MS)),
+                    exit = ExitTransition.None,
+                ) {
                     dockedMiniPlayer()
                 }
             }
         }
     }
 }
+
+private const val MINIPLAYER_FADE_IN_MS = 220

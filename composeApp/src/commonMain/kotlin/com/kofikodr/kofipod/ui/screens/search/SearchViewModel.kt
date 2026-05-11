@@ -17,6 +17,7 @@ import com.kofikodr.kofipod.domain.PodcastSummary
 import com.mr3y.podcastindex.model.Category
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -26,6 +27,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -56,7 +60,7 @@ data class SearchUiState(
     val recsReshufflesRemaining: Int = RecommendationsRepository.MAX_DAILY_RESHUFFLES,
 )
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class SearchViewModel(
     private val repo: SearchSource,
     categories: CategoriesSource,
@@ -75,6 +79,18 @@ class SearchViewModel(
 
     private var searchJob: Job? = null
     private var currentLimit: Int = PodcastIndexApi.PAGE_SIZE
+
+    /**
+     * Debounced query channel. [setQuery]/[setTab] push the user's intent here without
+     * launching a coroutine per keystroke; a single [kotlinx.coroutines.flow.collectLatest]
+     * downstream of [kotlinx.coroutines.flow.debounce] runs the actual search and
+     * auto-cancels any in-flight request when a newer query arrives. Replaces the prior
+     * `searchJob?.cancel() + viewModelScope.launch + delay(DEBOUNCE_MS)` pattern on every
+     * keystroke, which piled up Main-thread frames under rapid input (see ANR bug fix).
+     */
+    private data class QueryKey(val query: String, val tab: SearchTab)
+
+    private val queryChannel = MutableStateFlow(QueryKey("", SearchTab.All))
 
     /**
      * Currently selected result for the tablet-landscape master-detail preview pane.
@@ -102,6 +118,18 @@ class SearchViewModel(
                     episodes.episodesFlow(id).map { it.take(PREVIEW_EPISODE_LIMIT) }
                 }
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Whether the currently selected search result is already in the user's library.
+     * Drives the preview pane's Subscribe/Subscribed button label so re-entering Search
+     * after subscribing shows the correct state (bug fix: previously the label was a
+     * hardcoded "Subscribe" string regardless of DB state).
+     */
+    val selectedInLibrary: StateFlow<Boolean> =
+        _selectedSearchResultId
+            .flatMapLatest { id ->
+                if (id == null) flowOf(false) else library.podcastFlow(id).map { it != null }
+            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     fun selectSearchResult(podcastId: String?) {
         _selectedSearchResultId.value = podcastId
@@ -142,6 +170,25 @@ class SearchViewModel(
                 _state.value = _state.value.copy(recsLoading = false)
             }
         }
+        viewModelScope.launch {
+            queryChannel
+                .debounce(DEBOUNCE_MS)
+                .distinctUntilChanged()
+                .collectLatest { key ->
+                    if (key.query.isBlank()) {
+                        _state.value =
+                            _state.value.copy(
+                                results = emptyList(),
+                                loading = false,
+                                loadingMore = false,
+                                hasMore = false,
+                                error = null,
+                            )
+                    } else {
+                        runSearch(loadMore = false, key = key)
+                    }
+                }
+        }
     }
 
     fun reshuffle() {
@@ -175,75 +222,72 @@ class SearchViewModel(
     }
 
     fun setQuery(q: String) {
+        // Cancel any in-flight loadMore before resetting limit so a stale paged result
+        // can't write back over the fresh query's first page.
+        searchJob?.cancel()
         _state.value = _state.value.copy(query = q)
         currentLimit = PodcastIndexApi.PAGE_SIZE
-        scheduleSearch(loadMore = false)
+        queryChannel.value = QueryKey(q, _state.value.tab)
     }
 
     fun setTab(tab: SearchTab) {
+        searchJob?.cancel()
         _state.value = _state.value.copy(tab = tab)
         currentLimit = PodcastIndexApi.PAGE_SIZE
-        scheduleSearch(loadMore = false)
+        queryChannel.value = QueryKey(_state.value.query, tab)
     }
 
     fun loadMore() {
         val s = _state.value
         if (s.loading || s.loadingMore || !s.hasMore || s.query.isBlank()) return
         currentLimit += PodcastIndexApi.PAGE_SIZE
-        scheduleSearch(loadMore = true)
-    }
-
-    private fun scheduleSearch(loadMore: Boolean) {
         searchJob?.cancel()
-        val s = _state.value
-        if (s.query.isBlank()) {
-            _state.value = s.copy(results = emptyList(), loading = false, loadingMore = false, hasMore = false, error = null)
-            return
-        }
         searchJob =
             viewModelScope.launch {
-                if (!loadMore) delay(DEBOUNCE_MS)
-                _state.value =
-                    _state.value.copy(
-                        loading = !loadMore,
-                        loadingMore = loadMore,
-                        error = null,
-                    )
-                val limit = currentLimit
-                runCatching {
-                    when (s.tab) {
-                        SearchTab.All -> repo.searchAll(s.query, limit)
-                        SearchTab.Title -> repo.searchByTitle(s.query, limit)
-                        SearchTab.Person -> repo.searchByPerson(s.query, limit)
-                    }
-                }.onSuccess { results ->
-                    _state.value =
-                        _state.value.copy(
-                            results = results,
-                            loading = false,
-                            loadingMore = false,
-                            hasMore = results.size >= limit,
-                        )
-                    if (!loadMore) {
-                        telemetry.track(
-                            com.kofikodr.kofipod.diagnostics.TelemetryEvent.SearchPerformed(
-                                com.kofikodr.kofipod.diagnostics.SearchSource.TYPED,
-                            ),
-                        )
-                    }
-                }.onFailure { e ->
-                    // Search has no cached results to fall back on, so always surface the
-                    // friendly message inline. Snackbar is reserved for screens with a cache.
-                    // NetworkErrorHandler.handle() rethrows CancellationException internally,
-                    // so we don't need a local guard here.
-                    _state.value =
-                        _state.value.copy(
-                            loading = false,
-                            loadingMore = false,
-                            error = errors.handle(e, hasCachedData = false, fallback = "Search failed"),
-                        )
-                }
+                runSearch(loadMore = true, key = QueryKey(s.query, s.tab))
             }
+    }
+
+    private suspend fun runSearch(
+        loadMore: Boolean,
+        key: QueryKey,
+    ) {
+        _state.value =
+            _state.value.copy(
+                loading = !loadMore,
+                loadingMore = loadMore,
+                error = null,
+            )
+        val limit = currentLimit
+        runCatching {
+            when (key.tab) {
+                SearchTab.All -> repo.searchAll(key.query, limit)
+                SearchTab.Title -> repo.searchByTitle(key.query, limit)
+                SearchTab.Person -> repo.searchByPerson(key.query, limit)
+            }
+        }.onSuccess { results ->
+            _state.value =
+                _state.value.copy(
+                    results = results,
+                    loading = false,
+                    loadingMore = false,
+                    hasMore = results.size >= limit,
+                )
+            if (!loadMore) {
+                telemetry.track(
+                    com.kofikodr.kofipod.diagnostics.TelemetryEvent.SearchPerformed(
+                        com.kofikodr.kofipod.diagnostics.SearchSource.TYPED,
+                    ),
+                )
+            }
+        }.onFailure { e ->
+            _state.value =
+                _state.value.copy(
+                    loading = false,
+                    loadingMore = false,
+                    error = errors.handle(e, hasCachedData = false, fallback = "Search failed"),
+                )
+        }
     }
 
     companion object {

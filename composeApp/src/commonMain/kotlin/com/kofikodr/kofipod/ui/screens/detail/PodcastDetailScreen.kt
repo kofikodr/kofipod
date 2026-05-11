@@ -111,10 +111,16 @@ fun PodcastDetailScreen(
 
     // Size-aware routing for episode-row taps — see routeEpisodeTap. Phone +
     // tablet portraits navigate; tablet landscapes preview-first via selection.
+    // On landscape, the EpisodePreviewPane only renders for storedEpisodes (full
+    // Episode rows); remote/unsubscribed rows have no preview content available
+    // (`EpisodePreview` is a minimal projection), so a tap on a remote row falls
+    // through to the full episode screen rather than silently no-op-ing.
     val onEpisodeTap: (String) -> Unit = { episodeId ->
+        val inStored = state.storedEpisodes.any { it.id == episodeId }
         when (val action = routeEpisodeTap(tabletSize, episodeId)) {
             is EpisodeTapAction.Navigate -> onOpenEpisode(action.episodeId)
-            is EpisodeTapAction.Select -> viewModel.selectEpisode(action.episodeId)
+            is EpisodeTapAction.Select ->
+                if (inStored) viewModel.selectEpisode(action.episodeId) else onOpenEpisode(action.episodeId)
         }
     }
 
@@ -215,6 +221,7 @@ internal fun PodcastDetailContent(
                 playingEpisodeId = playingEpisodeId,
                 activePlaybackFlow = activePlaybackFlow,
                 refreshing = refreshing,
+                selectedEpisodeId = if (isLandscape) selectedEpisode?.id else null,
                 onBack = onBack,
                 onSharePodcast = onSharePodcast,
                 onRefresh = onRefresh,
@@ -262,6 +269,7 @@ private fun PodcastDetailSingleColumn(
     playingEpisodeId: String?,
     activePlaybackFlow: StateFlow<ActivePlayback>,
     refreshing: Boolean,
+    selectedEpisodeId: String? = null,
     onBack: () -> Unit,
     onSharePodcast: () -> Unit,
     onRefresh: () -> Unit,
@@ -393,6 +401,7 @@ private fun PodcastDetailSingleColumn(
                     EpisodeRow(
                         ep = ep,
                         isActive = ep.id == playingEpisodeId,
+                        isSelected = ep.id == selectedEpisodeId,
                         canDownload = inLibrary,
                         activePlaybackFlow = activePlaybackFlow,
                         onTap = { onEpisodeTap(ep.id) },
@@ -827,12 +836,14 @@ private fun EpisodeRow(
     onLongPress: () -> Unit,
     onPlay: () -> Unit,
     onDownload: () -> Unit,
+    isSelected: Boolean = false,
 ) {
     val c = LocalKofipodColors.current
     val playable = ep.playable
     Row(
         Modifier
             .fillMaxWidth()
+            .background(if (isSelected) c.purpleTint else Color.Transparent)
             .combinedClickable(
                 onClick = onTap,
                 onLongClick = onLongPress,

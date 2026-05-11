@@ -91,6 +91,7 @@ fun SearchScreen(
     val state by viewModel.state.collectAsState()
     val selectedSearchResultId by viewModel.selectedSearchResultId.collectAsState()
     val selectedRecentEpisodes by viewModel.selectedRecentEpisodes.collectAsState()
+    val selectedInLibrary by viewModel.selectedInLibrary.collectAsState()
 
     // Surface "out of reshuffles" as a transient toast string, consumed by the rendering below.
     var toastText by remember { mutableStateOf<String?>(null) }
@@ -127,6 +128,7 @@ fun SearchScreen(
         onResultTap = onResultTap,
         selectedSearchResultId = selectedSearchResultId,
         selectedRecentEpisodes = selectedRecentEpisodes,
+        selectedInLibrary = selectedInLibrary,
         onSubscribe = viewModel::subscribe,
         size = tabletSize,
     )
@@ -162,6 +164,7 @@ internal fun SearchContent(
     onResultTap: (String) -> Unit = onOpenPodcast,
     selectedSearchResultId: String? = null,
     selectedRecentEpisodes: List<Episode> = emptyList(),
+    selectedInLibrary: Boolean = false,
     onSubscribe: (String) -> Unit = {},
 ) {
     when (size) {
@@ -202,6 +205,7 @@ internal fun SearchContent(
                 onResultTap = onResultTap,
                 selectedSummary = selectedSummary,
                 selectedRecentEpisodes = selectedRecentEpisodes,
+                selectedInLibrary = selectedInLibrary,
                 onSubscribe = onSubscribe,
             )
         }
@@ -331,6 +335,7 @@ private fun SearchContentTabletMasterDetail(
     onResultTap: (String) -> Unit,
     selectedSummary: PodcastSummary?,
     selectedRecentEpisodes: List<Episode>,
+    selectedInLibrary: Boolean,
     onSubscribe: (String) -> Unit,
 ) {
     val c = LocalKofipodColors.current
@@ -361,6 +366,7 @@ private fun SearchContentTabletMasterDetail(
                     SearchPreviewPane(
                         summary = s,
                         recentEpisodes = selectedRecentEpisodes,
+                        inLibrary = selectedInLibrary,
                         onOpenPodcast = { onOpenPodcast(s.id) },
                         onSubscribe = { onSubscribe(s.id) },
                     )
@@ -384,6 +390,7 @@ private fun SearchContentTabletMasterDetail(
 private fun SearchPreviewPane(
     summary: PodcastSummary,
     recentEpisodes: List<Episode>,
+    inLibrary: Boolean,
     onOpenPodcast: () -> Unit,
     onSubscribe: () -> Unit,
 ) {
@@ -432,9 +439,10 @@ private fun SearchPreviewPane(
         Spacer(Modifier.height(18.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             KPButton(
-                label = "Subscribe",
+                label = if (inLibrary) "Subscribed" else "Subscribe",
                 onClick = onSubscribe,
-                style = KPButtonStyle.PrimaryPink,
+                style = if (inLibrary) KPButtonStyle.Outline else KPButtonStyle.PrimaryPink,
+                enabled = !inLibrary,
             )
             KPButton(
                 label = "Latest",
@@ -457,7 +465,11 @@ private fun SearchPreviewPane(
         if (recentEpisodes.isEmpty()) {
             Spacer(Modifier.height(8.dp))
             Text(
-                "No episodes cached yet — subscribe to load the feed.",
+                if (inLibrary) {
+                    "No episodes cached yet."
+                } else {
+                    "No episodes cached yet — subscribe to load the feed."
+                },
                 color = c.textMute,
                 fontSize = 13.sp,
             )
