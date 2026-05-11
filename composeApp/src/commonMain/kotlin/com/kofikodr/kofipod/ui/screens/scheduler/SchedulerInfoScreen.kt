@@ -429,7 +429,7 @@ private fun LegendDot(color: Color) {
  * track stub. Weekday labels are derived from each bucket's real date.
  */
 @Composable
-private fun KindAwareChart(
+internal fun KindAwareChart(
     buckets: List<DayBucket>,
     episodeCheck: Color,
     backup: Color,
