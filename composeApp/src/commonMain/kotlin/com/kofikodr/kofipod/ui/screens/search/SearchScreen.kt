@@ -235,6 +235,16 @@ private fun SearchContentTabletMasterDetail(
     onOpenEpisode: (String) -> Unit,
 ) {
     val c = LocalKofipodColors.current
+    // Cold-start = no query, no results, no recommendations to surface, not loading recs.
+    // In that state we relocate the hero graphics into the detail pane and split 50/50,
+    // so the master pane shows only the categories list.
+    val isColdStart =
+        state.query.isBlank() &&
+            state.results.isEmpty() &&
+            state.recommendations.isEmpty() &&
+            !state.recsLoading &&
+            !state.loading &&
+            state.error == null
     val emptyHint =
         if (state.query.isBlank()) "Search to find shows" else "Pick a result to preview"
     Box(Modifier.fillMaxSize().background(c.bg)) {
@@ -253,6 +263,7 @@ private fun SearchContentTabletMasterDetail(
                         onOpenPodcast = onOpenPodcast,
                         onResultTap = onResultTap,
                         selectedResultId = selectedSearchResultId,
+                        showEmptyStateHero = false,
                     )
                 }
             },
@@ -273,8 +284,21 @@ private fun SearchContentTabletMasterDetail(
                 }
             },
             hasSelection = selectedSearchResultId != null,
-            masterWeight = 0.46f,
-            emptyDetail = { EmptyDetailHint(text = emptyHint) },
+            masterWeight = if (isColdStart) 0.5f else 0.46f,
+            emptyDetail = {
+                if (isColdStart) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 24.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        SearchHeroCard()
+                    }
+                } else {
+                    EmptyDetailHint(text = emptyHint)
+                }
+            },
         )
         SearchToast(text = toastText, onDone = onToastDone)
     }
@@ -382,6 +406,7 @@ private fun SearchBodyContent(
     onOpenPodcast: (String) -> Unit,
     onResultTap: (String) -> Unit = onOpenPodcast,
     selectedResultId: String? = null,
+    showEmptyStateHero: Boolean = true,
 ) {
     val c = LocalKofipodColors.current
     Spacer(Modifier.height(24.dp))
@@ -446,6 +471,7 @@ private fun SearchBodyContent(
                         SearchEmptyState(
                             categories = state.popularCategories,
                             onPickTopic = onPickTopic,
+                            showHero = showEmptyStateHero,
                         )
                 }
             }
@@ -805,6 +831,7 @@ private fun SearchToast(
 private fun SearchEmptyState(
     categories: List<Category>,
     onPickTopic: (String) -> Unit,
+    showHero: Boolean = true,
 ) {
     Column(
         modifier =
@@ -813,8 +840,8 @@ private fun SearchEmptyState(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 24.dp),
     ) {
-        SearchHeroCard()
-        SectionLabel(title = "Popular categories", topSpacing = 22.dp)
+        if (showHero) SearchHeroCard()
+        SectionLabel(title = "Popular categories", topSpacing = if (showHero) 22.dp else 4.dp)
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
