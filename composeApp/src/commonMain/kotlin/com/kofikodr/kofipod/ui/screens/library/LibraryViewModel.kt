@@ -6,7 +6,6 @@ import androidx.lifecycle.viewModelScope
 import com.kofikodr.kofipod.data.repo.EpisodeSource
 import com.kofikodr.kofipod.data.repo.LibraryRepository
 import com.kofikodr.kofipod.data.repo.StatsRepository
-import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.db.Podcast
 import com.kofikodr.kofipod.db.PodcastList
 import com.kofikodr.kofipod.opml.OpmlAction
@@ -21,10 +20,8 @@ import com.kofikodr.kofipod.util.slugifyName
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -56,7 +53,7 @@ data class LibraryUiState(
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryViewModel(
     private val repo: LibraryRepository,
-    private val episodes: EpisodeSource,
+    episodes: EpisodeSource,
     stats: StatsRepository,
     private val opml: OpmlController,
     private val pro: ProEntitlementRepository,
@@ -112,35 +109,6 @@ class LibraryViewModel(
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryUiState())
 
-    /**
-     * Currently selected subscription for the tablet-landscape master-detail preview pane.
-     * VM-local UI state — not persisted across process death, not routed (the URL only
-     * changes when the user explicitly opens the podcast via the detail pane's "Open"
-     * CTA). `null` means "show the empty-detail hint."
-     */
-    private val _selectedPodcastId = MutableStateFlow<String?>(null)
-    val selectedPodcastId: StateFlow<String?> = _selectedPodcastId.asStateFlow()
-
-    /**
-     * Last [PREVIEW_EPISODE_LIMIT] episodes for the selected podcast, sourced from the
-     * existing `EpisodeSource.episodesFlow`. `flatMapLatest` cancels the previous
-     * episodesFlow subscription when the selection changes so we never accumulate
-     * orphaned collectors as the user clicks through the master grid.
-     */
-    val selectedEpisodes: StateFlow<List<Episode>> =
-        selectedPodcastId
-            .flatMapLatest { id ->
-                if (id == null) {
-                    flowOf(emptyList())
-                } else {
-                    episodes.episodesFlow(id).map { it.take(PREVIEW_EPISODE_LIMIT) }
-                }
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    fun selectPodcast(podcastId: String?) {
-        _selectedPodcastId.value = podcastId
-    }
-
     fun createList(name: String) {
         if (name.isBlank()) return
         val existing = state.value.groups.mapNotNull { it.list?.id }.toSet()
@@ -193,15 +161,6 @@ class LibraryViewModel(
             runCatching { playlists.delete(id) }
                 .onFailure { if (it is CancellationException) throw it }
         }
-    }
-
-    companion object {
-        /**
-         * How many recent episodes the tablet-landscape preview pane surfaces for the
-         * selected podcast. Matches plan §2.3's "last N episodes" guideline; kept here
-         * as a single source of truth for the VM-derived flow.
-         */
-        const val PREVIEW_EPISODE_LIMIT: Int = 5
     }
 
     private fun gate(triggerKey: String): Boolean =

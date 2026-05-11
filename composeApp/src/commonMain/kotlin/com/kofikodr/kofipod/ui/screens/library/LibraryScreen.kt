@@ -55,7 +55,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.db.Podcast
 import com.kofikodr.kofipod.db.PodcastList
 import com.kofikodr.kofipod.ui.layout.LocalTabletSize
@@ -85,30 +84,15 @@ fun LibraryScreen(
     viewModel: LibraryViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
-    val selectedPodcastId by viewModel.selectedPodcastId.collectAsState()
-    val selectedEpisodes by viewModel.selectedEpisodes.collectAsState()
-    val tabletSize = LocalTabletSize.current
 
     var newListOpen by remember { mutableStateOf(false) }
     var pendingDeletePodcast by remember { mutableStateOf<Podcast?>(null) }
     var pendingDeleteList by remember { mutableStateOf<PodcastList?>(null) }
     var pendingDeleteSmartPlaylist by remember { mutableStateOf<SmartPlaylistDomain?>(null) }
 
-    // Size-aware routing for tile taps — see routeLibraryPodcastTap. Phone +
-    // tablet portraits navigate; tablet landscapes preview-first via selection.
-    val onPodcastTap: (String) -> Unit = { podcastId ->
-        when (val action = routeLibraryPodcastTap(tabletSize, podcastId)) {
-            is PodcastTapAction.Navigate -> onOpenPodcast(action.podcastId)
-            is PodcastTapAction.Select -> viewModel.selectPodcast(action.podcastId)
-        }
-    }
-
     LibraryContent(
         state = state,
-        selectedPodcastId = selectedPodcastId,
-        selectedEpisodes = selectedEpisodes,
-        onPodcastTap = onPodcastTap,
-        onOpenPodcastDetail = onOpenPodcast,
+        onOpenPodcast = onOpenPodcast,
         onOpenList = onOpenList,
         onOpenSearch = onOpenSearch,
         onOpenStarterPack = onOpenStarterPack,
@@ -191,24 +175,18 @@ fun LibraryScreen(
 
 /**
  * Stateless Library body. Branches by [size]:
- *  - Phone (`null`): today's single-column LazyColumn body (unchanged from Slice 1).
- *  - Tablet portrait (`Tablet8Port` / `Tablet10Port`): single-column body from Task 2.2.
- *  - Tablet landscape (`Tablet8Land` / `Tablet10Land`): Task 2.3's master-detail body —
- *    master pane reuses the tablet-portrait grid; detail pane previews the selected
- *    subscription's last [LibraryViewModel.PREVIEW_EPISODE_LIMIT] episodes.
- *
- * `selectedPodcastId` / `selectedEpisodes` are only consumed by the landscape branch
- * but live on the signature so the screen-level hoist stays uniform. `onPodcastTap`
- * is the single size-aware tile-tap callback (see routeLibraryPodcastTap upstream);
- * `onOpenPodcastDetail` is the separate "Open" gesture in the landscape detail pane.
+ *  - Phone (`null`): single-column LazyColumn body (Folders + Recently opened).
+ *  - Tablet portrait (`Tablet8Port` / `Tablet10Port`): single-column body mirroring
+ *    phone — Folders strip + inline Recently opened.
+ *  - Tablet landscape (`Tablet8Land` / `Tablet10Land`): master-detail body — master
+ *    shows Folders strip, detail pane shows Recently opened. When the library has no
+ *    podcasts (and therefore no Recently opened content), the detail pane collapses
+ *    and the master takes full width.
  */
 @Composable
 internal fun LibraryContent(
     state: LibraryUiState,
-    selectedPodcastId: String?,
-    selectedEpisodes: List<Episode>,
-    onPodcastTap: (String) -> Unit,
-    onOpenPodcastDetail: (String) -> Unit,
+    onOpenPodcast: (String) -> Unit,
     onOpenList: (String?) -> Unit,
     onOpenSearch: () -> Unit,
     onOpenStarterPack: () -> Unit,
@@ -226,7 +204,7 @@ internal fun LibraryContent(
     if (size == TabletSize.Tablet8Port || size == TabletSize.Tablet10Port) {
         LibraryContentTabletSingle(
             state = state,
-            onOpenPodcast = onPodcastTap,
+            onOpenPodcast = onOpenPodcast,
             onOpenList = onOpenList,
             onOpenSearch = onOpenSearch,
             onOpenStarterPack = onOpenStarterPack,
@@ -245,24 +223,10 @@ internal fun LibraryContent(
     }
 
     if (size == TabletSize.Tablet8Land || size == TabletSize.Tablet10Land) {
-        // Master-detail: master mirrors portrait, detail previews the selected
-        // subscription. Tile taps in this mode select rather than navigate; the
-        // "Open" CTA in the detail pane handles navigation.
         val masterSize = if (size == TabletSize.Tablet10Land) TabletSize.Tablet10Port else TabletSize.Tablet8Port
-        val selected: Podcast? =
-            remember(selectedPodcastId, state.groups) {
-                if (selectedPodcastId == null) {
-                    null
-                } else {
-                    state.groups.flatMap { it.podcasts }.firstOrNull { it.id == selectedPodcastId }
-                }
-            }
         LibraryContentTabletMasterDetail(
             state = state,
-            selectedPodcast = selected,
-            selectedEpisodes = selectedEpisodes,
-            onPodcastTap = onPodcastTap,
-            onOpenPodcastDetail = onOpenPodcastDetail,
+            onOpenPodcast = onOpenPodcast,
             onOpenList = onOpenList,
             onOpenSearch = onOpenSearch,
             onOpenStarterPack = onOpenStarterPack,
@@ -397,7 +361,7 @@ internal fun LibraryContent(
                         podcast = p,
                         episodeCount = placeholderEpisodeCount(p),
                         showDivider = idx < recent.lastIndex,
-                        onClick = { onPodcastTap(p.id) },
+                        onClick = { onOpenPodcast(p.id) },
                         onLongClick = { onLongPressPodcast(p) },
                     )
                 }
@@ -916,7 +880,7 @@ internal fun Modifier.dashedBorder(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RecentRow(
+internal fun RecentRow(
     podcast: Podcast,
     episodeCount: Int,
     showDivider: Boolean,
@@ -983,7 +947,7 @@ private fun RecentRow(
     }
 }
 
-private fun placeholderEpisodeCount(p: Podcast): Int {
+internal fun placeholderEpisodeCount(p: Podcast): Int {
     val h = p.id.hashCode()
     val positive = if (h == Int.MIN_VALUE) 0 else kotlin.math.abs(h)
     return (positive % 300) + 20

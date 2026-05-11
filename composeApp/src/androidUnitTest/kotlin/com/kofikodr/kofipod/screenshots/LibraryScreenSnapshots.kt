@@ -10,7 +10,6 @@ import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import com.android.resources.Density
 import com.android.resources.ScreenOrientation
-import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.db.Podcast
 import com.kofikodr.kofipod.db.PodcastList
 import com.kofikodr.kofipod.playlists.SmartPlaylist
@@ -29,14 +28,16 @@ import org.junit.Test
 /**
  * Paparazzi baselines for [LibraryContent].
  *
- * - Phone (`size == null`): empty-state at 412×892 dp MDPI. Locked in Task 2.1 as a
- *   byte-identical regression guard; **must not drift** when adding tablet branches.
+ * - Phone (`size == null`): empty-state at 412×892 dp MDPI. Locked as a
+ *   byte-identical regression guard.
  * - Tablet portrait (`size == Tablet8Port` / `Tablet10Port`): populated + empty
  *   fixtures at 800×1200 / 1000×1400 dp MDPI matching the spec's tablet mocks.
+ * - Tablet landscape (`Tablet8Land` / `Tablet10Land`): empty fixture (master pane
+ *   takes full width) + populated fixture (Recently opened renders in the detail
+ *   pane).
  *
  * Populated fixture deliberately uses `smartPlaylists = emptyList()` — the
- * `SmartPlaylistTile` chrome is exercised by its own snapshot suite, and the
- * Library tablet layout doesn't change shape based on whether playlists exist.
+ * SmartPlaylist chrome is exercised by its own snapshot suite.
  */
 class LibraryScreenSnapshots {
     @get:Rule
@@ -110,50 +111,18 @@ class LibraryScreenSnapshots {
     }
 
     @Test
-    fun libraryPopulated_tablet8Land_noSelection_light() {
+    fun libraryPopulated_tablet8Land_light() {
         useLandscapeTabletConfig(width = 1200, height = 800)
         paparazzi.snapshot {
-            LibraryHarness(
-                state = POPULATED_FIXTURE,
-                size = TabletSize.Tablet8Land,
-            )
+            LibraryHarness(state = POPULATED_FIXTURE, size = TabletSize.Tablet8Land)
         }
     }
 
     @Test
-    fun libraryPopulated_tablet8Land_withSelection_light() {
-        useLandscapeTabletConfig(width = 1200, height = 800)
-        paparazzi.snapshot {
-            LibraryHarness(
-                state = POPULATED_FIXTURE,
-                size = TabletSize.Tablet8Land,
-                selectedPodcastId = "p1",
-                selectedEpisodes = PREVIEW_EPISODES_FIXTURE,
-            )
-        }
-    }
-
-    @Test
-    fun libraryPopulated_tablet10Land_noSelection_light() {
+    fun libraryPopulated_tablet10Land_light() {
         useLandscapeTabletConfig(width = 1400, height = 1000)
         paparazzi.snapshot {
-            LibraryHarness(
-                state = POPULATED_FIXTURE,
-                size = TabletSize.Tablet10Land,
-            )
-        }
-    }
-
-    @Test
-    fun libraryPopulated_tablet10Land_withSelection_light() {
-        useLandscapeTabletConfig(width = 1400, height = 1000)
-        paparazzi.snapshot {
-            LibraryHarness(
-                state = POPULATED_FIXTURE,
-                size = TabletSize.Tablet10Land,
-                selectedPodcastId = "p1",
-                selectedEpisodes = PREVIEW_EPISODES_FIXTURE,
-            )
+            LibraryHarness(state = POPULATED_FIXTURE, size = TabletSize.Tablet10Land)
         }
     }
 
@@ -197,18 +166,13 @@ class LibraryScreenSnapshots {
 private fun LibraryHarness(
     state: LibraryUiState,
     size: TabletSize?,
-    selectedPodcastId: String? = null,
-    selectedEpisodes: List<Episode> = emptyList(),
 ) {
     KofipodTheme(KofipodThemeMode.Light) {
         val c = LocalKofipodColors.current
         Box(modifier = Modifier.fillMaxSize().background(c.bg)) {
             LibraryContent(
                 state = state,
-                selectedPodcastId = selectedPodcastId,
-                selectedEpisodes = selectedEpisodes,
-                onPodcastTap = {},
-                onOpenPodcastDetail = {},
+                onOpenPodcast = {},
                 onOpenList = {},
                 onOpenSearch = {},
                 onOpenStarterPack = {},
@@ -260,40 +224,6 @@ private fun list(
         position = position,
         createdAt = 0L,
     )
-
-private fun previewEpisode(
-    podcastId: String,
-    seq: Int,
-    title: String,
-    durationSec: Long,
-): Episode =
-    Episode(
-        id = "$podcastId-ep$seq",
-        podcastId = podcastId,
-        guid = "$podcastId-ep$seq",
-        title = title,
-        description = "",
-        publishedAt = 0L,
-        durationSec = durationSec,
-        enclosureUrl = "",
-        enclosureMimeType = "audio/mpeg",
-        fileSizeBytes = 0L,
-        seasonNumber = null,
-        episodeNumber = seq.toLong(),
-        imageUrl = "",
-        chaptersUrl = null,
-        transcriptUrl = null,
-    )
-
-private val PREVIEW_EPISODES_FIXTURE: List<Episode> by lazy {
-    listOf(
-        previewEpisode("p1", 5, "How the world's smallest engines work", 42L * 60),
-        previewEpisode("p1", 4, "Field guide to weak ties", 36L * 60),
-        previewEpisode("p1", 3, "When clocks disagree", 51L * 60),
-        previewEpisode("p1", 2, "Soft systems, hard limits", 28L * 60),
-        previewEpisode("p1", 1, "Pilot: signal & noise", 19L * 60),
-    )
-}
 
 private val POPULATED_FIXTURE: LibraryUiState by lazy {
     val morning = list("morning", "Morning", 0)
