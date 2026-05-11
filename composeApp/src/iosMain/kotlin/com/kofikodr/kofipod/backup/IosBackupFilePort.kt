@@ -13,8 +13,16 @@ class IosBackupFilePort : BackupFilePort {
 
     override suspend fun writeBackup(
         treeUri: String,
+        filename: String,
         content: ByteArray,
     ) {
         error("backup not supported on iOS")
     }
+
+    override suspend fun listBackups(treeUri: String): List<BackupFileInfo> = emptyList()
+
+    override suspend fun deleteBackup(
+        treeUri: String,
+        filename: String,
+    ): Boolean = false
 }

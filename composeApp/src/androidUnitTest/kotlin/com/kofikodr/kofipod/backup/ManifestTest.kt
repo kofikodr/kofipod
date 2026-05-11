@@ -77,6 +77,45 @@ class ManifestTest {
         assertNull(Manifest.fromJsonStringOrNull("{}")) // missing required fields
     }
 
+    @Test
+    fun currentBackupFilename_isReversibleByParser() {
+        // 2026-05-11T14:30:12Z — picked because it crosses both a 30 (May) and 31
+        // (April) month, plus a non-leap-year boundary, so the civil-from-days math
+        // gets a meaningful workout.
+        val epochMs = 1_778_509_812_000L
+        val name = currentBackupFilename(epochMs)
+        assertEquals("kofipod-backup-20260511-143012.kpbak", name)
+        assertEquals(epochMs, parseBackupFilenameTimestamp(name))
+    }
+
+    @Test
+    fun currentBackupFilename_handlesLeapDay() {
+        // 2024-02-29T00:00:00Z — picked specifically because the civil-from-days
+        // round-trip is the easiest place to break for a leap day.
+        val epochMs = 1_709_164_800_000L
+        val name = currentBackupFilename(epochMs)
+        assertEquals("kofipod-backup-20240229-000000.kpbak", name)
+        assertEquals(epochMs, parseBackupFilenameTimestamp(name))
+    }
+
+    @Test
+    fun parseBackupFilenameTimestamp_rejectsLegacyAndUnknown() {
+        // Legacy file is recognised as a backup by the list filter but does NOT yield a
+        // parseable timestamp — sort fallback must surface it as the oldest entry.
+        assertNull(parseBackupFilenameTimestamp(LEGACY_BACKUP_FILENAME))
+        assertNull(parseBackupFilenameTimestamp("kofipod-backup-not-a-date.kpbak"))
+        assertNull(parseBackupFilenameTimestamp("some-other-file.kpbak"))
+        assertNull(parseBackupFilenameTimestamp("kofipod-backup-20261301-000000.kpbak")) // month 13
+        // Calendar-accurate day range: April has 30 days, so "April 31" must be rejected,
+        // not silently rolled into May 1 (which would otherwise come out of
+        // daysFromCivil's arithmetic and produce a wrong timestamp).
+        assertNull(parseBackupFilenameTimestamp("kofipod-backup-20260431-000000.kpbak"))
+        // Leap-day correctness: 2026 is not a leap year, so Feb 29 2026 must be rejected.
+        assertNull(parseBackupFilenameTimestamp("kofipod-backup-20260229-000000.kpbak"))
+        // Sanity: hour/min/sec out of range still rejected.
+        assertNull(parseBackupFilenameTimestamp("kofipod-backup-20260511-250000.kpbak"))
+    }
+
     private fun readResource(path: String): String =
         ManifestTest::class.java.getResource(path)
             ?.readText()
