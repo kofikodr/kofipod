@@ -109,16 +109,6 @@ private fun PhoneScaffold(
     }
 }
 
-// TODO(tablet-scaffold-snapshot): Phase 1 Task 1.2 originally included a
-// Paparazzi smoke test of the full Row(rail, Column(content, mini-player))
-// scaffold at 1400x1000. Task 1.4 replaced the placeholder mini-player with
-// the real DockedMiniPlayer which pulls KofipodPlayer from Koin; that
-// constructor builds a MediaController eagerly in init and crashes inside
-// Paparazzi. Restoring the integration snapshot requires either a
-// KofipodPlayer Koin test module or a stateless KofipodScaffoldContent
-// seam that takes PlayerState as a parameter. Track for Phase 1 polish
-// before later phases compound the rotation-coverage gap.
-
 /** Tablet branch: leading navigation rail beside a column of content + docked mini-player. */
 @Composable
 private fun TabletScaffold(
@@ -126,6 +116,45 @@ private fun TabletScaffold(
     snackbarHostState: SnackbarHostState,
     onPlayerScreen: Boolean,
     size: TabletSize,
+    content: @Composable () -> Unit,
+) {
+    TabletScaffoldContent(
+        showRail = !onPlayerScreen,
+        showDockedMiniPlayer = !onPlayerScreen,
+        snackbarHostState = snackbarHostState,
+        rail = { KofipodNavigationRail(nav = nav, size = size) },
+        dockedMiniPlayer = {
+            DockedMiniPlayer(
+                onOpen = {
+                    nav.navigate(
+                        Route.Player,
+                        navOptions { launchSingleTop = true },
+                    )
+                },
+            )
+        },
+        content = content,
+    )
+}
+
+/**
+ * Stateless body of the tablet scaffold — public for snapshot tests.
+ *
+ * Caller provides [rail] and [dockedMiniPlayer] as composable slots; [showRail] and
+ * [showDockedMiniPlayer] gate whether each slot is rendered (the production wrapper
+ * uses these to suppress chrome on the [Route.Player] screen). Factoring this layer
+ * out of [TabletScaffold] lets Paparazzi test the Row(rail, Column(content, mini))
+ * geometry without touching Koin or the real [com.kofikodr.kofipod.playback.KofipodPlayer]
+ * (whose Android actual eagerly builds a `MediaController` in `init`, which crashes
+ * inside Paparazzi).
+ */
+@Composable
+internal fun TabletScaffoldContent(
+    showRail: Boolean,
+    showDockedMiniPlayer: Boolean,
+    snackbarHostState: SnackbarHostState,
+    rail: @Composable () -> Unit,
+    dockedMiniPlayer: @Composable () -> Unit,
     content: @Composable () -> Unit,
 ) {
     val c = LocalKofipodColors.current
@@ -146,8 +175,8 @@ private fun TabletScaffold(
                 .padding(padding)
                 .fillMaxSize(),
         ) {
-            if (!onPlayerScreen) {
-                KofipodNavigationRail(nav = nav, size = size)
+            if (showRail) {
+                rail()
             }
             Column(
                 Modifier
@@ -155,15 +184,8 @@ private fun TabletScaffold(
                     .fillMaxHeight(),
             ) {
                 Box(Modifier.weight(1f)) { content() }
-                if (!onPlayerScreen) {
-                    DockedMiniPlayer(
-                        onOpen = {
-                            nav.navigate(
-                                Route.Player,
-                                navOptions { launchSingleTop = true },
-                            )
-                        },
-                    )
+                if (showDockedMiniPlayer) {
+                    dockedMiniPlayer()
                 }
             }
         }
