@@ -417,9 +417,13 @@ actual class SnippetExporter(
                 }
                 tempFile.delete()
                 null to null
-            } finally {
-                bitmap.recycle()
             }
+            // NOTE: do NOT recycle `bitmap`. Coil's SingletonImageLoader keeps
+            // it in its memory cache, and a later AsyncImage that hits that
+            // cache (the episode header card on the snippet editor uses the
+            // same artworkUrl) would draw on a recycled bitmap → fatal
+            // "trying to use a recycled bitmap" Canvas crash. Coil owns the
+            // lifecycle; memory-cache eviction handles cleanup.
         }
     }
 
