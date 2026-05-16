@@ -203,6 +203,7 @@ private fun LibraryHarness(
                     onOpenPodcast = {},
                     onOpenList = {},
                     onOpenBookmarks = {},
+                    onOpenStats = {},
                     onOpenSearch = {},
                     onOpenStarterPack = {},
                     onOpenLibrarySearch = {},

@@ -77,6 +77,7 @@ fun LibraryScreen(
     onOpenSearch: () -> Unit,
     onOpenStarterPack: () -> Unit,
     onOpenBookmarks: () -> Unit,
+    onOpenStats: () -> Unit,
     onOpenLibrarySearch: () -> Unit,
     onOpenSmartPlaylistEditor: (playlistId: String?, initialName: String?) -> Unit,
     onOpenSmartPlaylistDetail: (playlistId: String) -> Unit,
@@ -98,6 +99,7 @@ fun LibraryScreen(
         onOpenBookmarks = {
             if (viewModel.onBookmarksTapped()) onOpenBookmarks()
         },
+        onOpenStats = onOpenStats,
         onOpenLibrarySearch = {
             if (viewModel.onLibrarySearchTapped()) onOpenLibrarySearch()
         },
@@ -189,6 +191,7 @@ internal fun LibraryContent(
     onOpenSearch: () -> Unit,
     onOpenStarterPack: () -> Unit,
     onOpenBookmarks: () -> Unit,
+    onOpenStats: () -> Unit,
     onOpenLibrarySearch: () -> Unit,
     onOpenSmartPlaylistDetail: (String) -> Unit,
     onNewList: () -> Unit,
@@ -206,6 +209,7 @@ internal fun LibraryContent(
             onOpenSearch = onOpenSearch,
             onOpenStarterPack = onOpenStarterPack,
             onOpenBookmarks = onOpenBookmarks,
+            onOpenStats = onOpenStats,
             onOpenLibrarySearch = onOpenLibrarySearch,
             onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
             onNewList = onNewList,
@@ -227,6 +231,7 @@ internal fun LibraryContent(
             onOpenSearch = onOpenSearch,
             onOpenStarterPack = onOpenStarterPack,
             onOpenBookmarks = onOpenBookmarks,
+            onOpenStats = onOpenStats,
             onOpenLibrarySearch = onOpenLibrarySearch,
             onOpenSmartPlaylistDetail = onOpenSmartPlaylistDetail,
             onNewList = onNewList,
@@ -280,6 +285,7 @@ internal fun LibraryContent(
                 showAddButton = lists.isNotEmpty(),
                 onNewList = onNewList,
                 onOpenBookmarks = onOpenBookmarks,
+                onOpenStats = onOpenStats,
             )
         }
 
@@ -403,6 +409,7 @@ internal fun LibraryHeader(
     showAddButton: Boolean,
     onNewList: () -> Unit,
     onOpenBookmarks: () -> Unit,
+    onOpenStats: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Row(
@@ -416,8 +423,8 @@ internal fun LibraryHeader(
             fontSize = 32.sp,
             modifier = Modifier.weight(1f),
         )
-        // Bookmarks header icon is the only entry point on phone (no rail). On tablet
-        // the rail carries a Bookmarks destination, so we hide this to avoid redundancy.
+        // Bookmarks + Stats header icons are phone-only entry points (no rail). On tablet
+        // the rail carries both destinations, so we hide these to avoid redundancy.
         if (LocalTabletSize.current == null) {
             Box(
                 Modifier
@@ -429,6 +436,21 @@ internal fun LibraryHeader(
             ) {
                 KPIcon(
                     name = KPIconName.Bookmark,
+                    color = c.purple,
+                    size = 20.dp,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(c.bgSubtle)
+                    .clickable(onClick = onOpenStats),
+                contentAlignment = Alignment.Center,
+            ) {
+                KPIcon(
+                    name = KPIconName.Chart,
                     color = c.purple,
                     size = 20.dp,
                 )

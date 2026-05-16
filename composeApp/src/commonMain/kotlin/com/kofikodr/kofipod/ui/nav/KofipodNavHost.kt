@@ -54,6 +54,7 @@ fun KofipodNavHost(navController: NavHostController) {
                 onOpenSearch = { navController.navigate(Route.Search) },
                 onOpenStarterPack = { navController.navigate(Route.StarterPack) },
                 onOpenBookmarks = { navController.navigate(Route.Bookmarks) },
+                onOpenStats = { navController.navigate(Route.Stats) },
                 onOpenLibrarySearch = { navController.navigate(Route.LibrarySearch) },
                 onOpenSmartPlaylistEditor = { id, initialName ->
                     navController.navigate(
