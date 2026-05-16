@@ -26,10 +26,12 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -81,6 +83,31 @@ fun SnippetEditorScreen(
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
+    // Any path that leaves the screen while a render is in flight also
+    // cancels the foreground service. There's no partial-render-aware UI
+    // to come back to, so letting the service run to completion would just
+    // pop an unexpected share dialog later. Routed two ways:
+    //  - X icon + IdleStrip Cancel CTA call `onBackCancelling` directly.
+    //  - System back gesture is caught by the DisposableEffect below, which
+    //    cancels on dispose if InFlight is still the current state. The
+    //    `latestProgress` ref keeps the dispose lambda reading the live
+    //    StateFlow value rather than the snapshot at first composition.
+    // Complete renders are deliberately left alone — the share dialog is
+    // the user's expected outcome and cancelling post-completion would
+    // overwrite the Complete bus event with Idle for no benefit.
+    val onBackCancelling: () -> Unit = {
+        if (state.progress is RenderProgress.InFlight) viewModel.cancelRender()
+        onBack()
+    }
+    val latestProgress = rememberUpdatedState(state.progress)
+    DisposableEffect(Unit) {
+        onDispose {
+            if (latestProgress.value is RenderProgress.InFlight) {
+                viewModel.cancelRender()
+            }
+        }
+    }
+
     LaunchedEffect(state.progress) {
         val p = state.progress
         if (p is RenderProgress.Failed) {
@@ -114,7 +141,7 @@ fun SnippetEditorScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 140.dp),
         ) {
-            SnippetTopBar(onBack = onBack)
+            SnippetTopBar(onBack = onBackCancelling)
 
             Column(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -191,7 +218,7 @@ fun SnippetEditorScreen(
                     is RenderProgress.Complete -> ReadyStrip(onShare = onBack)
                     else ->
                         IdleStrip(
-                            onCancel = onBack,
+                            onCancel = onBackCancelling,
                             onRenderAndShare = viewModel::saveAndRender,
                         )
                 }
