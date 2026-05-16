@@ -24,5 +24,14 @@ actual class SnippetRenderLauncher(private val context: Context) {
         }
     }
 
+    actual fun cancel(snippetId: String) {
+        // Local Idle publish first so the UI returns to a terminal state
+        // immediately, even if the service's onStartCommand is delayed by
+        // a few ms. The service will also publish Idle when it processes the
+        // ACTION_CANCEL — that's a safe duplicate.
+        SnippetRenderProgressBus.publish(RenderProgress.Idle)
+        runCatching { SnippetRenderBroadcaster.cancel(context, snippetId) }
+    }
+
     actual val progress: StateFlow<RenderProgress> = SnippetRenderProgressBus.state
 }

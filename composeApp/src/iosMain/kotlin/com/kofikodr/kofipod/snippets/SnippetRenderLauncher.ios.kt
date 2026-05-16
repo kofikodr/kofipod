@@ -8,5 +8,9 @@ actual class SnippetRenderLauncher {
         // Snippets are Android-only this milestone.
     }
 
+    actual fun cancel(snippetId: String) {
+        // Snippets are Android-only this milestone.
+    }
+
     actual val progress: StateFlow<RenderProgress> = SnippetRenderProgressBus.state
 }

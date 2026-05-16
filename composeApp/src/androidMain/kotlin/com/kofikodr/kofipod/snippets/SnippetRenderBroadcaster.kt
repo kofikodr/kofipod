@@ -22,4 +22,21 @@ object SnippetRenderBroadcaster {
             }
         ContextCompat.startForegroundService(context, intent)
     }
+
+    /**
+     * Tell the render service to cancel the in-flight render for [snippetId].
+     * Implemented as a fresh foreground-service start with an ACTION_CANCEL
+     * extra so we don't have to bind the service for a one-shot signal.
+     */
+    fun cancel(
+        context: Context,
+        snippetId: String,
+    ) {
+        val intent =
+            Intent(context, SnippetRenderService::class.java).apply {
+                action = SnippetRenderService.ACTION_CANCEL
+                putExtra(SnippetRenderService.EXTRA_SNIPPET_ID, snippetId)
+            }
+        ContextCompat.startForegroundService(context, intent)
+    }
 }

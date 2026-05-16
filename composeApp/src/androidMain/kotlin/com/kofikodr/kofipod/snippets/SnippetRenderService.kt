@@ -83,6 +83,22 @@ class SnippetRenderService : Service() {
 
         startForegroundCompat()
 
+        // User-initiated cancel path. Cancels the in-flight job (if it matches),
+        // resets the bus to Idle so a racing Transformer onCompleted can't pop
+        // the share dialog after the user explicitly aborted, and stops the
+        // service. We accept the snippetId match check so a stale cancel intent
+        // doesn't tear down an unrelated newer render.
+        if (intent.action == ACTION_CANCEL) {
+            val current = currentSnippetId.get()
+            if (current == null || current == snippetId) {
+                currentJob?.cancel()
+                currentSnippetId.compareAndSet(snippetId, null)
+                SnippetRenderProgressBus.publish(RenderProgress.Idle)
+            }
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+
         // Atomic read-and-replace: prev is the previous value; the new value
         // is now in place. If there was a different snippet rendering, publish
         // Failed for the displaced one so any observer (e.g. the editor screen)
@@ -321,6 +337,7 @@ class SnippetRenderService : Service() {
 
     companion object {
         const val EXTRA_SNIPPET_ID = "com.kofikodr.kofipod.extra.SNIPPET_ID"
+        const val ACTION_CANCEL = "com.kofikodr.kofipod.action.SNIPPET_CANCEL"
         private const val CHANNEL_ID = "snippet_render"
         private const val NOTIF_ID = 0x517A1
     }

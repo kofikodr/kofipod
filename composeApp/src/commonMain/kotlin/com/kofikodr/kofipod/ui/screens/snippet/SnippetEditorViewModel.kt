@@ -390,11 +390,16 @@ class SnippetEditorViewModel(
     }
 
     /**
-     * Best-effort cancel: flips [state.progress] to [RenderProgress.Idle]
-     * locally. Slice 4 has no separate "cancel" intent to the foreground
-     * service — this is the user-visible part only.
+     * Cancel the in-flight render. Tells the launcher to fire an ACTION_CANCEL
+     * intent at the foreground service (which cancels the encode job and
+     * publishes Idle on the bus) and flips local UI state to Idle so the
+     * editor returns to the "Render & Share" CTA immediately. Without the
+     * service-side cancel, a previously-running encode would finish in the
+     * background and pop the share dialog after the user already aborted.
      */
     fun cancelRender() {
+        val id = _state.value.snippet?.id ?: snippetId
+        launcher.cancel(id)
         _state.value = _state.value.copy(progress = RenderProgress.Idle)
     }
 
