@@ -34,6 +34,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -76,6 +78,8 @@ fun SnippetEditorScreen(
     val state by viewModel.state.collectAsState()
     val c = LocalKofipodColors.current
     val snackbarHost = remember { SnackbarHostState() }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(state.progress) {
         val p = state.progress
@@ -84,6 +88,15 @@ fun SnippetEditorScreen(
             // fresh timer rather than snapping mid-wait.
             snackbarHost.currentSnackbarData?.dismiss()
             snackbarHost.showSnackbar("Render failed: ${p.message}")
+        }
+        // Once the user has triggered a render — InFlight, Complete, or Failed —
+        // the title/caption fields are no longer the focus. Clearing focus +
+        // hiding the IME prevents the next tap on the bottom strip (e.g. the
+        // green ReadyStrip) from re-popping the keyboard for whichever
+        // OutlinedTextField was last focused.
+        if (p !is RenderProgress.Idle) {
+            keyboardController?.hide()
+            focusManager.clearFocus(force = true)
         }
     }
 
