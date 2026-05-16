@@ -273,6 +273,8 @@ actual class SnippetExporter(
                 val coverFrame =
                     WaveformBitmapRenderer.renderCoverBackground(
                         coverArtPath = localCoverPath,
+                        widthPx = OUTPUT_WIDTH_PX,
+                        heightPx = OUTPUT_HEIGHT_PX,
                     )
                 try {
                     frameFile.outputStream().use {
@@ -488,13 +490,23 @@ actual class SnippetExporter(
     private class AnimatedBarsOverlay(
         private val envelope: AmplitudeEnvelope,
     ) : BitmapOverlay() {
+        // Cache Paint + bar geometry once across the entire export. Previously
+        // every `getBitmap` call re-parsed the colour hex, allocated a Paint,
+        // and recomputed N float positions — wasted work for a 90s × 24fps
+        // clip = 2160 frames.
+        private val renderer =
+            WaveformBitmapRenderer.CachedBarsRenderer(
+                widthPx = OUTPUT_WIDTH_PX,
+                heightPx = OUTPUT_HEIGHT_PX,
+                barCount = envelope.barCount,
+            )
+
         override fun getBitmap(presentationTimeUs: Long): Bitmap {
             val frameIdx =
                 ((presentationTimeUs * VIDEO_FRAME_RATE) / MICROS_PER_SECOND)
                     .toInt()
                     .coerceIn(0, envelope.frameCount - 1)
-            val bars = envelope.barsAt(frameIdx)
-            return WaveformBitmapRenderer.renderWaveformBarsOverlay(WaveformSamples(bars))
+            return renderer.render(envelope.barsAt(frameIdx))
         }
     }
 
@@ -509,10 +521,19 @@ actual class SnippetExporter(
         const val MICROS_PER_SECOND = 1_000_000L
         const val MS_PER_SECOND = 1_000L
 
-        // 720px square cover. Share targets re-encode to <=720p, so 1080 was
-        // wasted pixels (and a 2.25× overlay-bitmap cost). 720 keeps the cover
-        // crisp on phones in DM previews without inflating render time.
+        // 720px cover-art square. Share targets re-encode to <=720p, so 1080
+        // was wasted pixels. 720 keeps the cover crisp on phones in DM
+        // previews without inflating render time. Used by Coil to size the
+        // downloaded cover art.
         const val COVER_TARGET_PX = 720
+
+        // Output video dimensions — 9:16 portrait at 720p. The previous
+        // implicit 1080×1920 was 2.8× more pixels than necessary; share
+        // targets re-encode to 720p anyway. The per-frame bars overlay
+        // allocation drops from ~8 MB to ~3.5 MB at this size, a major chunk
+        // of the per-frame cost.
+        const val OUTPUT_WIDTH_PX = 720
+        const val OUTPUT_HEIGHT_PX = 1280
 
         // ~2 Mbps H.264 — visually transparent at 720p for a near-static
         // image-sequence video, ~3× smaller files vs Transformer's default.

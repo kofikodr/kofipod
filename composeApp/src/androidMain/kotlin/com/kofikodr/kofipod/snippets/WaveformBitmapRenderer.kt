@@ -6,7 +6,6 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.PorterDuff
 import android.graphics.RectF
 import java.io.File
 
@@ -60,12 +59,63 @@ internal object WaveformBitmapRenderer {
         widthPx: Int = DEFAULT_WIDTH_PX,
         heightPx: Int = DEFAULT_HEIGHT_PX,
     ): Bitmap {
+        // Allocation-only path: drops the redundant Canvas.drawColor(TRANSPARENT,
+        // CLEAR) because Bitmap.createBitmap(ARGB_8888) is already zero-initialised
+        // (fully transparent). Kept for legacy/editor preview callers; the MP4
+        // render path now goes through [CachedBarsRenderer] which reuses Paint +
+        // bar geometry across frames.
         val bmp = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
-        // Start fully transparent — only the bars carry alpha.
-        canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
         drawBars(canvas, samples, widthPx, heightPx)
         return bmp
+    }
+
+    /**
+     * Per-frame bar renderer with cached Paint + bar geometry. Built once per
+     * MP4 export from the output dimensions and bar count, then invoked
+     * `frameCount` times by [AnimatedBarsOverlay]. The per-call cost is one
+     * `Bitmap.createBitmap` + `barCount` round-rect draws — no Paint or
+     * float-math allocations per frame.
+     *
+     * A fresh Bitmap is still allocated per call because Media3's overlay GPU
+     * upload path keys on the Bitmap reference; reusing one would freeze the
+     * bars on the first frame.
+     */
+    class CachedBarsRenderer(
+        private val widthPx: Int,
+        private val heightPx: Int,
+        barCount: Int,
+    ) {
+        // All bar geometry is constant given (widthPx, heightPx, barCount), so
+        // compute once and reuse for every frame.
+        private val cardTop = heightPx * BARS_TOP_RATIO
+        private val cardBottom = heightPx * BARS_BOTTOM_RATIO
+        private val cardLeft = widthPx * BARS_LEFT_RATIO
+        private val cardRight = widthPx * BARS_RIGHT_RATIO
+        private val barSpacing = (cardRight - cardLeft) / barCount.coerceAtLeast(1)
+        private val barWidth = barSpacing * BAR_WIDTH_RATIO
+        private val cardHeight = cardBottom - cardTop
+        private val cornerRadius = barWidth / 2f
+        private val barXs = FloatArray(barCount) { i -> cardLeft + i * barSpacing }
+        private val barPaint =
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor(BAR_PINK_HEX)
+            }
+
+        fun render(bars: FloatArray): Bitmap {
+            val bmp = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+            if (bars.isEmpty()) return bmp
+            val canvas = Canvas(bmp)
+            var i = 0
+            while (i < bars.size) {
+                val h = (cardHeight * bars[i]).coerceAtLeast(barWidth)
+                val x = barXs[i]
+                val y = cardTop + (cardHeight - h) / 2f
+                canvas.drawRoundRect(x, y, x + barWidth, y + h, cornerRadius, cornerRadius, barPaint)
+                i++
+            }
+            return bmp
+        }
     }
 
     /**
