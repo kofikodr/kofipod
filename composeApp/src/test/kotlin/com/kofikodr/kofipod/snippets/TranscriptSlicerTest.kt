@@ -42,9 +42,26 @@ class TranscriptSlicerTest {
 
     @Test
     fun plain_text_returns_first_n_chars() {
+        // Pin the exact prefix. The prior assertion `(sliced?.length ?: 0) <= 200`
+        // would pass for an empty string, the wrong section of the transcript,
+        // or any truncation — none of which exercise the actual contract.
+        // PLAIN_TEXT_LIMIT = 200; trim() runs first; ifBlank { null } guards
+        // an empty input. The fallback ignores the start/end window and
+        // returns the prefix of the trimmed transcript.
         val plain = "This is a long monolithic transcript with no timing cues. ".repeat(10)
         val sliced = TranscriptSlicer.sliceForWindow(plain, startMs = 0L, endMs = 60_000L)
-        assertEquals(true, (sliced?.length ?: 0) <= 200)
+        assertEquals(plain.trim().take(200), sliced)
+    }
+
+    @Test
+    fun plain_text_shorter_than_limit_returnsFullTrimmedTranscript() {
+        // No unnecessary truncation when the input is below the cap. Pinning
+        // both sides of the take() boundary: a regression that truncated to
+        // a hardcoded len < 200 would fail here even though the length-only
+        // assertion would still pass.
+        val plain = "  Short plain transcript with leading and trailing whitespace.  "
+        val sliced = TranscriptSlicer.sliceForWindow(plain, startMs = 0L, endMs = 60_000L)
+        assertEquals("Short plain transcript with leading and trailing whitespace.", sliced)
     }
 
     @Test
