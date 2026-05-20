@@ -2,6 +2,7 @@
 package com.kofikodr.kofipod.pro
 
 import android.app.Application
+import com.android.billingclient.api.AcknowledgePurchaseParams
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClientStateListener
 import com.android.billingclient.api.BillingFlowParams
@@ -61,7 +62,11 @@ class PlayBillingClientPort(
                     purchaseContinuation = null
                     when {
                         result.responseCode == BillingClient.BillingResponseCode.OK && purchases != null -> {
-                            cont.resume(Result.success(classifyPurchases(purchases)))
+                            // Acknowledge any unacked PURCHASED token before resuming.
+                            // Without this, Play auto-refunds the purchase ~3 days
+                            // later and revokes Pro silently. classifyAndAcknowledge
+                            // handles the callback chain.
+                            classifyAndAcknowledge(purchases, cont)
                         }
                         result.responseCode == BillingClient.BillingResponseCode.USER_CANCELED -> {
                             cont.resume(Result.success(ProEntitlement.Free))
@@ -158,7 +163,10 @@ class PlayBillingClientPort(
                     )
                     return@queryPurchasesAsync
                 }
-                cont.resume(Result.success(classifyPurchases(purchases)))
+                // Same ack discipline as new purchases. A user who restores on
+                // a new device must not have their entitlement silently
+                // revoked because a previous install never acknowledged.
+                classifyAndAcknowledge(purchases, cont)
             }
         }
     }
@@ -212,6 +220,66 @@ class PlayBillingClientPort(
                     it.purchaseState == Purchase.PurchaseState.PURCHASED
             }
         return if (hasIndividual) ProEntitlement.Pro(ProSource.Individual) else ProEntitlement.Free
+    }
+
+    /**
+     * Acknowledges every unacked PURCHASED [ProProducts.INDIVIDUAL] token, then
+     * resumes [cont] with the classified entitlement. If any ack call fails we
+     * surface the failure instead of caching Pro silently — Play allows a
+     * ~3-day window so the next refresh will retry. The recursion is callback-
+     * driven (Play Billing's `acknowledgePurchase` is callback-only) and runs
+     * one ack at a time to keep the failure mode obvious.
+     */
+    private fun classifyAndAcknowledge(
+        purchases: List<Purchase>,
+        cont: Continuation<Result<ProEntitlement>>,
+    ) {
+        val candidates =
+            purchases.map { p ->
+                AckCandidate(
+                    productIds = p.products.toList(),
+                    isPurchased = p.purchaseState == Purchase.PurchaseState.PURCHASED,
+                    isAcknowledged = p.isAcknowledged,
+                    purchaseToken = p.purchaseToken,
+                )
+            }
+        val pending = unacknowledgedIndividualTokens(candidates)
+        if (pending.isEmpty()) {
+            cont.resume(Result.success(classifyPurchases(purchases)))
+            return
+        }
+        acknowledgeNext(pending, 0, purchases, cont)
+    }
+
+    // Callback-driven recursion: each acknowledgePurchase callback re-enters
+    // this function on the Play Billing thread. We have a single one-time
+    // SKU (ProProducts.INDIVIDUAL), so the queue length is realistically 0
+    // or 1 — recursion depth never exceeds 1. If a second SKU is ever added,
+    // depth grows linearly; convert to an iterator-based callback chain if
+    // many tokens are expected.
+    private fun acknowledgeNext(
+        queue: List<String>,
+        index: Int,
+        purchases: List<Purchase>,
+        cont: Continuation<Result<ProEntitlement>>,
+    ) {
+        if (index >= queue.size) {
+            cont.resume(Result.success(classifyPurchases(purchases)))
+            return
+        }
+        val params =
+            AcknowledgePurchaseParams.newBuilder()
+                .setPurchaseToken(queue[index])
+                .build()
+        client.acknowledgePurchase(params) { result ->
+            if (result.responseCode != BillingClient.BillingResponseCode.OK) {
+                cont.resume(
+                    Result.failure(BillingException(result.responseCode, result.debugMessage)),
+                )
+                return@acknowledgePurchase
+            }
+            acknowledgeNext(queue, index + 1, purchases, cont)
+        }
     }
 }
 
