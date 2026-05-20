@@ -16,6 +16,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -88,48 +89,27 @@ class DownloadService : Service() {
     ) {
         val file = File(filesDir, "downloads/$name").apply { parentFile?.mkdirs() }
         val existing = if (file.exists()) file.length() else 0L
+        val sentRange = existing > 0
         val request =
             Request.Builder().url(url).apply {
-                if (existing > 0) addHeader("Range", "bytes=$existing-")
+                if (sentRange) addHeader("Range", "bytes=$existing-")
             }.build()
         client.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) {
-                DownloadBroadcaster.emit(
-                    DownloadProgress(
-                        episodeId,
-                        existing,
-                        existing,
-                        DownloadProgress.State.Failed,
-                        "HTTP ${resp.code}",
-                    ),
-                )
-                return
-            }
-            val contentLength = resp.header("Content-Length")?.toLongOrNull() ?: -1L
-            val total = if (contentLength > 0) contentLength + existing else -1L
-            resp.body?.byteStream()?.use { stream ->
-                FileOutputStream(file, existing > 0).use { out ->
-                    val buf = ByteArray(64 * 1024)
-                    var read: Int
-                    var received = existing
-                    var lastEmit = 0L
-                    while (stream.read(buf).also { read = it } > 0) {
-                        out.write(buf, 0, read)
-                        received += read
-                        val now = System.currentTimeMillis()
-                        if (now - lastEmit > 200) {
-                            DownloadBroadcaster.emit(
-                                DownloadProgress(
-                                    episodeId,
-                                    received,
-                                    total.coerceAtLeast(received),
-                                    DownloadProgress.State.Downloading,
-                                ),
-                            )
-                            lastEmit = now
-                        }
-                    }
+            when (val plan = resumePlan(existingBytes = existing, sentRangeRequest = sentRange, responseCode = resp.code)) {
+                is ResumePlan.Fail -> {
+                    DownloadBroadcaster.emit(
+                        DownloadProgress(
+                            episodeId,
+                            existing,
+                            existing,
+                            DownloadProgress.State.Failed,
+                            "HTTP ${plan.httpCode}",
+                        ),
+                    )
+                    return
                 }
+                is ResumePlan.Overwrite -> writeBody(episodeId, file, resp, startOffset = 0L, appendToExisting = false)
+                is ResumePlan.Append -> writeBody(episodeId, file, resp, startOffset = plan.from, appendToExisting = true)
             }
             DownloadBroadcaster.emit(
                 DownloadProgress(
@@ -140,6 +120,49 @@ class DownloadService : Service() {
                     localPath = file.absolutePath,
                 ),
             )
+        }
+    }
+
+    /**
+     * Pull the response body into [file]. [startOffset] is the byte we should report
+     * progress from (the bytes already on disk if appending, else 0). [appendToExisting]
+     * is FileOutputStream's append flag — must be `false` when the server sent the
+     * whole file (e.g., ignored our Range header), or the prefix would be duplicated.
+     */
+    private suspend fun writeBody(
+        episodeId: String,
+        file: File,
+        resp: Response,
+        startOffset: Long,
+        appendToExisting: Boolean,
+    ) {
+        // Content-Length is the body size; for a 206 it's only the partial. Add the
+        // already-on-disk prefix to get a UI total. Unknown ⇒ best-effort -1L.
+        val contentLength = resp.header("Content-Length")?.toLongOrNull() ?: -1L
+        val total = if (contentLength > 0) contentLength + startOffset else -1L
+        resp.body?.byteStream()?.use { stream ->
+            FileOutputStream(file, appendToExisting).use { out ->
+                val buf = ByteArray(64 * 1024)
+                var read: Int
+                var received = startOffset
+                var lastEmit = 0L
+                while (stream.read(buf).also { read = it } > 0) {
+                    out.write(buf, 0, read)
+                    received += read
+                    val now = System.currentTimeMillis()
+                    if (now - lastEmit > 200) {
+                        DownloadBroadcaster.emit(
+                            DownloadProgress(
+                                episodeId,
+                                received,
+                                total.coerceAtLeast(received),
+                                DownloadProgress.State.Downloading,
+                            ),
+                        )
+                        lastEmit = now
+                    }
+                }
+            }
         }
     }
 
