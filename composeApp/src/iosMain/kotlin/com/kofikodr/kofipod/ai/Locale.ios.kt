@@ -8,7 +8,7 @@ import platform.Foundation.languageCode
 
 internal actual fun currentLocaleTag(): String {
     val locale = NSLocale.currentLocale
-    val language = locale.languageCode.takeIf { it.isNotBlank() } ?: return "en-US"
+    val language = locale.languageCode?.takeIf { it.isNotBlank() } ?: return "en-US"
     val region = locale.countryCode?.takeIf { it.isNotBlank() }
     return if (region == null) language else "$language-$region"
 }
