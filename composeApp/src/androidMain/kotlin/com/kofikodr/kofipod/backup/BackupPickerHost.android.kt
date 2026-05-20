@@ -8,9 +8,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import com.kofikodr.kofipod.util.PendingHolder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 
 // OpenDocument MIME filter list. Custom MIME first (matches what we wrote), then
@@ -22,6 +27,7 @@ private val RESTORE_OPEN_MIMES = arrayOf(BACKUP_MIME, "application/zip", "*/*")
 actual fun BackupPickerHost() {
     val context = LocalContext.current
     val port = koinInject<BackupFilePort>() as? AndroidBackupFilePort ?: return
+    val scope = rememberCoroutineScope()
 
     val pendingFolderPick =
         remember { PendingHolder<CompletableDeferred<String?>>() }
@@ -58,16 +64,34 @@ actual fun BackupPickerHost() {
                 deferred.complete(null)
                 return@rememberLauncherForActivityResult
             }
-            val bytes =
-                runCatching {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                }.getOrNull()
-            if (bytes == null) {
-                deferred.completeExceptionally(
-                    IllegalStateException("Couldn't read backup file"),
-                )
-            } else {
-                deferred.complete(bytes)
+            // Move the IO off Main. SAF can resolve to a cloud-backed provider
+            // (Drive / Dropbox / etc) where the read does real network work — a
+            // synchronous Main-thread read ANRs for non-trivial files. The size
+            // cap also lives in `readCappedBackupFromUri` so a hostile or
+            // misconfigured provider can't OOM the heap.
+            scope.launch {
+                try {
+                    val result =
+                        withContext(Dispatchers.IO) {
+                            readCappedBackupFromUri(context.contentResolver, uri)
+                        }
+                    when (result) {
+                        is BackupRestoreReadResult.Ok -> deferred.complete(result.bytes)
+                        BackupRestoreReadResult.Unreadable ->
+                            deferred.completeExceptionally(IllegalStateException("Couldn't read backup file"))
+                        is BackupRestoreReadResult.TooLarge ->
+                            deferred.completeExceptionally(
+                                IllegalStateException("Backup file is too large (${result.cap / (1024L * 1024L)} MB cap)"),
+                            )
+                    }
+                } catch (cancel: CancellationException) {
+                    // Composition was torn down mid-read (e.g. Activity recreated
+                    // while picker was settling). Surface the cancel to the caller
+                    // immediately so the controller's single-flight guard clears,
+                    // rather than letting `pickAndReadBackup`'s 5-minute timeout fire.
+                    deferred.completeExceptionally(cancel)
+                    throw cancel
+                }
             }
         }
 
