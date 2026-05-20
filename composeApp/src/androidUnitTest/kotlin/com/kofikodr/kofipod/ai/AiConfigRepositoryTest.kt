@@ -105,6 +105,54 @@ class AiConfigRepositoryTest {
         }
 
     @Test
+    fun setKey_whenVaultThrows_keyConfiguredStaysFalse_andStoredIsUnchanged() =
+        runTest {
+            // The Android impl throws when `EncryptedSharedPreferences.commit()`
+            // returns false (disk full, encryption layer error). The repo must
+            // propagate the exception and NOT flip the in-memory flag to true
+            // — otherwise the UI would show "Connected" while the disk has no
+            // key, and on next launch the user would silently lose access.
+            val vault = FakeKeyVault(initial = null, throwOnSet = true)
+            val repo = newRepo(vault, this)
+            assertFalse(repo.isKeyConfigured().value, "precondition: vault empty, flag must start false")
+
+            val thrown = runCatching { repo.setKey("user-pasted-key") }
+            assertTrue(thrown.isFailure, "setKey must surface the vault error to the caller")
+            assertNull(vault.stored, "Vault must remain empty after a failed set")
+            assertFalse(
+                repo.isKeyConfigured().value,
+                "isKeyConfigured must stay false — a UI showing 'Connected' without a persisted key is the worst-case state",
+            )
+        }
+
+    @Test
+    fun disconnect_whenVaultThrows_keyConfiguredStaysTrue_andStoredSurvives() =
+        runTest {
+            // Mirror of the setKey-failure case: the user tapped Disconnect but
+            // the clear failed. We must not flip the flag to false — the key is
+            // still on disk and the UI should reflect that the disconnect didn't
+            // succeed. Better to leave the user "connected" with a visible error
+            // than to claim disconnect succeeded while the key persists.
+            val vault = FakeKeyVault(initial = "live-key", throwOnClear = true)
+            val repo = newRepo(vault, this)
+            runCurrent()
+            assertTrue(repo.isKeyConfigured().value, "precondition: existing-key install hydrates to true")
+
+            val thrown = runCatching { repo.disconnect() }
+            assertTrue(thrown.isFailure, "disconnect must surface the vault error to the caller")
+            assertEquals("live-key", vault.stored, "Key must remain on disk after a failed clear")
+            assertTrue(
+                repo.isKeyConfigured().value,
+                "isKeyConfigured must stay true — claiming disconnect when the key is still on disk would be the worst-case state",
+            )
+            assertEquals(
+                "live-key",
+                repo.currentKey(),
+                "currentKey() must still return the key that clear() failed to erase",
+            )
+        }
+
+    @Test
     fun model_reflectsSettingsRepositoryRoundTrip() =
         runTest {
             val repo = newRepo(FakeKeyVault(initial = null), this)
@@ -133,18 +181,30 @@ class AiConfigRepositoryTest {
  * Test-only [KeyVault] backed by a single nullable string. Captures the same
  * `get/set/clear` semantics the Android `EncryptedSharedPreferences` impl
  * provides, without standing up Robolectric or AndroidX Security.
+ *
+ * The `throwOnSet` / `throwOnClear` flags model the Android impl's
+ * `commit()`-failure path — when EncryptedSharedPreferences can't write to
+ * disk (disk full, encryption error), `commit()` returns false and the
+ * production impl throws. Tests inject these to pin the repo's invariant that
+ * `keyConfigured` must not flip when the underlying write failed.
  */
-private class FakeKeyVault(initial: String? = null) : KeyVault {
+private class FakeKeyVault(
+    initial: String? = null,
+    private val throwOnSet: Boolean = false,
+    private val throwOnClear: Boolean = false,
+) : KeyVault {
     var stored: String? = initial
         private set
 
     override suspend fun get(): String? = stored?.takeIf { it.isNotBlank() }
 
     override suspend fun set(value: String) {
+        if (throwOnSet) error("simulated vault failure")
         stored = value
     }
 
     override suspend fun clear() {
+        if (throwOnClear) error("simulated vault failure")
         stored = null
     }
 }

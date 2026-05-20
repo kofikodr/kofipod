@@ -40,15 +40,23 @@ class AndroidKeyVault(private val context: Context) : KeyVault {
     // If apply()'s deferred write loses to a process death, the flag and the
     // disk would disagree on next launch — connect appears to "stick" but the
     // key isn't there, or disconnect appears to clear but the key persists.
+    //
+    // commit() returns false when the synchronous write to the encrypted prefs
+    // file fails (disk full, file lock, encryption-layer error). Surface that
+    // as an exception so AiConfigRepository.setKey / disconnect don't flip the
+    // in-memory flag against a stale disk. The thrown message intentionally
+    // does NOT include the key value — KeyVault.set is the one boundary where
+    // the raw key is in scope, and we treat any string concatenation with the
+    // value as a leak hazard.
     override suspend fun set(value: String) =
         withContext(Dispatchers.IO) {
-            prefs.edit().putString(KEY_GEMINI_API_KEY, value).commit()
-            Unit
+            val ok = prefs.edit().putString(KEY_GEMINI_API_KEY, value).commit()
+            check(ok) { "Failed to persist API key to encrypted preferences" }
         }
 
     override suspend fun clear() =
         withContext(Dispatchers.IO) {
-            prefs.edit().remove(KEY_GEMINI_API_KEY).commit()
-            Unit
+            val ok = prefs.edit().remove(KEY_GEMINI_API_KEY).commit()
+            check(ok) { "Failed to clear API key from encrypted preferences" }
         }
 }
