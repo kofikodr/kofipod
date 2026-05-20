@@ -53,8 +53,16 @@ internal fun renderDescription(raw: String): AnnotatedString {
                         .replace(INLINE_WHITESPACE, " ")
                         .trim()
                         .ifBlank { href }
-                withLink(LinkAnnotation.Url(href)) {
-                    withStyle(LINK_SPAN_STYLE) { append(innerText) }
+                if (isSafeAnchorHref(href)) {
+                    withLink(LinkAnnotation.Url(href)) {
+                        withStyle(LINK_SPAN_STYLE) { append(innerText) }
+                    }
+                } else {
+                    // Feed-supplied javascript:/intent:/file:/data:/... must not
+                    // become tappable. Append the inner text as plain (un-styled,
+                    // un-linked) so the visible content survives — the link is
+                    // dropped, not the prose.
+                    append(innerText)
                 }
                 cursor = match.range.last + 1
             }
@@ -148,3 +156,19 @@ private val INLINE_WHITESPACE = Regex("[ \\t\\u00A0]+")
 private val NEWLINE_RUNS = Regex("\\n{3,}")
 
 private val BARE_URL = Regex("https?://[^\\s<>\"'()\\[\\]]+")
+
+/**
+ * Returns true if [href] is safe to emit as a tappable [LinkAnnotation.Url]
+ * from feed-supplied HTML. Allowed: `http://` and `https://` only. Everything
+ * else (javascript:, intent:, file:, data:, content:, custom-scheme://, …) is
+ * a potential exploit surface — a podcast feed is untrusted content, so a
+ * malicious `<a href="javascript:fetch('/admin')">click</a>` must not become
+ * a clickable link in the description UI.
+ *
+ * Scheme check is case-insensitive — `HTTPS://` is valid per RFC 3986; only
+ * the scheme is case-insensitive, the rest of the URI is preserved verbatim
+ * by passing through `Url`.
+ */
+internal fun isSafeAnchorHref(href: String): Boolean =
+    href.startsWith("http://", ignoreCase = true) ||
+        href.startsWith("https://", ignoreCase = true)

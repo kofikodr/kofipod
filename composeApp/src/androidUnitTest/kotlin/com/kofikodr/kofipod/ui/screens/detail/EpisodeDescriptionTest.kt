@@ -187,6 +187,166 @@ class EpisodeDescriptionTest {
         val links = out.urlLinks()
         assertEquals(1, links.size, "Anchor with URL inner must not produce a second bare link")
     }
+
+    // -------------------------------------------------------------------------
+    // Scheme allowlist for anchor hrefs. Feed content is untrusted, so a
+    // <a href="javascript:..."> must NOT become a tappable LinkAnnotation.Url.
+    // Inner text is still appended (visible prose survives); only the link
+    // annotation is dropped.
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun dropsJavascriptSchemeButKeepsInnerText() {
+        val raw = """<a href="javascript:alert(1)">click here</a>"""
+        val out = renderDescription(raw)
+        assertEquals("click here", out.text, "Inner text must remain visible")
+        assertTrue(out.urlLinks().isEmpty(), "javascript: must not produce a link annotation")
+    }
+
+    @Test
+    fun dropsAndroidIntentScheme() {
+        // intent:// URIs can launch arbitrary apps on Android; the only place
+        // this surface is meant to come from is the app's own deep links,
+        // never a podcast feed's <a>.
+        val raw = """<a href="intent://launch#Intent;...end">tap</a>"""
+        val out = renderDescription(raw)
+        assertEquals("tap", out.text)
+        assertTrue(out.urlLinks().isEmpty())
+    }
+
+    @Test
+    fun dropsFileScheme() {
+        val raw = """<a href="file:///etc/passwd">read</a>"""
+        val out = renderDescription(raw)
+        assertEquals("read", out.text)
+        assertTrue(out.urlLinks().isEmpty())
+    }
+
+    @Test
+    fun dropsDataScheme() {
+        val raw = """<a href="data:text/html,<script>alert(1)</script>">payload</a>"""
+        val out = renderDescription(raw)
+        assertEquals("payload", out.text)
+        assertTrue(out.urlLinks().isEmpty())
+    }
+
+    @Test
+    fun dropsContentScheme() {
+        // content:// is the Android ContentProvider scheme; another local app
+        // could be hosting a malicious provider. Feed anchors must not be
+        // able to deep-link into the ContentResolver.
+        val raw = """<a href="content://com.evil/leak">link</a>"""
+        val out = renderDescription(raw)
+        assertEquals("link", out.text)
+        assertTrue(out.urlLinks().isEmpty())
+    }
+
+    @Test
+    fun dropsMailtoScheme_conservativelyForNow() {
+        // mailto: IS arguably safe (and common in feeds), but the audit's
+        // recommendation is strict http/https only.
+        //
+        // If mailto: is ever added to isSafeAnchorHref, this test must be
+        // flipped to: assertEquals(1, out.urlLinks().size) AND a
+        // `assertTrue(isSafeAnchorHref("mailto:..."))` row must be added to
+        // isSafeAnchorHref_directHelperContract. Pinning the conservative
+        // call so widening is an explicit policy change, not a silent drift.
+        val raw = """<a href="mailto:hi@example.com">email us</a>"""
+        val out = renderDescription(raw)
+        assertEquals("email us", out.text)
+        assertTrue(out.urlLinks().isEmpty())
+    }
+
+    @Test
+    fun acceptsHttpAnchorAsLink() {
+        // Pin the positive side so a too-tight scheme guard (e.g. https-only)
+        // doesn't break legacy http podcast feeds. The platform's cleartext
+        // policy will refuse to open http:// at the browser layer anyway,
+        // but the link annotation should still exist.
+        val raw = """<a href="http://oldschool.example/episode/1">old site</a>"""
+        val out = renderDescription(raw)
+        assertEquals(listOf("http://oldschool.example/episode/1"), out.urlLinks().map { it.second })
+    }
+
+    @Test
+    fun acceptsUppercaseSchemeAsLink() {
+        // RFC 3986: scheme is case-insensitive. Pin so a future tightening
+        // doesn't accidentally reject HTTPS://… anchors that exist in real
+        // feeds.
+        val raw = """<a href="HTTPS://example.test">link</a>"""
+        val out = renderDescription(raw)
+        assertEquals("link", out.text, "Inner text must survive the scheme check")
+        assertEquals(listOf("HTTPS://example.test"), out.urlLinks().map { it.second })
+    }
+
+    @Test
+    fun acceptsHttpsAnchor_evenWhenQueryStringMentionsJavascript() {
+        // Defensive: the guard checks the SCHEME, not the body. An https
+        // URL with `javascript:` somewhere in the path/query is fine —
+        // a future contributor who adds `contains("javascript:")` as
+        // "extra safety" would break legitimate redirect-style URLs and
+        // this test would catch the over-block.
+        val raw = """<a href="https://safe.example/go?redirect=javascript:bad">link</a>"""
+        val out = renderDescription(raw)
+        assertEquals(
+            listOf("https://safe.example/go?redirect=javascript:bad"),
+            out.urlLinks().map { it.second },
+        )
+    }
+
+    @Test
+    fun trimWhitespacePrefixedHrefBeforeSchemeCheck() {
+        // The renderer trims the href before passing to isSafeAnchorHref
+        // (decodeEntities(...).trim()). Without that trim, "  https://..."
+        // would fail the startsWith check and silently lose the link
+        // annotation. This test pins that the trim is load-bearing so a
+        // refactor that removes it from the renderer is caught.
+        val raw = """<a href="  https://example.com">x</a>"""
+        val out = renderDescription(raw)
+        assertEquals(
+            listOf("https://example.com"),
+            out.urlLinks().map { it.second },
+            "Whitespace-padded href must survive the trim and become a link",
+        )
+    }
+
+    @Test
+    fun dropsSchemelessRelativeHref() {
+        // Relative URLs make no sense outside a feed page that has a base
+        // URL we don't have. Drop them — the inner text remains visible.
+        val raw = """<a href="/admin">admin panel</a>"""
+        val out = renderDescription(raw)
+        assertEquals("admin panel", out.text)
+        assertTrue(out.urlLinks().isEmpty())
+    }
+
+    @Test
+    fun isSafeAnchorHref_directHelperContract() {
+        // Direct calls so a regression in the helper doesn't only show up
+        // through the renderer's surface.
+        assertTrue(isSafeAnchorHref("https://example.com"))
+        assertTrue(isSafeAnchorHref("http://example.com"))
+        assertTrue(isSafeAnchorHref("HTTPS://example.com"))
+        assertTrue(isSafeAnchorHref("Http://example.com"))
+        // Defensive positive: scheme is the contract, NOT the body. An https
+        // URL whose path/query mentions "javascript:" must still pass.
+        assertTrue(isSafeAnchorHref("https://x.com?redirect=javascript:alert(1)"))
+
+        assertEquals(false, isSafeAnchorHref("javascript:alert(1)"))
+        assertEquals(false, isSafeAnchorHref("intent://"))
+        assertEquals(false, isSafeAnchorHref("file:///"))
+        assertEquals(false, isSafeAnchorHref("data:text/plain,x"))
+        assertEquals(false, isSafeAnchorHref("content://com.evil/"))
+        assertEquals(false, isSafeAnchorHref(""))
+        assertEquals(false, isSafeAnchorHref("mailto:x@example.com"))
+        assertEquals(false, isSafeAnchorHref("/relative-path"))
+        assertEquals(false, isSafeAnchorHref("//protocol-relative.example/"))
+        // Real boundary cases for the startsWith check: "https" alone has no
+        // "://" suffix, and "https:evil" is missing the slashes. Both must be
+        // rejected; pin off-by-one edges.
+        assertEquals(false, isSafeAnchorHref("https"))
+        assertEquals(false, isSafeAnchorHref("https:evil"))
+    }
 }
 
 /**
