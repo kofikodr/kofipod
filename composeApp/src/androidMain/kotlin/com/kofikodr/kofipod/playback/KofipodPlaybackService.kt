@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Process
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -215,7 +216,23 @@ class KofipodPlaybackService : MediaLibraryService() {
         isRestoring = restoreLastSession(player)
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
+    // Exported MediaLibraryService — every installed app on the device can
+    // try to bind. Returning null rejects the bind; the controller never sees
+    // the library tree, transport callbacks, or playback state. Allowlist
+    // covers our own app, the system UID, and well-known media controllers
+    // (Auto / Assistant / Wear / Automotive / SystemUI). See ControllerTrust.kt.
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? =
+        if (isTrustedMediaController(
+                packageName = controllerInfo.packageName,
+                uid = controllerInfo.uid,
+                ownUid = Process.myUid(),
+                ownPackageName = packageName,
+            )
+        ) {
+            session
+        } else {
+            null
+        }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         session?.player?.let { persistPosition(it) }
