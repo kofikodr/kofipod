@@ -577,12 +577,34 @@ internal fun googleSearchUrl(
     return "https://www.google.com/search?q=" + encodeQuery(raw)
 }
 
-private fun encodeQuery(raw: String): String =
-    raw.map { ch ->
-        when {
-            ch.isLetterOrDigit() -> ch.toString()
-            ch == ' ' -> "+"
-            ch == '-' || ch == '.' || ch == '_' || ch == '~' -> ch.toString()
-            else -> "%" + ch.code.toString(16).uppercase().padStart(2, '0')
+/**
+ * application/x-www-form-urlencoded encoder. Encodes the UTF-8 byte
+ * representation of [raw] — not Unicode code points — so non-ASCII names
+ * (Cyrillic, CJK, accented Latin, emoji) produce browser-compatible percent
+ * escapes (e.g. `é` → `%C3%A9`, not `%E9`) rather than malformed escapes that
+ * a Char-based encoder would emit. RFC 3986 unreserved characters
+ * (`A-Z`, `a-z`, `0-9`, `-`, `.`, `_`, `~`) pass through; ASCII space maps to
+ * `+` per form-encoding, everything else escapes per byte.
+ */
+private fun encodeQuery(raw: String): String {
+    val bytes = raw.encodeToByteArray()
+    val sb = StringBuilder(bytes.size * 3)
+    for (byte in bytes) {
+        when (val v = byte.toInt() and 0xFF) {
+            // ASCII unreserved letters/digits: A–Z, a–z, 0–9
+            in 0x41..0x5A, in 0x61..0x7A, in 0x30..0x39 -> sb.append(v.toChar())
+            // RFC 3986 unreserved punctuation: - . _ ~
+            0x2D, 0x2E, 0x5F, 0x7E -> sb.append(v.toChar())
+            // Form-encoded space
+            0x20 -> sb.append('+')
+            else -> {
+                sb.append('%')
+                sb.append(HEX_DIGITS[v ushr 4])
+                sb.append(HEX_DIGITS[v and 0x0F])
+            }
         }
-    }.joinToString(separator = "")
+    }
+    return sb.toString()
+}
+
+private val HEX_DIGITS = charArrayOf('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F')
