@@ -53,6 +53,22 @@ fun interface DownloadSource {
 }
 
 /**
+ * Removes [key] from [map] only when the current entry is referentially equal
+ * to [value]. Used inside [AiSummaryRepository] to gate `activeJobs` cleanup
+ * on identity — a duplicate Generate tap can overwrite the slot with a newer
+ * job, so the older job's completion handler must not blindly remove the
+ * entry the newer job now occupies.
+ *
+ * Pulled out for direct unit testing — the race is callback-driven and hard
+ * to deterministically reproduce through the full pipeline.
+ */
+internal fun <K, V> removeIfStillOurs(
+    map: Map<K, V>,
+    key: K,
+    value: V,
+): Map<K, V> = if (map[key] === value) map - key else map
+
+/**
  * Orchestrates the BYOK summary pipeline for one episode at a time.
  *
  * Slice 2 covers the transcript path; Slice 2.5 adds the audio fallback for
@@ -242,7 +258,16 @@ class AiSummaryRepository(
         // fire `invokeOnCompletion` before the put-to-map ran — the cleanup
         // would remove a key that hadn't been written yet, leaving a permanent
         // ghost entry that survives subsequent generate/cancel cycles.
-        job.invokeOnCompletion { activeJobs.update { it - episodeId } }
+        //
+        // Identity check on removal: if a duplicate Generate tap arrives and
+        // the second launchInternal overwrites activeJobs[episodeId] with the
+        // newer job before this (older) job's completion handler fires, an
+        // unconditional `activeJobs - episodeId` would drop the NEWER job's
+        // entry, leaving `clearAll() / cancel(episodeId)` blind to a job that's
+        // actually in flight. Remove only when the slot still points to us.
+        job.invokeOnCompletion {
+            activeJobs.update { current -> removeIfStillOurs(current, episodeId, job) }
+        }
         activeJobs.update { it + (episodeId to job) }
         return job
     }
