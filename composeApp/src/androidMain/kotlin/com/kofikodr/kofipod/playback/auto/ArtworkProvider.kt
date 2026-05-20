@@ -11,6 +11,7 @@ import com.kofikodr.kofipod.data.repo.LibraryRepository
 import org.koin.java.KoinJavaComponent
 import java.io.File
 import java.net.HttpURLConnection
+import java.net.InetAddress
 import java.net.URL
 import java.security.MessageDigest
 
@@ -79,27 +80,76 @@ class ArtworkProvider : ContentProvider() {
         url: String,
         dest: File,
     ): Boolean {
+        // SSRF gate: every resolved address must be public. The exported
+        // provider plus library.hasArtworkUrl() means an attacker who controls
+        // a podcast feed can register `http://192.168.1.1/admin` as an artwork
+        // URL — without this check, any local app could trigger the fetch.
+        // The OS may resolve a *different* address at openConnection time
+        // (DNS rebinding, separate A-record); we accept that TOCTOU window
+        // because instanceFollowRedirects=false plus the content-type check
+        // makes the worst-case payload limited.
+        when (validateArtworkUrl(url) { host -> InetAddress.getAllByName(host) }) {
+            is ArtworkUrlCheck.Blocked -> return false
+            ArtworkUrlCheck.Ok -> Unit
+        }
+
         val parent = dest.parentFile ?: return false
         parent.mkdirs()
         val tmp = File(parent, "${dest.name}.tmp")
+        var conn: HttpURLConnection? = null
+        var succeeded = false
         return try {
-            val conn = URL(url).openConnection() as HttpURLConnection
-            conn.connectTimeout = TIMEOUT_MS
-            conn.readTimeout = TIMEOUT_MS
-            conn.instanceFollowRedirects = true
-            conn.inputStream.use { input ->
-                tmp.outputStream().use { output -> input.copyTo(output) }
-            }
-            conn.disconnect()
-            if (tmp.length() == 0L) {
-                tmp.delete()
-                false
-            } else {
-                tmp.renameTo(dest)
+            run download@{
+                val opened =
+                    (URL(url).openConnection() as HttpURLConnection).apply {
+                        connectTimeout = TIMEOUT_MS
+                        readTimeout = TIMEOUT_MS
+                        // Redirects must not bypass the pre-fetch validation. A 3xx
+                        // could send us to a private address whose hostname we
+                        // never resolved. Reject any non-200 status.
+                        instanceFollowRedirects = false
+                    }
+                conn = opened
+                if (opened.responseCode != HttpURLConnection.HTTP_OK) return@download false
+
+                val contentType = opened.contentType?.substringBefore(';')?.trim()?.lowercase()
+                if (contentType == null || !contentType.startsWith("image/")) return@download false
+
+                // contentLengthLong returns -1 when missing. Reject pre-declared
+                // overshoots before opening the input stream so we don't read a
+                // single byte of a hostile multi-GB response.
+                val declaredLength = opened.contentLengthLong
+                if (declaredLength > MAX_ARTWORK_BYTES) return@download false
+
+                var copied = 0L
+                var sizeExceeded = false
+                opened.inputStream.use { input ->
+                    tmp.outputStream().use { output ->
+                        val buffer = ByteArray(ARTWORK_BUFFER_SIZE)
+                        while (true) {
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            copied += n
+                            if (copied > MAX_ARTWORK_BYTES) {
+                                sizeExceeded = true
+                                return@use
+                            }
+                            output.write(buffer, 0, n)
+                        }
+                    }
+                }
+                if (sizeExceeded) return@download false
+                if (tmp.length() == 0L) return@download false
+                succeeded = tmp.renameTo(dest)
+                succeeded
             }
         } catch (_: Exception) {
-            runCatching { tmp.delete() }
             false
+        } finally {
+            // disconnect() releases the socket back to the keep-alive pool;
+            // skipping it on failure paths leaks the connection until GC.
+            conn?.disconnect()
+            if (!succeeded && tmp.exists()) runCatching { tmp.delete() }
         }
     }
 
