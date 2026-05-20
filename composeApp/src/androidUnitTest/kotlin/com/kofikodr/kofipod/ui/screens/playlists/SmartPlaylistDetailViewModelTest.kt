@@ -9,8 +9,10 @@ import com.kofikodr.kofipod.playlists.SmartPlaylist
 import com.kofikodr.kofipod.playlists.SmartPlaylistPredicate
 import com.kofikodr.kofipod.playlists.SmartPlaylistRepository
 import com.kofikodr.kofipod.playlists.SmartPlaylistResolver
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -83,12 +85,14 @@ class SmartPlaylistDetailViewModelTest {
     private data class Harness(
         val vm: SmartPlaylistDetailViewModel,
         val playlists: DetailFakePlaylistRepo,
+        val appScope: CoroutineScope,
     )
 
-    private fun harness(
+    private fun TestScope.harness(
         playlistId: String,
         seedPlaylists: List<SmartPlaylist> = emptyList(),
         seedFacts: List<EpisodeFacts> = emptyList(),
+        appScope: CoroutineScope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
     ): Harness {
         val playlistsRepo = DetailFakePlaylistRepo().apply { seedPlaylists.forEach { saveSync(it) } }
         val factsRepo = DetailFakeFactsRepo(seedFacts)
@@ -98,8 +102,9 @@ class SmartPlaylistDetailViewModelTest {
                 playlists = playlistsRepo,
                 resolver = resolver,
                 playlistId = playlistId,
+                appScope = appScope,
             )
-        return Harness(vm, playlistsRepo)
+        return Harness(vm, playlistsRepo, appScope)
     }
 
     @Test
@@ -144,6 +149,10 @@ class SmartPlaylistDetailViewModelTest {
     @Test
     fun deleteCallsRepoDelete() =
         runVmTest {
+            // Happy-path: pins the repo side-effect. Scope-provenance (the
+            // launch must be on appScope, not viewModelScope) is covered by
+            // `deleteUsesAppScope_notViewModelScope` below — that's the test
+            // that actually pins the kode-review fix.
             val playlist =
                 SmartPlaylist(
                     id = "pl-1",
@@ -158,6 +167,44 @@ class SmartPlaylistDetailViewModelTest {
             advanceUntilIdle()
 
             assertEquals(listOf("pl-1"), h.playlists.deletedIds, "delete() must forward the playlistId to the repository")
+        }
+
+    @Test
+    fun deleteUsesAppScope_notViewModelScope() =
+        runVmTest {
+            // Pin the kode-review fix: the prior delete() launched on
+            // viewModelScope.launch, which got cancelled the moment the user
+            // tapped "Delete" and the screen called onBack() (back-stack pop
+            // clears the VM scope). The delete raced scope cancellation and
+            // frequently lost — row still present after the screen popped.
+            //
+            // Falsifier: if someone reverts to viewModelScope.launch, this
+            // assertion fails — viewModelScope stays alive, the delete runs
+            // anyway, and deletedIds will contain "pl-1". The pre-cancel of
+            // appScope only blocks the call if appScope is the actual scope
+            // hosting the launch.
+            val playlist =
+                SmartPlaylist(
+                    id = "pl-1",
+                    name = "DoNotDelete",
+                    predicate = SmartPlaylistPredicate.EMPTY,
+                    createdAtMs = 1L,
+                )
+            val h = harness(playlistId = "pl-1", seedPlaylists = listOf(playlist))
+            advanceUntilIdle()
+
+            // Kill appScope BEFORE calling delete. The fix routes delete()
+            // through appScope, so its launch must short-circuit on the
+            // cancelled-scope check inside CoroutineScope.launch.
+            h.appScope.cancel()
+            h.vm.delete()
+            advanceUntilIdle()
+
+            assertTrue(
+                h.playlists.deletedIds.isEmpty(),
+                "delete() must launch on appScope — cancelling appScope before delete blocks the repo call. " +
+                    "If this fails, the launch likely reverted to viewModelScope (which is still alive).",
+            )
         }
 }
 

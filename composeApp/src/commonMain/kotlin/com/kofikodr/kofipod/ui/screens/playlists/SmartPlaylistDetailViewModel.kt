@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.kofikodr.kofipod.playlists.SmartPlaylistRepository
 import com.kofikodr.kofipod.playlists.SmartPlaylistResolver
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +31,7 @@ class SmartPlaylistDetailViewModel(
     private val playlists: SmartPlaylistRepository,
     private val resolver: SmartPlaylistResolver,
     private val playlistId: String,
+    private val appScope: CoroutineScope,
 ) : ViewModel() {
     val state: StateFlow<SmartPlaylistDetailUiState> =
         playlists
@@ -70,12 +72,19 @@ class SmartPlaylistDetailViewModel(
             )
 
     /**
-     * Deletes the playlist row. Cancellation propagates so structured concurrency
-     * stays intact when the user navigates away mid-delete; any other failure is
-     * swallowed (the row simply remains and the next observation will reflect it).
+     * Deletes the playlist row. Launched on [appScope] (process-lifetime) rather
+     * than [viewModelScope] so the delete survives the immediate `onBack()` that
+     * pops this screen — the prior viewModelScope.launch was racing against
+     * scope cancellation and the SQLite write was being aborted, leaving the
+     * row in place while the screen popped.
+     *
+     * Other failures are swallowed (the row simply remains and the next
+     * observation will reflect it). CancellationException can no longer arise
+     * from screen pop since appScope outlives the screen, but we keep the
+     * rethrow for true cancellation (process death, app teardown).
      */
     fun delete() {
-        viewModelScope.launch {
+        appScope.launch {
             runCatching { playlists.delete(playlistId) }
                 .onFailure { if (it is CancellationException) throw it }
         }

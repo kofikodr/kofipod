@@ -13,6 +13,7 @@ import com.kofikodr.kofipod.playlists.SmartPlaylistResolver
 import com.kofikodr.kofipod.util.slugifyName
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +52,7 @@ class SmartPlaylistEditorViewModel(
     private val resolver: SmartPlaylistResolver,
     private val library: LibraryRepository,
     private val playlistId: String?,
+    private val appScope: CoroutineScope,
     initialName: String? = null,
     private val clock: Clock = Clock.System,
     // Injectable so tests can route the off-Main `library.podcastsFlow().first()`
@@ -237,11 +239,22 @@ class SmartPlaylistEditorViewModel(
         }
     }
 
-    /** Deletes the playlist. No-op in create-mode. */
-    suspend fun delete() {
+    /**
+     * Deletes the playlist. No-op in create-mode. Fire-and-forget on
+     * [appScope] (process-lifetime) so the SQLite write survives the
+     * immediate `onBack()` that pops this screen — see the kdoc on
+     * [SmartPlaylistDetailViewModel.delete] for the race the appScope
+     * route fixes. The editor screen's prior `scope.launch { delete();
+     * onBack() }` pattern leaked the same race through the composition-
+     * tied `rememberCoroutineScope` instead of viewModelScope, but the
+     * outcome was identical: SQLite write cancelled mid-flight.
+     */
+    fun delete() {
         val id = playlistId ?: return
-        runCatching { playlists.delete(id) }
-            .onFailure { if (it is CancellationException) throw it }
+        appScope.launch {
+            runCatching { playlists.delete(id) }
+                .onFailure { if (it is CancellationException) throw it }
+        }
     }
 
     private companion object {

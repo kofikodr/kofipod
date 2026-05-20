@@ -171,10 +171,12 @@ fun SmartPlaylistEditorScreen(
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false
-                    scope.launch {
-                        viewModel.delete()
-                        onBack()
-                    }
+                    // delete() is now fire-and-forget on appScope; call it
+                    // synchronously and pop immediately. The prior
+                    // scope.launch { delete(); onBack() } raced the
+                    // composition-scope cancellation that onBack triggered.
+                    viewModel.delete()
+                    onBack()
                 }) { Text("Delete", color = c.danger) }
             },
             dismissButton = {

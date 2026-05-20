@@ -603,6 +603,7 @@ val commonDataModule =
                 resolver = get(),
                 library = get(),
                 playlistId = playlistId,
+                appScope = get(org.koin.core.qualifier.named("appScope")),
                 initialName = initialName,
             )
         }
@@ -613,6 +614,7 @@ val commonDataModule =
                 playlists = get(),
                 resolver = get(),
                 playlistId = params.get<String>(),
+                appScope = get(org.koin.core.qualifier.named("appScope")),
             )
         }
     }

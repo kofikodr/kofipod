@@ -18,6 +18,7 @@ import com.kofikodr.kofipod.testing.inMemoryDatabase
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -68,6 +69,7 @@ class SmartPlaylistEditorViewModelTest {
     }
 
     private var testDispatcher: CoroutineDispatcher? = null
+    private var testAppScope: kotlinx.coroutines.CoroutineScope? = null
 
     /**
      * Routes `Dispatchers.Main` to the test scheduler so `viewModelScope.launch { ... }`
@@ -76,7 +78,9 @@ class SmartPlaylistEditorViewModelTest {
      * the VM's `defaultDispatcher` and the [LibraryRepository] `queryDispatcher` —
      * routing every off-Main hop onto the test scheduler instead of the real
      * `Dispatchers.Default` pool, which otherwise races assertions and turns the class
-     * flaky when run end-to-end.
+     * flaky when run end-to-end. The `testAppScope` mirrors the production
+     * named-"appScope" Koin binding so the VM's `delete()` launch is observable
+     * from `advanceUntilIdle()`.
      *
      * After `block()` completes we clear the [viewModelStore] **inside** the same
      * `runTest` so each VM's `viewModelScope` is cancelled while its test scheduler is
@@ -87,11 +91,15 @@ class SmartPlaylistEditorViewModelTest {
         runTest {
             val dispatcher = UnconfinedTestDispatcher(testScheduler)
             testDispatcher = dispatcher
+            val appScope = kotlinx.coroutines.CoroutineScope(dispatcher)
+            testAppScope = appScope
             Dispatchers.setMain(dispatcher)
             try {
                 block()
             } finally {
                 viewModelStore.clear()
+                appScope.cancel()
+                testAppScope = null
                 testDispatcher = null
             }
         }
@@ -176,6 +184,10 @@ class SmartPlaylistEditorViewModelTest {
                         resolver = resolver,
                         library = library,
                         playlistId = playlistId,
+                        appScope =
+                            requireNotNull(testAppScope) {
+                                "harness() must be called inside runVmTest { ... }"
+                            },
                         clock = fixedClock,
                         defaultDispatcher =
                             requireNotNull(testDispatcher) {
