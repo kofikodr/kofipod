@@ -87,7 +87,7 @@ fun PaywallSheet(
             PaywallErrorBanner(state.errorMessage)
             PaywallCta(
                 title = "Kofipod Pro",
-                price = "\$12.99",
+                price = state.displayPrice ?: "View price",
                 sub = "One-time · for you",
                 launching = state.mode == PaywallMode.Launching,
                 enabled = state.mode == PaywallMode.Idle,

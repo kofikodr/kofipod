@@ -84,6 +84,20 @@ class ProEntitlementRepository(
                 result
             }.await()
 
+    /**
+     * Best-effort fetch of the platform-formatted display price for [productId]
+     * (e.g. `"$12.99"`). Returns null when the port couldn't connect, the query
+     * failed, or the platform has no price to share (FOSS / iOS). The paywall
+     * substitutes neutral copy on null; we deliberately do not raise an error
+     * here — the paywall must still be usable (the actual price is also shown
+     * inside the Play purchase sheet that opens on tap).
+     */
+    suspend fun fetchDisplayPrice(productId: String): String? {
+        val connected = port.connect()
+        if (connected.isFailure) return null
+        return port.queryDisplayPrice(productId).getOrNull()
+    }
+
     suspend fun launchPurchase(productId: String): Result<ProEntitlement> {
         val connected = port.connect()
         if (connected.isFailure) {

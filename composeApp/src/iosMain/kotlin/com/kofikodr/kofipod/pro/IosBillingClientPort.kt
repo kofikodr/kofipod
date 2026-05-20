@@ -12,6 +12,10 @@ class IosBillingClientPort : BillingClientPort {
 
     override suspend fun queryEntitlement(): Result<ProEntitlement> = Result.success(ProEntitlement.Free)
 
+    override suspend fun queryDisplayPrice(productId: String): Result<String?> =
+        // StoreKit isn't wired in v1; no price to surface yet.
+        Result.success(null)
+
     override suspend fun launchPurchase(productId: String): Result<ProEntitlement> =
         Result.failure(NotImplementedError("iOS purchase flow not implemented in v1"))
 

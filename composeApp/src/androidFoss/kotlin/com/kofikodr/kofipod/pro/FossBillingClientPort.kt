@@ -13,6 +13,11 @@ class FossBillingClientPort : BillingClientPort {
 
     override suspend fun queryEntitlement(): Result<ProEntitlement> = Result.success(ProEntitlement.Pro(ProSource.FossBuild))
 
+    override suspend fun queryDisplayPrice(productId: String): Result<String?> =
+        // FOSS users are already Pro — there's no purchase, so there's no price.
+        // Callers display the neutral fallback copy.
+        Result.success(null)
+
     override suspend fun launchPurchase(productId: String): Result<ProEntitlement> =
         // Already Pro; nothing to launch.
         Result.success(ProEntitlement.Pro(ProSource.FossBuild))

@@ -212,6 +212,71 @@ class ProEntitlementRepositoryTest {
 
             assertIs<ProEntitlement.Free>(repo.state.value)
         }
+
+    @Test
+    fun `fetchDisplayPrice returns formatted price when port returns one`() =
+        runTest {
+            // The exact string is opaque to us — Play returns a locale-formatted
+            // amount like "$12.99" or "€10.99". The test just pins that whatever
+            // the port returns lands on the caller verbatim.
+            val cache = FakeEntitlementCache(initial = null)
+            val port = FakeBillingClientPort(displayPrice = Result.success("€10.99"))
+            val repo = ProEntitlementRepository(cache = cache, port = port, appScope = scope)
+
+            assertEquals("€10.99", repo.fetchDisplayPrice(ProProducts.INDIVIDUAL))
+            assertEquals(1, port.connectCalls)
+            assertEquals(1, port.displayPriceCalls)
+            // Pin that the productId reaches the port verbatim — confused-deputy
+            // risk in billing code: the wrong product ID would charge the user the
+            // wrong amount in the purchase sheet that opens on tap.
+            assertEquals(ProProducts.INDIVIDUAL, port.lastDisplayPriceProductId)
+        }
+
+    @Test
+    fun `fetchDisplayPrice returns null when port returns no price`() =
+        runTest {
+            // FOSS / iOS ports unconditionally return success(null); also the
+            // success(null) path is what Play returns when the product details
+            // query came back empty.
+            val cache = FakeEntitlementCache(initial = null)
+            val port = FakeBillingClientPort(displayPrice = Result.success(null))
+            val repo = ProEntitlementRepository(cache = cache, port = port, appScope = scope)
+
+            assertEquals(null, repo.fetchDisplayPrice(ProProducts.INDIVIDUAL))
+            assertEquals(1, port.connectCalls)
+            assertEquals(1, port.displayPriceCalls)
+        }
+
+    @Test
+    fun `fetchDisplayPrice returns null when connect fails`() =
+        runTest {
+            // A failed connect must not throw out of the call — the paywall has
+            // to render with neutral copy in this case. Also pins that we do not
+            // call queryDisplayPrice when connect failed (no point) — slightly
+            // tightens the contract beyond what the kdoc requires.
+            val cache = FakeEntitlementCache(initial = null)
+            val port = FakeBillingClientPort(connect = Result.failure(RuntimeException("no service")))
+            val repo = ProEntitlementRepository(cache = cache, port = port, appScope = scope)
+
+            assertEquals(null, repo.fetchDisplayPrice(ProProducts.INDIVIDUAL))
+            assertEquals(1, port.connectCalls)
+            assertEquals(0, port.displayPriceCalls)
+        }
+
+    @Test
+    fun `fetchDisplayPrice returns null when port query fails`() =
+        runTest {
+            // Transport-level failure (e.g. Play Billing returned a non-OK
+            // response code) must funnel into "no price" rather than an
+            // exception bubbling into the paywall init block.
+            val cache = FakeEntitlementCache(initial = null)
+            val port = FakeBillingClientPort(displayPrice = Result.failure(RuntimeException("net")))
+            val repo = ProEntitlementRepository(cache = cache, port = port, appScope = scope)
+
+            assertEquals(null, repo.fetchDisplayPrice(ProProducts.INDIVIDUAL))
+            assertEquals(1, port.connectCalls)
+            assertEquals(1, port.displayPriceCalls)
+        }
 }
 
 // Fakes are extracted to ProTestFakes.kt so ReviewerUnlockTest can share them.

@@ -105,6 +105,16 @@ class PlayBillingClientPort(
 
     override suspend fun queryEntitlement(): Result<ProEntitlement> = restorePurchases()
 
+    override suspend fun queryDisplayPrice(productId: String): Result<String?> =
+        queryProductDetails(productId).map { details ->
+            // One-time IAPs expose `oneTimePurchaseOfferDetails.formattedPrice`. Subscriptions
+            // use a different field, but Kofipod Pro is a one-time SKU (see class kdoc), so
+            // the subscription path is intentionally not handled here. Coerce blank to null
+            // so a defensive empty string from Play falls back to the neutral UI copy
+            // instead of rendering an empty price label.
+            details.oneTimePurchaseOfferDetails?.formattedPrice?.takeIf { it.isNotBlank() }
+        }
+
     override suspend fun launchPurchase(productId: String): Result<ProEntitlement> {
         val activity =
             activityHolder.current

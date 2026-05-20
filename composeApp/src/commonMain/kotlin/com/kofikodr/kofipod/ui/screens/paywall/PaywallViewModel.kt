@@ -18,6 +18,12 @@ data class PaywallUiState(
     val mode: PaywallMode = PaywallMode.Idle,
     val entitlement: ProEntitlement = ProEntitlement.Unknown,
     val errorMessage: String? = null,
+    /**
+     * Platform-formatted display price for the individual SKU (e.g. `"$12.99"`,
+     * `"€10.99"`). `null` means "the billing layer didn't return a price" — UI
+     * substitutes neutral fallback copy. Never carries a hard-coded amount.
+     */
+    val displayPrice: String? = null,
 )
 
 enum class PaywallMode {
@@ -32,11 +38,22 @@ class PaywallViewModel(
 ) : ViewModel() {
     private val mode = MutableStateFlow(PaywallMode.Idle)
     private val error = MutableStateFlow<String?>(null)
+    private val displayPrice = MutableStateFlow<String?>(null)
 
     val state: StateFlow<PaywallUiState> =
-        combine(mode, error, repo.state) { m, err, entitlement ->
-            PaywallUiState(mode = m, entitlement = entitlement, errorMessage = err)
+        combine(mode, error, displayPrice, repo.state) { m, err, price, entitlement ->
+            PaywallUiState(mode = m, entitlement = entitlement, errorMessage = err, displayPrice = price)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PaywallUiState())
+
+    init {
+        // Fetch the formatted price once at construction. Failures are swallowed —
+        // a missing price is not an error state for the paywall; we just fall back
+        // to neutral copy. The real price is also shown inside Play's purchase
+        // sheet, which opens on tap.
+        viewModelScope.launch {
+            displayPrice.value = repo.fetchDisplayPrice(ProProducts.INDIVIDUAL)
+        }
+    }
 
     fun purchaseIndividual() = launchPurchase(ProProducts.INDIVIDUAL)
 

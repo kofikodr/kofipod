@@ -38,6 +38,7 @@ internal class FakeBillingClientPort(
     private val query: Result<ProEntitlement> = Result.success(ProEntitlement.Free),
     private val restore: Result<ProEntitlement> = Result.success(ProEntitlement.Free),
     private val purchase: Result<ProEntitlement> = Result.success(ProEntitlement.Pro(ProSource.Individual)),
+    private val displayPrice: Result<String?> = Result.success(null),
     private val queryGate: CompletableDeferred<Unit>? = null,
 ) : BillingClientPort {
     var connectCalls = 0
@@ -47,6 +48,10 @@ internal class FakeBillingClientPort(
     var restoreCalls = 0
         private set
     var purchaseCalls = 0
+        private set
+    var displayPriceCalls = 0
+        private set
+    var lastDisplayPriceProductId: String? = null
         private set
     var closeCalls = 0
         private set
@@ -60,6 +65,12 @@ internal class FakeBillingClientPort(
         queryCalls++
         queryGate?.await()
         return query
+    }
+
+    override suspend fun queryDisplayPrice(productId: String): Result<String?> {
+        displayPriceCalls++
+        lastDisplayPriceProductId = productId
+        return displayPrice
     }
 
     override suspend fun launchPurchase(productId: String): Result<ProEntitlement> {
