@@ -472,11 +472,10 @@ actual class SnippetExporter(
         return listOf(OverlayEffect(overlays))
     }
 
-    private fun toUri(sourceUriOrPath: String): Uri =
-        if (sourceUriOrPath.startsWith("http://") || sourceUriOrPath.startsWith("https://")) {
-            Uri.parse(sourceUriOrPath)
-        } else {
-            Uri.fromFile(File(sourceUriOrPath))
+    internal fun toUri(sourceUriOrPath: String): Uri =
+        when (val route = sourceUriRoute(sourceUriOrPath)) {
+            is SnippetSourceRoute.Remote -> Uri.parse(route.url)
+            is SnippetSourceRoute.Local -> Uri.fromFile(File(route.path))
         }
 
     /**
@@ -545,3 +544,25 @@ actual class SnippetExporter(
         const val PCM_DECODE_TIMEOUT_MS = 60_000L
     }
 }
+
+/**
+ * Pure routing decision for the SnippetExporter source URL. Decoupled from
+ * Android Uri so the rule can be JVM-unit-tested without Robolectric — the
+ * Uri construction happens at the exporter's boundary via [SnippetExporter.toUri].
+ *
+ * Get this wrong and Media3's DefaultMediaSourceFactory picks the wrong
+ * DataSource: a remote URL treated as a path → FileNotFoundException;
+ * a local path treated as a URL → network timeout.
+ */
+internal sealed interface SnippetSourceRoute {
+    data class Remote(val url: String) : SnippetSourceRoute
+
+    data class Local(val path: String) : SnippetSourceRoute
+}
+
+internal fun sourceUriRoute(sourceUriOrPath: String): SnippetSourceRoute =
+    if (sourceUriOrPath.startsWith("http://") || sourceUriOrPath.startsWith("https://")) {
+        SnippetSourceRoute.Remote(sourceUriOrPath)
+    } else {
+        SnippetSourceRoute.Local(sourceUriOrPath)
+    }
