@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FOSS-flavor-only permissions.
+
+  REQUEST_INSTALL_PACKAGES is required by the in-app sideload updater
+  that ships in the FOSS build (since F-Droid-style channels need an
+  out-of-band update mechanism). The Play build deliberately omits it
+  so the Play merged manifest doesn't declare a permission Play would
+  flag as risky on the listing and that would also be moot — the Play
+  artifact updates via Google Play, never via APK install.
+
+  Anything that needs the same in androidMain belongs here instead.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required to install the downloaded APK for the in-app updater. The
+         user is additionally prompted on first use to allow installs from
+         this app via Settings → "Install unknown apps". FOSS only. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+</manifest>
