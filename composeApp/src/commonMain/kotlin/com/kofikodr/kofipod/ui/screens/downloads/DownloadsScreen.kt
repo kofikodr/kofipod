@@ -50,6 +50,7 @@ import com.kofikodr.kofipod.ui.primitives.KPIconName
 import com.kofikodr.kofipod.ui.primitives.KofipodArtwork
 import com.kofikodr.kofipod.ui.primitives.SectionLabel
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
+import kotlinx.datetime.Clock
 import org.koin.compose.viewmodel.koinViewModel
 import kotlin.math.max
 import kotlin.math.min
@@ -667,20 +668,52 @@ private fun pow10(n: Int): Long {
     return r
 }
 
-private fun etaLabel(d: DownloadRow): String {
-    val total = d.totalBytes
-    val done = d.downloadedBytes
-    val started = d.startedAt
-    if (total <= 0 || done <= 0 || started == null || started <= 0) return "ETA \u2014"
-    val nowApprox = started + 1L // without a clock source we can't compute true ETA
-    val elapsedMs = max(1L, nowApprox - started)
-    val bps = done.toDouble() / elapsedMs.toDouble()
-    if (bps <= 0.0) return "ETA \u2014"
-    val remaining = (total - done).coerceAtLeast(0L)
-    val secs = min(60L * 60L, (remaining / (bps * 1000.0)).toLong())
-    val m = secs / 60L
-    val s = secs % 60L
-    return "ETA ${m}m ${s}s"
+private fun etaLabel(d: DownloadRow): String =
+    formatEtaLabel(
+        computeEtaSeconds(
+            totalBytes = d.totalBytes,
+            downloadedBytes = d.downloadedBytes,
+            startedAtMs = d.startedAt,
+            nowMs = Clock.System.now().toEpochMilliseconds(),
+        ),
+    )
+
+/**
+ * Returns the estimated remaining seconds, or `null` when not enough information
+ * is available (zero/negative totals, no start time, or a degenerate throughput).
+ *
+ * Capped at 3600s (1 hour) \u2014 the bar's purpose is "is this taking a while?", not
+ * a precise multi-hour countdown, and very slow links would otherwise scroll
+ * past the available label width. `elapsedMs` is clamped to 1L to keep the
+ * divisor safe across clock-skew or same-millisecond callbacks; `nowMs < startedAtMs`
+ * (rare wall-clock skew) is treated as "elapsed = 1 ms" rather than crashing.
+ *
+ * Internal so `DownloadsScreenEtaTest` can pin the math without going through the
+ * wall clock; the [etaLabel] formatter passes a real `Clock.System.now()` timestamp.
+ */
+internal fun computeEtaSeconds(
+    totalBytes: Long,
+    downloadedBytes: Long,
+    startedAtMs: Long?,
+    nowMs: Long,
+): Long? {
+    if (totalBytes <= 0 || downloadedBytes <= 0 || startedAtMs == null || startedAtMs <= 0) return null
+    val remaining = (totalBytes - downloadedBytes).coerceAtLeast(0L)
+    if (remaining == 0L) return null
+    val elapsedMs = max(1L, nowMs - startedAtMs)
+    val bps = downloadedBytes.toDouble() / elapsedMs.toDouble()
+    return min(60L * 60L, (remaining / (bps * 1000.0)).toLong())
+}
+
+/**
+ * Formats a seconds count into the `"ETA Xm Ys"` label, or returns the em-dash
+ * placeholder when no defensible estimate is available. Internal so the
+ * formatting layer (null substitution + minute/second decomposition) can be
+ * pinned without standing up a `DownloadRow` fixture.
+ */
+internal fun formatEtaLabel(remainingSeconds: Long?): String {
+    if (remainingSeconds == null) return "ETA \u2014"
+    return "ETA ${remainingSeconds / 60L}m ${remainingSeconds % 60L}s"
 }
 
 private fun completedCaption(d: DownloadRow): String {
