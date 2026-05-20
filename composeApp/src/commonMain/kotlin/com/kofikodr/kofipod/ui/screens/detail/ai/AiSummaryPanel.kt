@@ -67,7 +67,13 @@ fun AiSummaryPanel(
     onOpenAiSetup: () -> Unit,
     modifier: Modifier = Modifier,
     onExportSummary: () -> Unit = {},
-    viewModel: AiSummaryViewModel = koinViewModel(parameters = { parametersOf(episodeId) }),
+    // `key = episodeId`: under tablet master-detail the ViewModelStoreOwner
+    // stays the same across episode selections, so without the key, Koin would
+    // reuse the first AiSummaryViewModel and render AI state for the wrong
+    // episode. Keep in lockstep with MentionedTabContent, DiscussTabPanel, and
+    // EpisodeDetailScreen's inline mentioned-count collector.
+    viewModel: AiSummaryViewModel =
+        koinViewModel(key = episodeId, parameters = { parametersOf(episodeId) }),
 ) {
     val state by viewModel.state.collectAsState()
     AiSummaryPanelContent(

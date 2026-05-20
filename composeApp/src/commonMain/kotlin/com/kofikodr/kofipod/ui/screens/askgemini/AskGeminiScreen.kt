@@ -81,7 +81,13 @@ fun AskGeminiScreen(
     episodeId: String,
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
-    viewModel: AskGeminiViewModel = koinViewModel(parameters = { parametersOf(episodeId) }),
+    // `key = episodeId` so the per-episode AskGemini VM is correctly scoped
+    // if multiple AskGemini routes for different episodes ever share a
+    // ViewModelStore (e.g. tablet adaptation, multi-pane chat). Matches the
+    // AI tab keying convention in `AiSummaryPanel` / `MentionedTabPanel` /
+    // `DiscussTabPanel`.
+    viewModel: AskGeminiViewModel =
+        koinViewModel(key = episodeId, parameters = { parametersOf(episodeId) }),
 ) {
     val state by viewModel.state.collectAsState()
     val composer by viewModel.composer.collectAsState()

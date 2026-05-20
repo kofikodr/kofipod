@@ -383,7 +383,16 @@ private fun EpisodeBody(
         // this collector — no double subscription.
         val mentionedCount =
             if (summaryEnabled) {
-                val aiVm: AiSummaryViewModel = koinViewModel(parameters = { parametersOf(episode.id) })
+                // `key = episode.id` so the inline mentioned-count collector
+                // resolves the same per-episode AiSummaryViewModel as the AI
+                // tab panels under tablet master-detail (where the
+                // ViewModelStoreOwner is shared across episode selections).
+                // The Koin scope-binding pattern means a Koin scope keyed on
+                // episodeId returns the same instance to all keyed callers,
+                // so the AiSummaryPanel below still shares state with this
+                // collector — no double subscription.
+                val aiVm: AiSummaryViewModel =
+                    koinViewModel(key = episode.id, parameters = { parametersOf(episode.id) })
                 val aiState by aiVm.state.collectAsState()
                 aiState.mentionedCount()
             } else {

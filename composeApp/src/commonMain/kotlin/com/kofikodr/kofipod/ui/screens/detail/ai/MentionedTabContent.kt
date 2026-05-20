@@ -60,7 +60,10 @@ import org.koin.core.parameter.parametersOf
 fun MentionedTabPanel(
     episodeId: String,
     modifier: Modifier = Modifier,
-    viewModel: AiSummaryViewModel = koinViewModel(parameters = { parametersOf(episodeId) }),
+    // `key = episodeId` — see AiSummaryPanel for the tablet master-detail
+    // reasoning. Same store, different episode → wrong VM without the key.
+    viewModel: AiSummaryViewModel =
+        koinViewModel(key = episodeId, parameters = { parametersOf(episodeId) }),
 ) {
     val state by viewModel.state.collectAsState()
     MentionedTabContent(state = state, modifier = modifier, size = rememberTabletSize())
