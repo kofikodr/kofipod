@@ -183,9 +183,12 @@ const val BACKUP_MIME = "application/x-kofipod-backup"
 const val MANIFEST_SCHEMA_VERSION = 1
 
 /**
- * SQLDelight schema version, mirrored from the highest numbered file under
- * `composeApp/src/commonMain/sqldelight/com/kofikodr/kofipod/db/migrations/`. Bump in lockstep
- * with every new `.sqm` file. Backups carry this number in the manifest so a restore
- * can refuse a schema newer than what the current build can open.
+ * SQLDelight schema version, kept in sync with `KofipodDatabase.Schema.version` — that
+ * is, `(highest numbered .sqm file) + 1`, because migration `N.sqm` migrates schema
+ * version `N` → `N + 1`. Backups carry this number in the manifest so a restore can
+ * refuse a schema newer than what the current build can open. Drift between this
+ * constant and the generated schema version is pinned by
+ * `ManifestTest.dbSchemaVersion_matchesGeneratedSchema` — if you add a new migration,
+ * bump this constant and that test will pass again.
  */
-const val DB_SCHEMA_VERSION = 18
+const val DB_SCHEMA_VERSION = 21

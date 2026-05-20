@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.kofikodr.kofipod.backup
 
+import com.kofikodr.kofipod.db.KofipodDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -29,6 +30,22 @@ class ManifestTest {
         assertEquals(
             "abc123def456abc123def456abc123def456abc123def456abc123def456abcd",
             manifest.dbSha256,
+        )
+    }
+
+    @Test
+    fun dbSchemaVersion_matchesGeneratedSchema() {
+        // Drift guard. The backup manifest stamps every `.kpbak` with `DB_SCHEMA_VERSION`,
+        // and the restore validator refuses a backup whose stamped version is newer than
+        // the current build. If the constant lags the real schema, manifests under-claim
+        // the schema and a future build that does keep the constant in sync may accept
+        // a backup whose actual DB requires a migration that hasn't been registered. The
+        // generated `KofipodDatabase.Schema.version` is the source of truth (it's
+        // `max(migration N) + 1` because migration N moves from version N to N+1).
+        assertEquals(
+            DB_SCHEMA_VERSION.toLong(),
+            KofipodDatabase.Schema.version,
+            "DB_SCHEMA_VERSION must match KofipodDatabase.Schema.version — bump it after adding a migration",
         )
     }
 
