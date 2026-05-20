@@ -146,9 +146,10 @@ private fun DisclosureCard() {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "When these features are used, only the audio is uploaded to Google. " +
-                "Your key stays only on this phone, it is " +
-                "never synced or sent anywhere else.",
+            "When you use these features, the episode's audio or its publisher " +
+                "transcript is sent to Google to generate the result, along with any " +
+                "questions you type in chat. Your key stays only on this phone — it " +
+                "is never synced or sent anywhere else.",
             color = c.text,
             fontSize = 12.5.sp,
             lineHeight = 18.sp,
