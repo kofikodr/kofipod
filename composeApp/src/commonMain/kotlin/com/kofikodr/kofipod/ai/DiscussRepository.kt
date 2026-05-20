@@ -215,8 +215,12 @@ class DiscussRepository(
             }
         // Same ordering as AiSummaryRepository: register the completion
         // handler BEFORE adding to activeJobs so a fast-completing job can't
-        // race the put-to-map.
-        job.invokeOnCompletion { activeJobs.update { it - episodeId } }
+        // race the put-to-map. Identity check on removal so a duplicate
+        // send/retry that overwrote the slot isn't dropped by an older job's
+        // completion — see kdoc on [removeIfStillOurs].
+        job.invokeOnCompletion {
+            activeJobs.update { current -> removeIfStillOurs(current, episodeId, job) }
+        }
         activeJobs.update { it + (episodeId to job) }
     }
 
@@ -253,7 +257,12 @@ class DiscussRepository(
                     } ?: return@launch
                 runSend(episodeId, lastUser.content, insertUser = false)
             }
-        job.invokeOnCompletion { activeJobs.update { it - episodeId } }
+        // Identity-checked removal: mirror the send() path so an older retry
+        // can't drop a newer retry/send from activeJobs by clearing the slot
+        // out from under it. See [removeIfStillOurs].
+        job.invokeOnCompletion {
+            activeJobs.update { current -> removeIfStillOurs(current, episodeId, job) }
+        }
         activeJobs.update { it + (episodeId to job) }
     }
 
