@@ -37,6 +37,14 @@ class SnippetCaptionRepositoryTest {
     @Test
     fun no_transcript_audio_and_key_present_uses_gemini() =
         runTest {
+            // Recording fake captures the request so we can verify the repo
+            // hands Gemini the SNIPPET's episode ID and a prompt naming the
+            // exact start/end window. The prior assertion only checked the
+            // returned text — a regression that transcribed the wrong episode
+            // (e.g. cached the previous snippet's episodeId) or the wrong
+            // time window (e.g. used 0..fullEpisode) would still produce
+            // success and pass the test.
+            val captures = mutableListOf<Pair<String, String>>()
             val repo =
                 makeRepoWith(
                     transcriptUrl = null,
@@ -44,10 +52,23 @@ class SnippetCaptionRepositoryTest {
                     audioDownloaded = true,
                     geminiKey = "k",
                     geminiResponse = "Audio caption from Gemini.",
+                    recordTo = captures,
                 )
-            val r = repo.resolveFor(snippet())
+            val r = repo.resolveFor(snippet(startMs = 10_000L, endMs = 15_000L))
             assertTrue(r is CaptionResolution.FromGemini)
             assertEquals("Audio caption from Gemini.", r.text)
+
+            assertEquals(1, captures.size, "Exactly one Gemini call must fire for one snippet")
+            val (calledEpisodeId, calledPrompt) = captures.single()
+            assertEquals("ep-1", calledEpisodeId, "Must transcribe the snippet's episode")
+            // Window naming: prompt must reference the requested start/end so
+            // a refactor that drops the window from the prompt body is caught.
+            // The repo formats seconds as "<start>s..<end>s" — 10_000..15_000 ms
+            // is the standard window for these tests.
+            assertTrue(
+                calledPrompt.contains("10s") && calledPrompt.contains("15s"),
+                "Prompt must name the snippet window in seconds; got: $calledPrompt",
+            )
         }
 
     @Test
@@ -148,6 +169,7 @@ class SnippetCaptionRepositoryTest {
         geminiKey: String?,
         geminiResponse: String? = "ok",
         episodeExists: Boolean = true,
+        recordTo: MutableList<Pair<String, String>>? = null,
     ): SnippetCaptionRepository {
         val episode =
             Episode(
@@ -199,12 +221,14 @@ class SnippetCaptionRepositoryTest {
                 override suspend fun transcribeForCaption(
                     episodeId: String,
                     prompt: String,
-                ): Result<String> =
-                    if (geminiResponse != null) {
+                ): Result<String> {
+                    recordTo?.add(episodeId to prompt)
+                    return if (geminiResponse != null) {
                         Result.success(geminiResponse)
                     } else {
                         Result.failure(IllegalStateException("gemini failed"))
                     }
+                }
             }
         return SnippetCaptionRepository(episodes, transcripts, deps)
     }
