@@ -90,7 +90,7 @@ val commonDataModule =
     module {
         single { buildHttpClient() }
         single { UiEventBus() }
-        single { NetworkErrorHandler(get()) }
+        single { NetworkErrorHandler() }
         single { PodcastIndexApi.create() }
         // Driver is exposed separately from KofipodDatabase so the SAF backup path
         // can issue a `PRAGMA wal_checkpoint(TRUNCATE)` before reading the on-disk
@@ -537,7 +537,7 @@ val commonDataModule =
         viewModel { DownloadsViewModel(get(), get()) }
         viewModel { SchedulerInfoViewModel(settings = get(), scheduler = get()) }
         viewModel { (podcastId: String) ->
-            PodcastDetailViewModel(podcastId, get(), get(), get(), get(), get(), get(), get(), get(), get(), get())
+            PodcastDetailViewModel(podcastId, get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get())
         }
         viewModel { (episodeId: String) ->
             EpisodeDetailViewModel(

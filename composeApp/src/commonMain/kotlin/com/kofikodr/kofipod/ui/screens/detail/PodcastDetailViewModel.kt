@@ -79,6 +79,10 @@ class PodcastDetailViewModel(
     private val recentlyViewed: RecentlyViewedRepository,
     private val errors: NetworkErrorHandler,
     private val remoteCache: RemoteEpisodeCache,
+    // NetworkErrorHandler no longer emits to UiEventBus directly (would
+    // couple data → ui). The VM owns the snackbar emission so it can
+    // route through the same bus the rest of the screen uses.
+    private val uiEvents: com.kofikodr.kofipod.ui.UiEventBus,
 ) : ViewModel() {
     private val remoteSummary = MutableStateFlow<PodcastSummary?>(null)
     private val remoteEpisodes = MutableStateFlow<List<EpisodePreview>>(emptyList())
@@ -287,7 +291,15 @@ class PodcastDetailViewModel(
                 // the failure as transient (snackbar) and keep showing cached data. Otherwise
                 // surface the friendly empty-state message in the screen.
                 val hasCache = state.value.inLibrary || state.value.storedEpisodes.isNotEmpty()
-                error.value = errors.handle(it, hasCachedData = hasCache, fallback = "Failed to load podcast")
+                error.value =
+                    errors.handle(
+                        it,
+                        hasCachedData = hasCache,
+                        fallback = "Failed to load podcast",
+                        emitSnackbar = { msg ->
+                            uiEvents.emit(com.kofikodr.kofipod.ui.UiEvent.Snackbar(msg))
+                        },
+                    )
             }
             loading.value = false
             loadingMore.value = false
