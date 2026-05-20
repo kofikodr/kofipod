@@ -7,9 +7,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import com.kofikodr.kofipod.util.PendingHolder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 
 // CREATE_DOCUMENT MIME. We use `text/x-opml` rather than `application/xml` so SAF does
@@ -28,6 +33,7 @@ private val OPML_OPEN_MIMES = arrayOf(OPML_CREATE_MIME, "application/xml", "text
 actual fun OpmlPickerHost() {
     val context = LocalContext.current
     val port = koinInject<OpmlFilePort>() as? AndroidOpmlFilePort ?: return
+    val scope = rememberCoroutineScope()
 
     val pendingImport = remember { PendingHolder<CompletableDeferred<ByteArray?>>() }
     val pendingExport = remember { PendingHolder<AndroidOpmlFilePort.ExportRequest>() }
@@ -39,14 +45,34 @@ actual fun OpmlPickerHost() {
                 deferred.complete(null)
                 return@rememberLauncherForActivityResult
             }
-            val bytes =
-                runCatching {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                }.getOrNull()
-            if (bytes == null) {
-                deferred.completeExceptionally(IllegalStateException("Couldn't read OPML file"))
-            } else {
-                deferred.complete(bytes)
+            // Move the IO off Main. The SAF picker can return a URI backed by a
+            // remote provider (Drive / Dropbox / etc) where the read does real
+            // network work — a synchronous Main-thread read ANRs for large files.
+            // The size cap also lives in `readCappedFromUri` so a hostile or
+            // misconfigured provider can't OOM the heap.
+            scope.launch {
+                try {
+                    val result =
+                        withContext(Dispatchers.IO) {
+                            readCappedFromUri(context.contentResolver, uri)
+                        }
+                    when (result) {
+                        is OpmlReadResult.Ok -> deferred.complete(result.bytes)
+                        OpmlReadResult.Unreadable ->
+                            deferred.completeExceptionally(IllegalStateException("Couldn't read OPML file"))
+                        is OpmlReadResult.TooLarge ->
+                            deferred.completeExceptionally(
+                                IllegalStateException("OPML file is too large (${result.cap / (1024L * 1024L)} MB cap)"),
+                            )
+                    }
+                } catch (cancel: CancellationException) {
+                    // Composition was torn down mid-read (e.g. Activity recreated
+                    // while picker was settling). Surface the cancel to the caller
+                    // immediately so the controller's single-flight guard clears,
+                    // rather than letting `pickImport`'s 5-minute timeout fire.
+                    deferred.completeExceptionally(cancel)
+                    throw cancel
+                }
             }
         }
 
