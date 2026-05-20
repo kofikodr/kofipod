@@ -3,10 +3,10 @@ package com.kofikodr.kofipod.data.api
 
 import com.kofikodr.kofipod.config.BuildKonfig
 import com.mr3y.podcastindex.PodcastIndexClient
-import com.mr3y.podcastindex.ktor3.PodcastIndexClient
 import com.mr3y.podcastindex.model.Category
 import com.mr3y.podcastindex.model.EpisodeFeed
 import com.mr3y.podcastindex.model.PodcastFeed
+import com.mr3y.podcastindex.ktor3.PodcastIndexClient as Ktor3PodcastIndexClient
 
 class PodcastIndexApi(private val client: PodcastIndexClient) {
     suspend fun searchByTitle(
@@ -59,7 +59,7 @@ class PodcastIndexApi(private val client: PodcastIndexClient) {
 
         fun create(): PodcastIndexApi =
             PodcastIndexApi(
-                PodcastIndexClient(
+                Ktor3PodcastIndexClient(
                     authKey = BuildKonfig.PODCAST_INDEX_KEY,
                     authSecret = BuildKonfig.PODCAST_INDEX_SECRET,
                     userAgent = BuildKonfig.USER_AGENT,
