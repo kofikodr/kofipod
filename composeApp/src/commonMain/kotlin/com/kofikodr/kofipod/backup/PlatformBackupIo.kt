@@ -10,7 +10,12 @@ package com.kofikodr.kofipod.backup
  * shimming a top-level expect.
  */
 fun interface DbFileBytes {
-    fun read(): ByteArray
+    // suspend so the Android binding can call `delay()` between WAL-checkpoint
+    // retries instead of `Thread.sleep` — the previous implementation blocked
+    // a Dispatchers.Default thread for up to 200 ms per backup, starving the
+    // shared pool of slots for SQLDelight queries, the playback ticker, and
+    // AI pipelines that share it.
+    suspend fun read(): ByteArray
 }
 
 /**

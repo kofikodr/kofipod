@@ -22,9 +22,11 @@ class BackupRepository(
 ) {
     /**
      * Snapshot the live DB, hash it, build a manifest, return a zip of both.
-     * Called by [BackupController.runBackup] (manual + scheduled).
+     * Called by [BackupController.runBackup] (manual + scheduled). Suspend so
+     * the WAL-checkpoint retry loop in the Android binding can `delay()`
+     * instead of blocking a coroutine pool thread with `Thread.sleep()`.
      */
-    fun buildBackup(): ByteArray {
+    suspend fun buildBackup(): ByteArray {
         val dbBytes = dbFileBytes.read()
         val sha = sha256(dbBytes)
         val now = clock.now()

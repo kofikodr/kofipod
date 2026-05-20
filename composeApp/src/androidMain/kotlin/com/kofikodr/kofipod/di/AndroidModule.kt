@@ -135,7 +135,16 @@ val androidPlatformModule =
                 // sitting in the `-wal` sidecar would be missing from the snapshot
                 // and a restored copy would silently roll the user back to the last
                 // checkpoint. TRUNCATE leaves the WAL file empty afterwards.
-                driver.executeQuery(null, "PRAGMA wal_checkpoint(TRUNCATE)", { app.cash.sqldelight.db.QueryResult.Unit }, 0)
+                //
+                // PRAGMA wal_checkpoint returns one row of (busy, log, checkpointed):
+                //   busy = 1            → another connection was writing; we MUST NOT
+                //                         emit a backup, the WAL still holds uncommitted
+                //                         transactions we'd silently drop.
+                //   log > checkpointed  → some frames couldn't be replayed; same risk.
+                // Retry a few times with a short backoff to ride out concurrent writes,
+                // then surface as an error so the user sees a failed backup instead of
+                // a silently-incomplete one.
+                checkpointOrThrow(driver)
                 ctx.getDatabasePath("kofipod.db").readBytes()
             }
         }
@@ -146,3 +155,65 @@ val androidPlatformModule =
             }
         }
     }
+
+/**
+ * Runs `PRAGMA wal_checkpoint(TRUNCATE)` and asserts the WAL is fully drained
+ * before returning. The PRAGMA returns one row: `(busy, log, checkpointed)`.
+ * `busy != 0` means another connection had a write lock and we could not
+ * grab it; `log > checkpointed` means some frames remained un-replayed. Either
+ * case means the on-disk DB file is missing committed transactions.
+ *
+ * Retries [MAX_CHECKPOINT_ATTEMPTS] times with a short backoff to ride out
+ * concurrent writes (the app's own collectors are the most likely source).
+ * After the cap, throws so the caller (BackupController) surfaces a failed
+ * backup rather than silently emitting an incomplete one.
+ *
+ * Internal so the unit test in androidUnitTest can call it directly.
+ */
+internal suspend fun checkpointOrThrow(driver: app.cash.sqldelight.db.SqlDriver) {
+    var lastResult: CheckpointResult? = null
+    for (attempt in 1..MAX_CHECKPOINT_ATTEMPTS) {
+        val result = runCheckpoint(driver)
+        if (result.busy == 0 && result.log <= result.checkpointed) return
+        lastResult = result
+        if (attempt < MAX_CHECKPOINT_ATTEMPTS) {
+            kotlinx.coroutines.delay(CHECKPOINT_RETRY_BACKOFF_MS)
+        }
+    }
+    error(
+        "WAL checkpoint did not drain after $MAX_CHECKPOINT_ATTEMPTS attempts " +
+            "(busy=${lastResult?.busy}, log=${lastResult?.log}, " +
+            "checkpointed=${lastResult?.checkpointed}). Backup would be incomplete.",
+    )
+}
+
+internal data class CheckpointResult(
+    val busy: Int,
+    val log: Int,
+    val checkpointed: Int,
+)
+
+private const val MAX_CHECKPOINT_ATTEMPTS = 5
+private const val CHECKPOINT_RETRY_BACKOFF_MS = 50L
+
+private fun runCheckpoint(driver: app.cash.sqldelight.db.SqlDriver): CheckpointResult =
+    driver.executeQuery(
+        identifier = null,
+        sql = "PRAGMA wal_checkpoint(TRUNCATE)",
+        mapper = { cursor ->
+            val parsed =
+                if (cursor.next().value) {
+                    CheckpointResult(
+                        busy = cursor.getLong(0)?.toInt() ?: 1,
+                        log = cursor.getLong(1)?.toInt() ?: Int.MAX_VALUE,
+                        checkpointed = cursor.getLong(2)?.toInt() ?: 0,
+                    )
+                } else {
+                    // No row returned — treat as failed checkpoint. The PRAGMA
+                    // always emits a row in practice, but fail-closed if not.
+                    CheckpointResult(busy = 1, log = Int.MAX_VALUE, checkpointed = 0)
+                }
+            app.cash.sqldelight.db.QueryResult.Value(parsed)
+        },
+        parameters = 0,
+    ).value

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.kofikodr.kofipod.backup
 
+import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlin.test.Test
@@ -44,7 +45,7 @@ class BackupRepositoryTest {
 
     @Test
     fun buildBackup_producesZipWithManifestAndDbEntries() {
-        val zip = repo().buildBackup()
+        val zip = runBlocking { repo().buildBackup() }
 
         val entries = readZipEntries(zip)
         assertEquals(setOf(MANIFEST_FILENAME, DB_FILENAME_IN_ZIP), entries.keys)
@@ -53,7 +54,7 @@ class BackupRepositoryTest {
 
     @Test
     fun buildBackup_manifestCarriesCurrentSchemaAndExpectedFields() {
-        val zip = repo().buildBackup()
+        val zip = runBlocking { repo().buildBackup() }
 
         val manifest =
             Manifest.fromJsonStringOrNull(
@@ -72,7 +73,7 @@ class BackupRepositoryTest {
     @Test
     fun validateBackup_acceptsRoundTrip() {
         val r = repo()
-        val zip = r.buildBackup()
+        val zip = runBlocking { r.buildBackup() }
 
         val result = r.validateBackup(zip)
 
@@ -132,7 +133,7 @@ class BackupRepositoryTest {
     fun validateBackup_rejectsSchemaTooNew() {
         // Build with a fictional newer schema version, then validate against current 15.
         val futureRepo = repo(currentSchema = 99)
-        val zip = futureRepo.buildBackup()
+        val zip = runBlocking { futureRepo.buildBackup() }
 
         val result = repo(currentSchema = 15).validateBackup(zip)
 
@@ -151,7 +152,7 @@ class BackupRepositoryTest {
         // versions) would slip past validateBackup_acceptsRoundTrip, since that test
         // uses the same schema on both sides.
         val olderRepo = repo(currentSchema = 14)
-        val zip = olderRepo.buildBackup()
+        val zip = runBlocking { olderRepo.buildBackup() }
 
         val result = repo(currentSchema = 15).validateBackup(zip)
 
@@ -162,7 +163,7 @@ class BackupRepositoryTest {
     @Test
     fun validateBackup_rejectsSha256Mismatch() {
         val r = repo()
-        val zip = r.buildBackup()
+        val zip = runBlocking { r.buildBackup() }
 
         // Surgically rewrite the DB entry so its bytes no longer hash to what the
         // manifest claims. We rebuild the zip with the original manifest + a corrupted
