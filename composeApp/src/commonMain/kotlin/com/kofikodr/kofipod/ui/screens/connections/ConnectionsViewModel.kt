@@ -2,6 +2,7 @@
 package com.kofikodr.kofipod.ui.screens.connections
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.kofikodr.kofipod.pkm.connections.ConnectionKind
 import com.kofikodr.kofipod.pkm.connections.PkmConnection
 import com.kofikodr.kofipod.pkm.connections.PkmConnectionRepository
@@ -65,7 +66,12 @@ class ConnectionsViewModel(
     private var validateJob: Job? = null
 
     init {
-        appScope.launch {
+        // UI-state collection belongs to viewModelScope — when the Connections
+        // screen leaves the back stack the VM is cleared and the collector
+        // should die with it. The prior `appScope.launch` here leaked the
+        // collector for the lifetime of the process, kept _uiState live, and
+        // racked up duplicate emits on every revisit.
+        viewModelScope.launch {
             connections.observeAll().collect { liveRows ->
                 _uiState.update { current ->
                     current.copy(rows = mergeRows(liveRows))
@@ -105,8 +111,12 @@ class ConnectionsViewModel(
 
         _uiState.update { it.copy(readwiseValidating = true, readwiseError = null) }
         validateJob?.cancel()
+        // Readwise token verification + state mutation belongs to viewModelScope
+        // — it's a UI-owned spinner ("Validating…") that must die with the
+        // dialog. The prior appScope-launched validation outlived the dialog
+        // and could update _uiState after the user closed it.
         validateJob =
-            appScope.launch {
+            viewModelScope.launch {
                 val valid =
                     runCatching { readwiseClient.verify(token) }
                         .onFailure { if (it is CancellationException) throw it }
@@ -139,6 +149,9 @@ class ConnectionsViewModel(
     }
 
     fun connectObsidian(treeUri: String) {
+        // DB write, intentionally on appScope so a quick screen-pop after
+        // the SAF folder-picker returns can't cancel the row insert mid-
+        // flight. Mirrors the SmartPlaylist delete pattern.
         appScope.launch {
             connections.connect(
                 kind = ConnectionKind.Obsidian,
@@ -151,6 +164,9 @@ class ConnectionsViewModel(
     }
 
     fun disconnect(kind: ConnectionKind) {
+        // DB write on appScope for the same reason as connectObsidian — a
+        // user who taps Disconnect and immediately navigates away must not
+        // race the row removal.
         appScope.launch { connections.disconnect(kind) }
     }
 

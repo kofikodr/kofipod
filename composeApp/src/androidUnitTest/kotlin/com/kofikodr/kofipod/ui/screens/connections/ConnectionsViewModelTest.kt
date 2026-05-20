@@ -9,6 +9,7 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
@@ -16,9 +17,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
+import org.junit.After
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -26,6 +30,11 @@ import kotlin.test.assertNull
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConnectionsViewModelTest {
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
     @Test
     fun invalidReadwiseTokenSurfacesError() =
         runTest {
@@ -95,6 +104,11 @@ class ConnectionsViewModelTest {
         verifyResult: Boolean? = false,
     ): ConnectionsViewModel {
         val testDispatcher = UnconfinedTestDispatcher(testScheduler)
+        // Route Dispatchers.Main to the test scheduler so viewModelScope.launch
+        // (Main.immediate by default) is observable via advanceUntilIdle().
+        // ConnectionsViewModel post-rescope uses viewModelScope for the
+        // observeAll() collector and Readwise validation.
+        Dispatchers.setMain(testDispatcher)
         val appScope = CoroutineScope(testDispatcher)
         return ConnectionsViewModel(
             connections = source,
