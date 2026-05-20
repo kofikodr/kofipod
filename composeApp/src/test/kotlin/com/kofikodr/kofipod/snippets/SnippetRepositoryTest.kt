@@ -112,6 +112,67 @@ class SnippetRepositoryTest {
         }
 
     @Test
+    fun `markFormatPending persists format but leaves lastExportPath null and isRendered false`() =
+        runTest {
+            // markFormatPending has DISTINCT semantics from setRendered:
+            // the user picked a format but no file exists on disk yet — the
+            // render service hasn't completed. The Saved-section badge keys on
+            // `lastExportPath != null` to mean "file exists", so this column
+            // MUST stay null until the actual file is written.
+            //
+            // A regression that called setRendered (or any path-writing query)
+            // from this method would mark the snippet as Saved before the
+            // file existed; tapping Saved would then try to open a file
+            // that's not there. This test pins the not-yet-rendered state.
+            val id = repo.createDraftFromPlayer("e1", "p1", 120_000L, 600_000L, "Ep1", 1L)
+
+            repo.markFormatPending(id, SnippetFormat.MP4)
+
+            val s = repo.observeForEpisode("e1").first().single { it.id == id }
+            assertEquals(
+                SnippetFormat.MP4,
+                s.lastExportFormat,
+                "Chosen format must be persisted so the render worker reads the right exporter",
+            )
+            assertNull(
+                s.lastExportPath,
+                "lastExportPath MUST stay null — the Saved badge checks this column",
+            )
+            assertEquals(
+                false,
+                s.isRendered,
+                "isRendered must derive from lastExportPath being non-null; a pending format alone does not constitute 'rendered'",
+            )
+        }
+
+    @Test
+    fun `markFormatPending called after setRendered does not clobber the path`() =
+        runTest {
+            // Defensive: pinning that markFormatPending is purely a format
+            // setter. If a future implementation accidentally rewrote
+            // lastExportPath as null when called against an already-rendered
+            // snippet, the user would lose access to the on-disk file.
+            //
+            // This is an edge case the production code doesn't currently
+            // hit (the UI never re-picks a format on a rendered snippet),
+            // but pinning prevents the SQL from drifting toward an UPDATE
+            // that clears columns. If markFormatPending is ever extended to
+            // re-trigger a render, this test will need updating.
+            val id = repo.createDraftFromPlayer("e1", "p1", 120_000L, 600_000L, "Ep1", 1L)
+            repo.setRendered(id, SnippetFormat.MP3, "/data/cache/snippets/$id.mp3")
+
+            repo.markFormatPending(id, SnippetFormat.MP4)
+
+            val s = repo.observeForEpisode("e1").first().single { it.id == id }
+            assertEquals(SnippetFormat.MP4, s.lastExportFormat, "Format swap recorded")
+            assertEquals(
+                "/data/cache/snippets/$id.mp3",
+                s.lastExportPath,
+                "Existing rendered path must not be cleared by a format-only update",
+            )
+        }
+
+    @Test
     fun `deleteById removes the row`() =
         runTest {
             val id = repo.createDraftFromPlayer("e1", "p1", 120_000L, 600_000L, "Ep1", 1L)
