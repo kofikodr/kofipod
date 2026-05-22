@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -359,6 +360,43 @@ class DownloadRepositoryTest {
         }
 
     @Test
+    fun forEpisodeFlow_emitsNull_afterDelete() =
+        runHarnessTest {
+            // Repro guard for the "trash button doesn't flip to Download icon" UI bug:
+            // EpisodeDetail's action row is driven by `downloaded = forEpisodeFlow(id).isDownloaded()`.
+            // If the asFlow notification doesn't fire after `delete(id)`, the live UI stays on Trash
+            // until the VM is rebuilt (e.g. nav away + back). Pin the SQLDelight contract here.
+            seedEpisode("ep-flip", mime = "audio/mpeg")
+            insertCompleted("ep-flip", source = "Manual", totalBytes = 1L, completedAt = 1L)
+
+            val emissions = mutableListOf<com.kofikodr.kofipod.db.Download?>()
+            // `mapToOneOrNull(Dispatchers.Default)` shifts upstream onto the real
+            // Default pool, so virtual time can't drain post-delete emissions —
+            // poll on wall clock until the post-state lands (or time out).
+            val collectJob =
+                scope.launch {
+                    repo.forEpisodeFlow("ep-flip").collect { emissions += it }
+                }
+            awaitWallClock(timeoutMs = 500) { emissions.isNotEmpty() }
+            assertEquals(
+                "Completed",
+                emissions.last()?.state,
+                "flow must start with the seeded Completed row",
+            )
+
+            val sizeBeforeDelete = emissions.size
+            repo.delete("ep-flip")
+            awaitWallClock(timeoutMs = 500) { emissions.size > sizeBeforeDelete }
+
+            assertNull(
+                emissions.last(),
+                "asFlow must re-fire with null when the Download row is deleted — " +
+                    "if this fails, the EpisodeDetail action row stays on Trash until the VM rebuilds",
+            )
+            collectJob.cancel()
+        }
+
+    @Test
     fun failedEngineEvent_writesFailedState_andEmitsSnackbarWithDetail() =
         runHarnessTest {
             db.downloadQueries.upsert(
@@ -464,6 +502,17 @@ class DownloadRepositoryTest {
         val snackbars: MutableList<String>,
     ) {
         fun stateOf(episodeId: String): String? = db.downloadQueries.selectByEpisode(episodeId).executeAsOneOrNull()?.state
+
+        /** Wall-clock spin used by tests that race against the real Default pool
+         *  (e.g. `mapToOneOrNull(Dispatchers.Default)` emissions, which `TestScope`
+         *  virtual time can't advance). */
+        fun awaitWallClock(timeoutMs: Long, condition: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (System.currentTimeMillis() < deadline) {
+                if (condition()) return
+                Thread.sleep(10)
+            }
+        }
 
         fun seedEpisode(
             id: String,
