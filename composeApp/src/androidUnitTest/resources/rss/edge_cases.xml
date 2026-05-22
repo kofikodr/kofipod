@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/"
+     version="2.0">
+  <channel>
+    <title>Edge Cases Show</title>
+    <description><![CDATA[A <strong>CDATA-wrapped</strong> channel description with HTML.]]></description>
+    <link>https://example.com/edges</link>
+    <itunes:author>Edge Case Studios</itunes:author>
+    <itunes:image href="https://art.example/edges/cover.jpg"/>
+    <item>
+      <!-- A: missing <guid>, parser must fall back to enclosure URL -->
+      <title>No GUID episode</title>
+      <description>Some legacy publishers omit guid entirely. The merge step needs a stable key — the parser uses the enclosure URL.</description>
+      <pubDate>Wed, 20 May 2026 12:00:00 +0000</pubDate>
+      <enclosure url="https://audio.example/edges/no-guid.mp3" type="audio/mpeg" length="1024000"/>
+      <itunes:duration>10:00</itunes:duration>
+    </item>
+    <item>
+      <!-- B: missing <enclosure>, parser must DROP this episode -->
+      <title>No enclosure episode (must be dropped)</title>
+      <description>Without audio there's nothing to play. Parser drops the item.</description>
+      <guid isPermaLink="false">edges-drop-me</guid>
+      <pubDate>Tue, 19 May 2026 12:00:00 +0000</pubDate>
+      <itunes:duration>20:00</itunes:duration>
+    </item>
+    <item>
+      <!-- C: malformed pubDate, parser must KEEP the episode with pubDate = null -->
+      <title>Bad date episode</title>
+      <description>The publisher's CMS goofed the pubDate. Don't drop the episode for that.</description>
+      <guid isPermaLink="false">edges-bad-date</guid>
+      <pubDate>not a real date</pubDate>
+      <enclosure url="https://audio.example/edges/bad-date.mp3" type="audio/mpeg"/>
+      <itunes:duration>15:30</itunes:duration>
+    </item>
+    <item>
+      <!-- D: CDATA-wrapped description with HTML entities -->
+      <title>CDATA description &amp; entities</title>
+      <description><![CDATA[<p>Markdown-y body with <em>emphasis</em>, &amp;, &lt;script&gt; that gets escaped.</p>]]></description>
+      <guid isPermaLink="false">edges-cdata</guid>
+      <pubDate>Mon, 18 May 2026 12:00:00 +0000</pubDate>
+      <enclosure url="https://audio.example/edges/cdata.mp3" type="audio/mpeg"/>
+      <itunes:duration>1234</itunes:duration>
+      <itunes:explicit>true</itunes:explicit>
+    </item>
+    <item>
+      <!-- E: unknown namespace elements scattered through; parser skips them -->
+      <title>Unknown namespace tolerance</title>
+      <description>Real feeds carry podcast: and media: namespaces we don't model. Don't crash.</description>
+      <guid isPermaLink="false">edges-unknown-ns</guid>
+      <pubDate>Sun, 17 May 2026 12:00:00 +0000</pubDate>
+      <enclosure url="https://audio.example/edges/unknown.mp3" type="audio/mpeg"/>
+      <itunes:duration>00:42:15</itunes:duration>
+      <podcast:transcript xmlns:podcast="https://podcastindex.org/namespace/1.0" url="https://x/transcript.json" type="application/json"/>
+      <media:thumbnail xmlns:media="http://search.yahoo.com/mrss/" url="https://x/thumb.jpg"/>
+    </item>
+  </channel>
+</rss>

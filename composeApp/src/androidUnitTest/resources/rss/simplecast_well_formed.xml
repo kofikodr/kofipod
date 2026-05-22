@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/"
+     xmlns:atom="http://www.w3.org/2005/Atom"
+     version="2.0">
+  <channel>
+    <title>The Sample Show</title>
+    <description>A trimmed copy of a real Simplecast-style feed used as a parser fixture. Three episodes; iTunes namespace fully present.</description>
+    <link>https://example.com/sampleshow</link>
+    <atom:link href="https://feeds.simplecast.example/sample" rel="self" type="application/rss+xml"/>
+    <language>en-us</language>
+    <copyright>© 2026 Sample Network</copyright>
+    <itunes:author>Sample Network</itunes:author>
+    <itunes:type>episodic</itunes:type>
+    <itunes:image href="https://art.example/sample/cover-1200.jpg"/>
+    <itunes:category text="News">
+      <itunes:category text="Daily News"/>
+    </itunes:category>
+    <itunes:category text="Society &amp; Culture"/>
+    <itunes:explicit>false</itunes:explicit>
+    <image>
+      <url>https://art.example/sample/cover-legacy.jpg</url>
+      <title>The Sample Show</title>
+      <link>https://example.com/sampleshow</link>
+    </image>
+    <item>
+      <title>Episode 3 — Today's headline</title>
+      <description>The most recent episode. Published today.</description>
+      <link>https://example.com/sampleshow/3</link>
+      <guid isPermaLink="false">sample-ep-0003</guid>
+      <pubDate>Fri, 22 May 2026 09:00:00 -0400</pubDate>
+      <enclosure url="https://audio.example/sample/3.mp3" type="audio/mpeg" length="29384720"/>
+      <itunes:duration>1820</itunes:duration>
+      <itunes:episode>3</itunes:episode>
+      <itunes:season>1</itunes:season>
+      <itunes:explicit>false</itunes:explicit>
+      <itunes:image href="https://art.example/sample/ep3.jpg"/>
+    </item>
+    <item>
+      <title>Episode 2 — Yesterday</title>
+      <description>Yesterday's episode. HH:MM:SS duration format.</description>
+      <link>https://example.com/sampleshow/2</link>
+      <guid isPermaLink="false">sample-ep-0002</guid>
+      <pubDate>Thu, 21 May 2026 09:00:00 -0400</pubDate>
+      <enclosure url="https://audio.example/sample/2.mp3" type="audio/mpeg" length="30120000"/>
+      <itunes:duration>00:30:20</itunes:duration>
+      <itunes:episode>2</itunes:episode>
+      <itunes:season>1</itunes:season>
+      <itunes:explicit>false</itunes:explicit>
+    </item>
+    <item>
+      <title>Episode 1 — Two weeks ago</title>
+      <description>An older episode PI already knows about. MM:SS duration format and explicit "yes".</description>
+      <link>https://example.com/sampleshow/1</link>
+      <guid isPermaLink="false">sample-ep-0001</guid>
+      <pubDate>Thu, 08 May 2026 09:00:00 -0400</pubDate>
+      <enclosure url="https://audio.example/sample/1.mp3" type="audio/mpeg" length="27500000"/>
+      <itunes:duration>28:45</itunes:duration>
+      <itunes:episode>1</itunes:episode>
+      <itunes:season>1</itunes:season>
+      <itunes:explicit>yes</itunes:explicit>
+    </item>
+  </channel>
+</rss>

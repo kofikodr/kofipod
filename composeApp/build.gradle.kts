@@ -73,6 +73,7 @@ kotlin {
                 implementation(libs.koin.compose)
                 implementation(libs.koin.compose.viewmodel)
                 implementation(libs.podcastindex.sdk)
+                implementation(libs.xmlutil.core)
             }
         }
         val commonTest by getting {

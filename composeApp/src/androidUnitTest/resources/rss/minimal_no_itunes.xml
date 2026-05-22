@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Bare RSS</title>
+    <description>No iTunes namespace. Tests that the parser doesn't depend on it.</description>
+    <link>https://example.com/bare</link>
+    <item>
+      <title>Bare item</title>
+      <description>Plain old RSS 2.0, no namespace extensions at all.</description>
+      <guid>bare-1</guid>
+      <pubDate>Wed, 22 May 2026 00:00:00 GMT</pubDate>
+      <enclosure url="https://audio.example/bare/1.mp3" type="audio/mpeg"/>
+    </item>
+  </channel>
+</rss>
