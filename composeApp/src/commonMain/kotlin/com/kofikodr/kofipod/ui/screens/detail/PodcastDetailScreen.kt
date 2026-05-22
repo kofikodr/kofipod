@@ -2,6 +2,7 @@
 package com.kofikodr.kofipod.ui.screens.detail
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -46,6 +47,8 @@ import com.kofikodr.kofipod.ui.layout.LocalTabletSize
 import com.kofikodr.kofipod.ui.layout.MasterDetailPane
 import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.permission.rememberNotificationPermissionRequester
+import com.kofikodr.kofipod.ui.primitives.DownloadActionButton
+import com.kofikodr.kofipod.ui.primitives.DownloadButtonState
 import com.kofikodr.kofipod.ui.primitives.KPIcon
 import com.kofikodr.kofipod.ui.primitives.KPIconName
 import com.kofikodr.kofipod.ui.primitives.KofipodArtwork
@@ -144,6 +147,7 @@ fun PodcastDetailScreen(
         state = state,
         playingEpisodeId = playingEpisodeId,
         activePlaybackFlow = viewModel.activePlayback,
+        downloadStatesFlow = viewModel.downloadStates,
         refreshing = refreshing,
         selectedEpisode = selectedEpisode,
         size = tabletSize,
@@ -164,10 +168,15 @@ fun PodcastDetailScreen(
             val newest = state.storedEpisodes.firstOrNull()?.id
             if (newest != null) viewModel.download(newest)
         },
+        onCancelNewestDownload = {
+            val newest = state.storedEpisodes.firstOrNull()?.id
+            if (newest != null) viewModel.cancelDownload(newest)
+        },
         onToggleAutoDownload = { viewModel.toggleAutoDownload(it) },
         onEpisodeTap = onEpisodeTap,
         onPlayEpisode = { viewModel.play(it) },
         onDownloadEpisode = { viewModel.download(it) },
+        onCancelDownload = { viewModel.cancelDownload(it) },
         onShareEpisode = { viewModel.shareEpisode(it) },
         onLoadMore = { viewModel.loadMoreEpisodes() },
         onOpenPlayer = onOpenPlayer,
@@ -207,6 +216,7 @@ internal fun PodcastDetailContent(
     state: DetailUiState,
     playingEpisodeId: String?,
     activePlaybackFlow: StateFlow<ActivePlayback>,
+    downloadStatesFlow: StateFlow<Map<String, DownloadButtonState>>,
     refreshing: Boolean,
     selectedEpisode: Episode?,
     size: TabletSize?,
@@ -216,10 +226,12 @@ internal fun PodcastDetailContent(
     onSaveTap: () -> Unit,
     onToggleBell: () -> Unit,
     onDownloadNewest: () -> Unit,
+    onCancelNewestDownload: () -> Unit,
     onToggleAutoDownload: (Boolean) -> Unit,
     onEpisodeTap: (String) -> Unit,
     onPlayEpisode: (String) -> Unit,
     onDownloadEpisode: (String) -> Unit,
+    onCancelDownload: (String) -> Unit,
     onShareEpisode: (String) -> Unit,
     onLoadMore: () -> Unit,
     onOpenPlayer: () -> Unit = {},
@@ -237,6 +249,7 @@ internal fun PodcastDetailContent(
                 summary = summary,
                 playingEpisodeId = playingEpisodeId,
                 activePlaybackFlow = activePlaybackFlow,
+                downloadStatesFlow = downloadStatesFlow,
                 refreshing = refreshing,
                 selectedEpisodeId = if (isLandscape) selectedEpisode?.id else null,
                 onBack = onBack,
@@ -245,10 +258,12 @@ internal fun PodcastDetailContent(
                 onSaveTap = onSaveTap,
                 onToggleBell = onToggleBell,
                 onDownloadNewest = onDownloadNewest,
+                onCancelNewestDownload = onCancelNewestDownload,
                 onToggleAutoDownload = onToggleAutoDownload,
                 onEpisodeTap = onEpisodeTap,
                 onPlayEpisode = onPlayEpisode,
                 onDownloadEpisode = onDownloadEpisode,
+                onCancelDownload = onCancelDownload,
                 onShareEpisode = onShareEpisode,
                 onLoadMore = onLoadMore,
             )
@@ -295,6 +310,7 @@ private fun PodcastDetailSingleColumn(
     summary: com.kofikodr.kofipod.domain.PodcastSummary,
     playingEpisodeId: String?,
     activePlaybackFlow: StateFlow<ActivePlayback>,
+    downloadStatesFlow: StateFlow<Map<String, DownloadButtonState>>,
     refreshing: Boolean,
     selectedEpisodeId: String? = null,
     onBack: () -> Unit,
@@ -303,10 +319,12 @@ private fun PodcastDetailSingleColumn(
     onSaveTap: () -> Unit,
     onToggleBell: () -> Unit,
     onDownloadNewest: () -> Unit,
+    onCancelNewestDownload: () -> Unit,
     onToggleAutoDownload: (Boolean) -> Unit,
     onEpisodeTap: (String) -> Unit,
     onPlayEpisode: (String) -> Unit,
     onDownloadEpisode: (String) -> Unit,
+    onCancelDownload: (String) -> Unit,
     onShareEpisode: (String) -> Unit,
     onLoadMore: () -> Unit,
 ) {
@@ -325,20 +343,23 @@ private fun PodcastDetailSingleColumn(
     val inLibrary = state.inLibrary
     val storedEpisodes = state.storedEpisodes
     val remoteEpisodes = state.remoteEpisodes
-    val downloadStates = state.downloadStates
     val displayLimit = state.episodeDisplayLimit
-    // Prefer stored rows for subscribed shows (carries downloadState + real
-    // publishedAt). Fall back to remote when stored is empty so subscriptions
-    // whose Episode rows were never persisted still render — the API result is
-    // already in memory from the VM's init `loadRemote`. Single source of truth
-    // for both row mapping and `hasMore` paging below.
+    // Prefer stored rows for subscribed shows (carries real publishedAt). Fall
+    // back to remote when stored is empty so subscriptions whose Episode rows
+    // were never persisted still render — the API result is already in memory
+    // from the VM's init `loadRemote`. Single source of truth for both row
+    // mapping and `hasMore` paging below.
+    //
+    // EpisodeRowData intentionally carries NO download state. Each row's
+    // download visual lives inside StateIndicator, which collects
+    // downloadStatesFlow itself — that keeps the ~5 Hz progress ticks from
+    // forcing the whole row list (and the 500 ms playback ticker) to recompose.
     val useStored = inLibrary && storedEpisodes.isNotEmpty()
     val rows: List<EpisodeRowData> =
         remember(
             useStored,
             storedEpisodes,
             remoteEpisodes,
-            downloadStates,
             newestFirst,
         ) {
             val mapped =
@@ -351,7 +372,6 @@ private fun PodcastDetailSingleColumn(
                             durationSec = it.durationSec.toInt(),
                             fileSizeBytes = it.fileSizeBytes,
                             playable = true,
-                            downloadState = downloadStates[it.id],
                         )
                     }
                 } else {
@@ -363,7 +383,6 @@ private fun PodcastDetailSingleColumn(
                             durationSec = it.durationMinutes * 60,
                             fileSizeBytes = 0,
                             playable = it.enclosureUrl.isNotBlank(),
-                            downloadState = null,
                         )
                     }
                 }
@@ -400,6 +419,7 @@ private fun PodcastDetailSingleColumn(
                 item { Spacer(Modifier.height(12.dp)) }
             }
             item {
+                val newestId = state.storedEpisodes.firstOrNull()?.id
                 ActionRow(
                     saveLabel = saveLabel,
                     saved = state.inLibrary,
@@ -408,7 +428,10 @@ private fun PodcastDetailSingleColumn(
                     onSave = onSaveTap,
                     onToggleBell = onToggleBell,
                     onDownload = onDownloadNewest,
+                    onCancelDownload = onCancelNewestDownload,
                     downloadEnabled = state.inLibrary,
+                    newestEpisodeId = newestId,
+                    downloadStatesFlow = downloadStatesFlow,
                 )
             }
             if (state.inLibrary) {
@@ -440,10 +463,12 @@ private fun PodcastDetailSingleColumn(
                         isSelected = ep.id == selectedEpisodeId,
                         canDownload = inLibrary,
                         activePlaybackFlow = activePlaybackFlow,
+                        downloadStatesFlow = downloadStatesFlow,
                         onTap = { onEpisodeTap(ep.id) },
                         onLongPress = { onShareEpisode(ep.id) },
                         onPlay = { onPlayEpisode(ep.id) },
                         onDownload = { onDownloadEpisode(ep.id) },
+                        onCancelDownload = { onCancelDownload(ep.id) },
                     )
                 }
                 if (hasMore) {
@@ -598,7 +623,10 @@ private fun ActionRow(
     onSave: () -> Unit,
     onToggleBell: () -> Unit,
     onDownload: () -> Unit,
+    onCancelDownload: () -> Unit,
     downloadEnabled: Boolean,
+    newestEpisodeId: String?,
+    downloadStatesFlow: StateFlow<Map<String, DownloadButtonState>>,
 ) {
     val c = LocalKofipodColors.current
     Row(
@@ -634,13 +662,22 @@ private fun ActionRow(
             KPIcon(name = KPIconName.Bell, color = bellTint, size = 18.dp)
         }
         Spacer(Modifier.width(8.dp))
-        CircleButton(onClick = onDownload, tint = if (downloadEnabled) c.purple else c.textMute) {
-            KPIcon(
-                name = KPIconName.Download,
-                color = if (downloadEnabled) c.purple else c.textMute,
-                size = 18.dp,
-            )
-        }
+        // Scoped collect so the bell + save pill never recompose on a download
+        // tick — only this button reads the progress map.
+        val states by downloadStatesFlow.collectAsState()
+        val newestState =
+            newestEpisodeId?.let { states[it] } ?: DownloadButtonState.Idle
+        val iconTint = if (downloadEnabled) c.purple else c.textMute
+        DownloadActionButton(
+            state = newestState,
+            size = 44.dp,
+            iconColor = iconTint,
+            background = c.purpleTint,
+            onIdleClick = onDownload,
+            onCancel = onCancelDownload,
+            onRetry = onDownload,
+            iconSize = 18.dp,
+        )
     }
 }
 
@@ -765,7 +802,6 @@ private data class EpisodeRowData(
     val durationSec: Int,
     val fileSizeBytes: Long,
     val playable: Boolean,
-    val downloadState: String?,
 )
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -775,10 +811,12 @@ private fun EpisodeRow(
     isActive: Boolean,
     canDownload: Boolean,
     activePlaybackFlow: StateFlow<ActivePlayback>,
+    downloadStatesFlow: StateFlow<Map<String, DownloadButtonState>>,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
     onPlay: () -> Unit,
     onDownload: () -> Unit,
+    onCancelDownload: () -> Unit,
     isSelected: Boolean = false,
 ) {
     val c = LocalKofipodColors.current
@@ -820,9 +858,12 @@ private fun EpisodeRow(
         }
         Spacer(Modifier.width(8.dp))
         StateIndicator(
-            ep = ep,
+            episodeId = ep.id,
+            isPlayable = playable,
             canDownload = canDownload,
+            downloadStatesFlow = downloadStatesFlow,
             onDownload = { if (playable && canDownload) onDownload() },
+            onCancelDownload = onCancelDownload,
         )
     }
 }
@@ -902,39 +943,31 @@ private fun IdlePlayButton(
 
 @Composable
 private fun StateIndicator(
-    ep: EpisodeRowData,
+    episodeId: String,
+    isPlayable: Boolean,
     canDownload: Boolean,
+    downloadStatesFlow: StateFlow<Map<String, DownloadButtonState>>,
     onDownload: () -> Unit,
+    onCancelDownload: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
-    when (ep.downloadState) {
-        "Completed" ->
-            Box(Modifier.size(28.dp), Alignment.Center) {
-                KPIcon(name = KPIconName.Check, color = c.success, size = 18.dp, strokeWidth = 2.2f)
-            }
-        "Downloading", "Queued" ->
-            Box(Modifier.size(28.dp), Alignment.Center) {
-                KPIcon(name = KPIconName.Clock, color = c.pink, size = 18.dp)
-            }
-        else -> {
-            val active = ep.playable && canDownload
-            Box(
-                Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .border(1.dp, c.border, RoundedCornerShape(999.dp))
-                    .clickable(enabled = active) { onDownload() },
-                contentAlignment = Alignment.Center,
-            ) {
-                KPIcon(
-                    name = KPIconName.Download,
-                    color = if (active) c.textSoft else c.textMute,
-                    size = 14.dp,
-                    strokeWidth = 1.7f,
-                )
-            }
-        }
-    }
+    // Per-row collect: this is the only point in the row tree that re-reads the
+    // 5 Hz progress map. EpisodeRow and its siblings never see download state
+    // and therefore never recompose on a progress tick.
+    val states by downloadStatesFlow.collectAsState()
+    val state = states[episodeId] ?: DownloadButtonState.Idle
+    val active = isPlayable && canDownload
+    DownloadActionButton(
+        state = state,
+        size = 32.dp,
+        iconColor = if (active) c.textSoft else c.textMute,
+        background = Color.Transparent,
+        border = BorderStroke(1.dp, c.border),
+        iconSize = 14.dp,
+        onIdleClick = { if (active) onDownload() },
+        onCancel = onCancelDownload,
+        onRetry = { if (active) onDownload() },
+    )
 }
 
 @Composable

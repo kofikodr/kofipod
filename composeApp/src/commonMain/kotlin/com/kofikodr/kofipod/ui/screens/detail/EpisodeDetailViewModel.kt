@@ -28,6 +28,8 @@ import com.kofikodr.kofipod.pro.ProEntitlementRepository
 import com.kofikodr.kofipod.share.Sharer
 import com.kofikodr.kofipod.snippets.FileSizer
 import com.kofikodr.kofipod.snippets.SnippetRepository
+import com.kofikodr.kofipod.ui.primitives.DownloadButtonState
+import com.kofikodr.kofipod.ui.primitives.toDownloadButtonState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -48,6 +50,7 @@ data class EpisodeDetailUiState(
     val isPlayingThis: Boolean = false,
     val isCurrentEpisode: Boolean = false,
     val downloaded: Boolean = false,
+    val downloadButtonState: DownloadButtonState = DownloadButtonState.Idle,
     val played: Boolean = false,
     val loading: Boolean = true,
     val error: String? = null,
@@ -141,6 +144,7 @@ class EpisodeDetailViewModel(
                 isPlayingThis = playerState.episodeId == episodeId && playerState.isPlaying,
                 isCurrentEpisode = playerState.episodeId == episodeId,
                 downloaded = dl.isDownloaded(),
+                downloadButtonState = dl.toDownloadButtonState(),
                 played = ps.isPlayed(),
                 loading = ep == null && err == null,
                 error = err,
@@ -246,6 +250,18 @@ class EpisodeDetailViewModel(
             fileName = downloadFileName(ep.id, ep.enclosureMimeType),
             source = DownloadJob.Source.Manual,
         )
+    }
+
+    /**
+     * Cancels an in-flight download for this episode. Wired to the in-progress
+     * Close-icon tap on [com.kofikodr.kofipod.ui.primitives.DownloadActionButton];
+     * no-op when no download is actually running so a stray tap can't write a
+     * spurious `"Paused"` row to the DB.
+     */
+    fun cancelDownload() {
+        val s = state.value.downloadButtonState
+        if (s !is DownloadButtonState.Pending && s !is DownloadButtonState.InProgress) return
+        downloads.cancel(episodeId)
     }
 
     fun seekToChapter(startMs: Long) {

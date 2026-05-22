@@ -47,6 +47,8 @@ import com.kofikodr.kofipod.db.Podcast
 import com.kofikodr.kofipod.snippets.Snippet
 import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.layout.rememberTabletSize
+import com.kofikodr.kofipod.ui.primitives.DownloadActionButton
+import com.kofikodr.kofipod.ui.primitives.DownloadButtonState
 import com.kofikodr.kofipod.ui.primitives.KPButton
 import com.kofikodr.kofipod.ui.primitives.KPButtonStyle
 import com.kofikodr.kofipod.ui.primitives.KPIcon
@@ -94,6 +96,7 @@ fun EpisodeDetailScreen(
         onMarkPlayed = viewModel::markPlayed,
         onDeleteDownload = viewModel::deleteDownload,
         onDownload = viewModel::download,
+        onCancelDownload = viewModel::cancelDownload,
         onChapterTap = { startMs ->
             viewModel.seekToChapter(startMs)
             if (!state.isCurrentEpisode) onOpenPlayer()
@@ -129,6 +132,10 @@ internal fun EpisodeDetailContent(
     onDownload: () -> Unit,
     onChapterTap: (Long) -> Unit,
     onOpenAiSetup: () -> Unit,
+    // Default no-op so existing Paparazzi snapshots that drive
+    // EpisodeDetailContent directly don't need to plumb the new callback.
+    // Production callers always pass viewModel::cancelDownload.
+    onCancelDownload: () -> Unit = {},
     // Default no-op so existing Paparazzi snapshots that drive
     // EpisodeDetailContent directly don't need to plumb the new callback.
     // Production callers always pass a real navigator.
@@ -167,11 +174,13 @@ internal fun EpisodeDetailContent(
                     isPlayingThis = state.isPlayingThis,
                     isCurrentEpisode = state.isCurrentEpisode,
                     downloaded = state.downloaded,
+                    downloadButtonState = state.downloadButtonState,
                     played = state.played,
                     onPlay = onPlay,
                     onMarkPlayed = onMarkPlayed,
                     onDeleteDownload = onDeleteDownload,
                     onDownload = onDownload,
+                    onCancelDownload = onCancelDownload,
                     onChapterTap = onChapterTap,
                     onOpenAiSetup = onOpenAiSetup,
                     onOpenAskGemini = onOpenAskGemini,
@@ -294,11 +303,13 @@ private fun EpisodeBody(
     isPlayingThis: Boolean,
     isCurrentEpisode: Boolean,
     downloaded: Boolean,
+    downloadButtonState: DownloadButtonState,
     played: Boolean,
     onPlay: () -> Unit,
     onMarkPlayed: () -> Unit,
     onDeleteDownload: () -> Unit,
     onDownload: () -> Unit,
+    onCancelDownload: () -> Unit,
     onChapterTap: (Long) -> Unit,
     onOpenAiSetup: () -> Unit,
     onOpenAskGemini: (String) -> Unit,
@@ -339,12 +350,14 @@ private fun EpisodeBody(
         isPlayingThis = isPlayingThis,
         isCurrentEpisode = isCurrentEpisode,
         downloaded = downloaded,
+        downloadButtonState = downloadButtonState,
         canDownload = episode.enclosureUrl.isNotBlank(),
         played = played,
         onPlay = onPlay,
         onMarkPlayed = onMarkPlayed,
         onDeleteDownload = onDeleteDownload,
         onDownload = onDownload,
+        onCancelDownload = onCancelDownload,
     )
 
     val description = remember(episode.description) { renderDescription(episode.description) }
@@ -667,12 +680,14 @@ private fun ActionRow(
     isPlayingThis: Boolean,
     isCurrentEpisode: Boolean,
     downloaded: Boolean,
+    downloadButtonState: DownloadButtonState,
     canDownload: Boolean,
     played: Boolean,
     onPlay: () -> Unit,
     onMarkPlayed: () -> Unit,
     onDeleteDownload: () -> Unit,
     onDownload: () -> Unit,
+    onCancelDownload: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
     Row(
@@ -703,12 +718,17 @@ private fun ActionRow(
                     testTag = "episodeDeleteDownloadButton",
                 )
             TertiaryAction.Download ->
-                CircleAction(
-                    icon = KPIconName.Download,
-                    tint = c.pink,
+                DownloadActionButton(
+                    state = downloadButtonState,
+                    size = 46.dp,
+                    iconColor = c.pink,
                     background = c.pinkSoft,
-                    onClick = onDownload,
-                    testTag = "episodeDownloadButton",
+                    border = androidx.compose.foundation.BorderStroke(1.dp, c.border),
+                    iconSize = 18.dp,
+                    onIdleClick = onDownload,
+                    onCancel = onCancelDownload,
+                    onRetry = onDownload,
+                    modifier = Modifier.testTag("episodeDownloadButton"),
                 )
             TertiaryAction.Hidden -> Unit
         }

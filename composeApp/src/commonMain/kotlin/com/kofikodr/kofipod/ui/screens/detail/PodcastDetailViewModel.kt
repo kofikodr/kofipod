@@ -13,7 +13,6 @@ import com.kofikodr.kofipod.data.repo.RecentlyViewedRepository
 import com.kofikodr.kofipod.data.repo.RemoteEpisodeCache
 import com.kofikodr.kofipod.data.repo.autoDownloadEnabledBool
 import com.kofikodr.kofipod.data.repo.notifyNewEpisodesEnabledBool
-import com.kofikodr.kofipod.db.Download
 import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.db.Podcast
 import com.kofikodr.kofipod.db.PodcastList
@@ -24,6 +23,8 @@ import com.kofikodr.kofipod.downloads.downloadFileName
 import com.kofikodr.kofipod.playback.KofipodPlayer
 import com.kofikodr.kofipod.playback.PlayableEpisode
 import com.kofikodr.kofipod.share.Sharer
+import com.kofikodr.kofipod.ui.primitives.DownloadButtonState
+import com.kofikodr.kofipod.ui.primitives.toDownloadButtonState
 import com.mr3y.podcastindex.model.EpisodeFeed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,7 +46,6 @@ data class DetailUiState(
     val notifyNewEpisodes: Boolean = true,
     val storedEpisodes: List<Episode> = emptyList(),
     val remoteEpisodes: List<EpisodePreview> = emptyList(),
-    val downloadStates: Map<String, String> = emptyMap(),
     val lists: List<PodcastList> = emptyList(),
     val loading: Boolean = false,
     val loadingMore: Boolean = false,
@@ -113,7 +113,6 @@ class PodcastDetailViewModel(
         val summary: PodcastSummary?,
         val episodes: List<EpisodePreview>,
         val limit: Int,
-        val downloads: List<Download>,
     )
 
     private data class UiFlags(val loading: Boolean, val loadingMore: Boolean, val displayLimit: Int, val error: String?)
@@ -121,7 +120,7 @@ class PodcastDetailViewModel(
     val state: StateFlow<DetailUiState> =
         combine(
             combine(library.podcastFlow(podcastId), episodes.episodesFlow(podcastId), library.listsFlow(), ::StoredBundle),
-            combine(remoteSummary, remoteEpisodes, remoteLimit, downloads.all(), ::RemoteBundle),
+            combine(remoteSummary, remoteEpisodes, remoteLimit, ::RemoteBundle),
             combine(loading, loadingMore, displayLimit, error, ::UiFlags),
         ) { stored, remote, flags ->
             val storedSummary = stored.podcast?.toSummary()
@@ -149,7 +148,6 @@ class PodcastDetailViewModel(
                 notifyNewEpisodes = stored.podcast?.notifyNewEpisodesEnabledBool() ?: true,
                 storedEpisodes = stored.episodes,
                 remoteEpisodes = remote.episodes,
-                downloadStates = remote.downloads.associate { it.episodeId to it.state },
                 lists = stored.lists,
                 loading = flags.loading,
                 loadingMore = flags.loadingMore,
@@ -164,6 +162,19 @@ class PodcastDetailViewModel(
             .map { it.episodeId }
             .distinctUntilChanged()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * Per-episode download button states keyed by episodeId. Kept OUT of the main
+     * [state] flow so the ~5 Hz progress ticks emitted by an in-flight download
+     * don't recompose the entire detail screen — only the
+     * [com.kofikodr.kofipod.ui.primitives.DownloadActionButton] sites that
+     * collect this flow react to each tick.
+     */
+    val downloadStates: StateFlow<Map<String, DownloadButtonState>> =
+        downloads.all()
+            .map { rows -> rows.associate { it.episodeId to it.toDownloadButtonState() } }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     val activePlayback: StateFlow<ActivePlayback> =
         player.state
@@ -361,6 +372,15 @@ class PodcastDetailViewModel(
             fileName = downloadFileName(ep.id, ep.enclosureMimeType),
             source = DownloadJob.Source.Manual,
         )
+    }
+
+    /**
+     * Cancels an in-flight download. Wired to the in-progress Close-icon tap on
+     * [com.kofikodr.kofipod.ui.primitives.DownloadActionButton]. No-op when the
+     * row isn't downloading anymore (engine.cancel handles a missing job).
+     */
+    fun cancelDownload(episodeId: String) {
+        downloads.cancel(episodeId)
     }
 
     fun toggleAutoDownload(enabled: Boolean) {
