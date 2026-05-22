@@ -175,6 +175,8 @@ android {
             // local.properties) so the play AAB is incapable of ever offering
             // a GitHub-Releases sideload install, regardless of build env.
             buildConfigField("boolean", "UPDATER_ENABLED", "false")
+            // Play Billing is wired in this flavor; "Restore purchase" is meaningful.
+            buildConfigField("boolean", "BILLING_ENABLED", "true")
         }
         create("foss") {
             dimension = "distribution"
@@ -187,6 +189,8 @@ android {
             // GitHub Releases is the primary distribution channel for foss;
             // the in-app updater polls and offers the latest APK.
             buildConfigField("boolean", "UPDATER_ENABLED", "true")
+            // No Play Billing in this flavor — there is nothing to restore.
+            buildConfigField("boolean", "BILLING_ENABLED", "false")
         }
     }
     compileOptions {

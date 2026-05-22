@@ -55,6 +55,7 @@ import com.kofikodr.kofipod.config.AppInfo
 import com.kofikodr.kofipod.data.repo.UpdateUiState
 import com.kofikodr.kofipod.diagnostics.DiagnosticsCapabilities
 import com.kofikodr.kofipod.opml.OpmlAction
+import com.kofikodr.kofipod.pro.BillingCapability
 import com.kofikodr.kofipod.pro.ProEntitlement
 import com.kofikodr.kofipod.pro.ProSource
 import com.kofikodr.kofipod.ui.primitives.KPIcon
@@ -1051,6 +1052,9 @@ private fun ProStatusCard(
     onUpgrade: () -> Unit,
     onRestore: () -> Unit,
 ) {
+    // Foss / iOS have no real billing backend, so there's nothing to restore —
+    // hide the affordance entirely on those builds.
+    val showRestore = BillingCapability.restoreEnabled
     when (entitlement) {
         ProEntitlement.Unknown ->
             // While entitlement is Unknown, refreshOnStart() is in-flight. Showing an
@@ -1060,11 +1064,13 @@ private fun ProStatusCard(
                 label = "Checking…",
                 subtitle = "Restoring purchase status",
                 restoreInFlight = true,
+                showRestore = showRestore,
                 onRestore = {},
             )
         ProEntitlement.Free ->
             ProUpgradeCard(
                 restoreInFlight = restoreInFlight,
+                showRestore = showRestore,
                 onUpgrade = onUpgrade,
                 onRestore = onRestore,
             )
@@ -1075,6 +1081,7 @@ private fun ProStatusCard(
                         label = "Kofipod Pro",
                         subtitle = "Active · purchased on this device",
                         restoreInFlight = restoreInFlight,
+                        showRestore = showRestore,
                         onRestore = onRestore,
                     )
                 ProSource.FossBuild ->
@@ -1082,6 +1089,7 @@ private fun ProStatusCard(
                         label = "Kofipod Pro",
                         subtitle = "Self-build · all features unlocked",
                         restoreInFlight = restoreInFlight,
+                        showRestore = showRestore,
                         onRestore = onRestore,
                     )
                 ProSource.ReviewerUnlock ->
@@ -1089,6 +1097,7 @@ private fun ProStatusCard(
                         label = "Kofipod Pro",
                         subtitle = "Reviewer unlock · all features active",
                         restoreInFlight = restoreInFlight,
+                        showRestore = showRestore,
                         onRestore = onRestore,
                     )
             }
@@ -1098,6 +1107,7 @@ private fun ProStatusCard(
 @Composable
 private fun ProUpgradeCard(
     restoreInFlight: Boolean,
+    showRestore: Boolean,
     onUpgrade: () -> Unit,
     onRestore: () -> Unit,
 ) {
@@ -1147,17 +1157,19 @@ private fun ProUpgradeCard(
                         fontWeight = FontWeight.ExtraBold,
                     )
                 }
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    text = if (restoreInFlight) "Restoring…" else "Restore",
-                    color = Color.White.copy(alpha = 0.92f),
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier =
-                        Modifier
-                            .clickable(enabled = !restoreInFlight, onClick = onRestore)
-                            .padding(vertical = 4.dp),
-                )
+                if (showRestore) {
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = if (restoreInFlight) "Restoring…" else "Restore",
+                        color = Color.White.copy(alpha = 0.92f),
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier =
+                            Modifier
+                                .clickable(enabled = !restoreInFlight, onClick = onRestore)
+                                .padding(vertical = 4.dp),
+                    )
+                }
             }
         }
     }
@@ -1168,6 +1180,7 @@ private fun ProActiveCard(
     label: String,
     subtitle: String,
     restoreInFlight: Boolean,
+    showRestore: Boolean,
     onRestore: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
@@ -1224,15 +1237,17 @@ private fun ProActiveCard(
                 fontSize = 11.5.sp,
             )
         }
-        Text(
-            text = if (restoreInFlight) "Restoring…" else "Restore",
-            color = c.purple,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.ExtraBold,
-            modifier =
-                Modifier
-                    .clickable(enabled = !restoreInFlight, onClick = onRestore)
-                    .padding(vertical = 4.dp, horizontal = 4.dp),
-        )
+        if (showRestore) {
+            Text(
+                text = if (restoreInFlight) "Restoring…" else "Restore",
+                color = c.purple,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold,
+                modifier =
+                    Modifier
+                        .clickable(enabled = !restoreInFlight, onClick = onRestore)
+                        .padding(vertical = 4.dp, horizontal = 4.dp),
+            )
+        }
     }
 }
