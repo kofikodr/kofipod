@@ -1,0 +1,40 @@
+-- HTTP-conditional-GET cache for RSS feed fetches (Slice B.2 — see
+-- docs/superpowers/plans/2026-05-23-itunes-rss-slice-b.md).
+--
+-- One row per feed URL the app has fetched. The point is to send `If-None-Match`
+-- and `If-Modified-Since` on the next request so polite hosts return a 304-byte
+-- response instead of replaying the whole feed body — for niche podcasts on most
+-- days that's a 20 MB vs 200 byte difference.
+--
+-- We don't store the parsed feed body or the episodes here; those land in the
+-- existing Episode table when the merger persists them. RssFeedCache is purely
+-- the HTTP-level state needed to ask the publisher "anything new?" without
+-- pulling the whole thing down.
+--
+-- lastModified is stored verbatim as the HTTP header string (RFC-1123 date in
+-- practice, but we don't parse it — we just echo it back in `If-Modified-Since`).
+-- This avoids any timezone or precision drift between the publisher's clock and
+-- ours.
+--
+-- No FK back to Podcast: a row may exist for an iTunes-only feed before its
+-- Podcast row is created (Slice B.4), and we don't want a cascade-delete to
+-- nuke the HTTP cache when the user unsubscribes from a show they may re-subscribe to.
+CREATE TABLE RssFeedCache (
+    feedUrl       TEXT NOT NULL PRIMARY KEY,
+    etag          TEXT,
+    lastModified  TEXT,
+    lastFetchedAt INTEGER NOT NULL
+);
+
+selectByFeedUrl:
+SELECT * FROM RssFeedCache WHERE feedUrl = ?;
+
+upsertCache:
+INSERT OR REPLACE INTO RssFeedCache(feedUrl, etag, lastModified, lastFetchedAt)
+VALUES (?, ?, ?, ?);
+
+deleteByFeedUrl:
+DELETE FROM RssFeedCache WHERE feedUrl = ?;
+
+deleteAll:
+DELETE FROM RssFeedCache;

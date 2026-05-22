@@ -1,0 +1,6 @@
+CREATE TABLE RssFeedCache (
+    feedUrl       TEXT NOT NULL PRIMARY KEY,
+    etag          TEXT,
+    lastModified  TEXT,
+    lastFetchedAt INTEGER NOT NULL
+);

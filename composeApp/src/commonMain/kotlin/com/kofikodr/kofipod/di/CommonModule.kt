@@ -52,6 +52,7 @@ import com.kofikodr.kofipod.data.repo.SearchSource
 import com.kofikodr.kofipod.data.repo.SettingsRepository
 import com.kofikodr.kofipod.data.repo.StatsRepository
 import com.kofikodr.kofipod.data.repo.UpdateRepository
+import com.kofikodr.kofipod.data.rss.RssFeedClient
 import com.kofikodr.kofipod.domain.toSummary
 import com.kofikodr.kofipod.opml.OpmlController
 import com.kofikodr.kofipod.opml.OpmlRepository
@@ -115,6 +116,11 @@ val commonDataModule =
                 storefronts = get<com.kofikodr.kofipod.data.search.ItunesStorefrontStore>(),
             )
         }
+        // RSS feed client: shares the same HttpClient as the rest of the app. Reads
+        // its conditional-GET cache from KofipodDatabase.rssFeedCacheQueries. Used by
+        // Slice B.3 (merge on detail-open), B.4 (iTunes-only navigation), B.5 (notify
+        // worker direct fetch).
+        single { RssFeedClient(client = get(), db = get()) }
         // Aggregator order: Podcast Index first (drives identity / numeric feedId
         // for downstream callers). iTunes second (contributes broader catalogue
         // and multi-source agreement boost). [AggregateSearchSource] takes care of
