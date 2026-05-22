@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.kofikodr.kofipod.ui.screens.settings
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -39,16 +42,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kofikodr.kofipod.config.AppInfo
@@ -487,6 +494,11 @@ private fun MaxDownloadSizeCard(
     onChange: (Long) -> Unit,
 ) {
     val c = LocalKofipodColors.current
+    // Live drag value (null when not scrubbing). The pink readout reflects this
+    // during scrub so users see what they're committing to before lifting their
+    // finger; the commit itself only fires on release via GradientSlider.onValueChange.
+    var liveBytes by remember { mutableStateOf<Long?>(null) }
+    val shownBytes = liveBytes ?: bytes
     Column(
         Modifier
             .fillMaxWidth()
@@ -511,7 +523,7 @@ private fun MaxDownloadSizeCard(
                 )
             }
             Text(
-                formatGb(bytes),
+                formatGb(shownBytes),
                 color = c.pink,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 16.sp,
@@ -524,6 +536,7 @@ private fun MaxDownloadSizeCard(
             value = bytes.coerceIn(MIN_CAP_BYTES, MAX_CAP_BYTES).toFloat(),
             valueRange = MIN_CAP_BYTES.toFloat()..MAX_CAP_BYTES.toFloat(),
             onValueChange = { onChange(it.toLong()) },
+            onScrubbingChange = { liveBytes = it?.toLong() },
             modifier = Modifier.testTag("storageCapSlider"),
         )
         Spacer(Modifier.height(6.dp))
@@ -556,6 +569,8 @@ private fun PlaybackCacheCard(
     onChange: (Long) -> Unit,
 ) {
     val c = LocalKofipodColors.current
+    var liveBytes by remember { mutableStateOf<Long?>(null) }
+    val shownBytes = liveBytes ?: capBytes
     Column(
         Modifier
             .fillMaxWidth()
@@ -580,7 +595,7 @@ private fun PlaybackCacheCard(
                 )
             }
             Text(
-                formatSize(capBytes),
+                formatSize(shownBytes),
                 color = c.pink,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 16.sp,
@@ -593,6 +608,7 @@ private fun PlaybackCacheCard(
             value = capBytes.coerceIn(MIN_STREAM_CACHE_BYTES, MAX_STREAM_CACHE_BYTES).toFloat(),
             valueRange = MIN_STREAM_CACHE_BYTES.toFloat()..MAX_STREAM_CACHE_BYTES.toFloat(),
             onValueChange = { onChange(it.toLong()) },
+            onScrubbingChange = { liveBytes = it?.toLong() },
             modifier = Modifier.testTag("streamCacheCapSlider"),
         )
         Spacer(Modifier.height(6.dp))
@@ -622,120 +638,156 @@ private fun PlaybackCacheCard(
 }
 
 /**
- * Custom slider with a purple→pink gradient active track, grey inactive track,
- * and a white thumb sitting inside a pink halo. Drag-to-update; no tap-snap.
+ * Custom slider with a purple→pink gradient active track and a white thumb in a
+ * pink halo. Long-press to arm, drag the same finger to adjust, release to commit
+ * — mirrors PlayerScrubber so accidental taps while scrolling Settings don't
+ * mutate quota values.
+ *
+ * - `onValueChange` fires once on release with the final value.
+ * - `onScrubbingChange` fires with the live value during scrub (and `null` when
+ *   the gesture ends), so callers can preview the value without persisting it.
  */
 @Composable
 private fun GradientSlider(
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
     onValueChange: (Float) -> Unit,
+    onScrubbingChange: (Float?) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val c = LocalKofipodColors.current
-    val density = LocalDensity.current
-    val trackHeight = 6.dp
-    val thumbRadius = 10.dp
-    val haloRadius = 14.dp
+    val haptic = LocalHapticFeedback.current
+    var dragFraction by remember { mutableStateOf<Float?>(null) }
+    var armed by remember { mutableStateOf(false) }
 
-    val fraction =
-        remember(value, valueRange) {
-            if (valueRange.endInclusive == valueRange.start) {
-                0f
-            } else {
-                (
-                    (value - valueRange.start) /
-                        (valueRange.endInclusive - valueRange.start)
-                ).coerceIn(0f, 1f)
-            }
+    val committedFraction =
+        if (valueRange.endInclusive == valueRange.start) {
+            0f
+        } else {
+            ((value - valueRange.start) / (valueRange.endInclusive - valueRange.start))
+                .coerceIn(0f, 1f)
         }
+    val effectiveFraction = dragFraction ?: committedFraction
 
-    BoxWithConstraints(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .height(haloRadius * 2 + 8.dp),
-    ) {
-        val maxPx = with(density) { maxWidth.toPx() }
-        var dragX by remember { mutableStateOf(0f) }
+    val emphasis by animateFloatAsState(
+        targetValue = if (armed) 1f else 0f,
+        animationSpec = tween(durationMillis = 160),
+        label = "settings-slider-emphasis",
+    )
+    val showArmedHint = emphasis > 0.5f
 
-        fun emit(x: Float) {
-            val clamped = x.coerceIn(0f, maxPx)
-            val f = if (maxPx == 0f) 0f else clamped / maxPx
-            val v = valueRange.start + f * (valueRange.endInclusive - valueRange.start)
-            onValueChange(v)
-        }
+    fun fractionToValue(f: Float): Float = valueRange.start + f * (valueRange.endInclusive - valueRange.start)
 
-        Box(
-            modifier =
+    Column(modifier.fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth().height(48.dp)) {
+            Box(
                 Modifier
                     .fillMaxSize()
-                    .pointerInput(maxPx) {
-                        detectTapGestures(onTap = { emit(it.x) })
-                    }
-                    .pointerInput(maxPx) {
-                        detectDragGestures(
-                            onDragStart = {
-                                dragX = it.x
-                                emit(it.x)
-                            },
-                            onDrag = { change, drag ->
-                                change.consume()
-                                dragX += drag.x
-                                emit(dragX)
-                            },
-                        )
+                    .pointerInput(valueRange) {
+                        // Long-press arms; drag adjusts; release commits.
+                        // Quick taps and short swipes are dropped so the surrounding
+                        // verticalScroll keeps working without firing seeks.
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val longPress =
+                                awaitLongPressOrCancellation(down.id) ?: return@awaitEachGesture
+                            armed = true
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            val startFraction =
+                                (longPress.position.x / size.width).coerceIn(0f, 1f)
+                            dragFraction = startFraction
+                            onScrubbingChange(fractionToValue(startFraction))
+                            longPress.consume()
+                            try {
+                                drag(longPress.id) { change ->
+                                    val f = (change.position.x / size.width).coerceIn(0f, 1f)
+                                    dragFraction = f
+                                    onScrubbingChange(fractionToValue(f))
+                                    change.consume()
+                                }
+                                dragFraction?.let { onValueChange(fractionToValue(it)) }
+                            } finally {
+                                armed = false
+                                dragFraction = null
+                                onScrubbingChange(null)
+                            }
+                        }
                     },
-        ) {
-            Canvas(Modifier.fillMaxSize()) {
-                val w = size.width
-                val h = size.height
-                val trackH = with(density) { trackHeight.toPx() }
-                val y = h / 2f
-                val thumbR = with(density) { thumbRadius.toPx() }
-                val haloR = with(density) { haloRadius.toPx() }
-
-                // Inactive track
-                drawRoundRect(
-                    color = c.purpleTint,
-                    topLeft = Offset(0f, y - trackH / 2f),
-                    size = Size(w, trackH),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackH),
-                )
-                // Active gradient track
-                val activeW = w * fraction
-                if (activeW > 0f) {
+            ) {
+                Canvas(Modifier.fillMaxSize()) {
+                    val centerY = size.height / 2f
+                    val baseThickness = 4.dp.toPx()
+                    val baseRadius = baseThickness / 2f
+                    // Track thickens slightly when armed.
+                    val fillThickness = (6.dp.toPx()) + (2.dp.toPx() * emphasis)
+                    val fillRadius = fillThickness / 2f
+                    // Inactive track
                     drawRoundRect(
-                        brush =
-                            Brush.horizontalGradient(
-                                colors = listOf(c.purple, c.pink),
-                                startX = 0f,
-                                endX = w,
-                            ),
-                        topLeft = Offset(0f, y - trackH / 2f),
-                        size = Size(activeW, trackH),
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackH),
+                        color = c.purpleTint,
+                        topLeft = Offset(0f, centerY - baseRadius),
+                        size = Size(size.width, baseThickness),
+                        cornerRadius = CornerRadius(baseRadius, baseRadius),
+                    )
+                    // Active gradient. Idle softens toward surface; armed shows full vibrancy.
+                    val filledWidth = size.width * effectiveFraction
+                    if (filledWidth > 0f) {
+                        val startColor = lerp(lerp(c.purple, c.surface, 0.20f), c.purple, emphasis)
+                        val endColor = lerp(lerp(c.pink, c.surface, 0.12f), c.pink, emphasis)
+                        drawRoundRect(
+                            brush =
+                                Brush.horizontalGradient(
+                                    colors = listOf(startColor, endColor),
+                                    startX = 0f,
+                                    endX = size.width,
+                                ),
+                            topLeft = Offset(0f, centerY - fillRadius),
+                            size = Size(filledWidth, fillThickness),
+                            cornerRadius = CornerRadius(fillRadius, fillRadius),
+                        )
+                    }
+                    // Clamp thumb center inside the canvas so the halo + thumb
+                    // aren't half-clipped at the range endpoints.
+                    val thumbOuter = (8.dp.toPx()) + (3.dp.toPx() * emphasis)
+                    val thumbInner = (6.dp.toPx()) + (2.dp.toPx() * emphasis)
+                    val haloRadius = (8.dp.toPx()) + (10.dp.toPx() * emphasis)
+                    val thumbX =
+                        (size.width * effectiveFraction)
+                            .coerceIn(thumbOuter, size.width - thumbOuter)
+                    val haloAlpha = 0.30f * emphasis
+                    if (haloAlpha > 0f) {
+                        drawCircle(
+                            color = c.pink.copy(alpha = haloAlpha),
+                            radius = haloRadius,
+                            center = Offset(thumbX, centerY),
+                        )
+                    }
+                    // Thumb grows from 8dp → 11dp; inner white core from 6dp → 8dp.
+                    drawCircle(
+                        color = c.pink,
+                        radius = thumbOuter,
+                        center = Offset(thumbX, centerY),
+                    )
+                    drawCircle(
+                        color = Color.White,
+                        radius = thumbInner,
+                        center = Offset(thumbX, centerY),
                     )
                 }
-                // Halo + thumb
-                val cx = activeW.coerceIn(thumbR, w - thumbR)
-                drawCircle(
-                    color = c.pink.copy(alpha = 0.22f),
-                    radius = haloR,
-                    center = Offset(cx, y),
-                )
-                drawCircle(
-                    color = c.pink,
-                    radius = thumbR + 1f,
-                    center = Offset(cx, y),
-                )
-                drawCircle(
-                    color = Color.White,
-                    radius = thumbR - 2f,
-                    center = Offset(cx, y),
-                )
             }
         }
+        Spacer(Modifier.height(4.dp))
+        // Hint label flips off the animated value so the string change stays in
+        // lockstep with the emphasis animation (no single-frame desync on disarm).
+        Text(
+            text = if (showArmedHint) "Adjusting" else "Hold to adjust",
+            color = lerp(c.textMute, c.pink, emphasis),
+            fontSize = 11.sp,
+            fontWeight = if (showArmedHint) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+            overflow = TextOverflow.Clip,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
