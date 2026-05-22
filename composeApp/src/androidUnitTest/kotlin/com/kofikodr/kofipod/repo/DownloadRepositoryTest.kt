@@ -506,7 +506,10 @@ class DownloadRepositoryTest {
         /** Wall-clock spin used by tests that race against the real Default pool
          *  (e.g. `mapToOneOrNull(Dispatchers.Default)` emissions, which `TestScope`
          *  virtual time can't advance). */
-        fun awaitWallClock(timeoutMs: Long, condition: () -> Boolean) {
+        fun awaitWallClock(
+            timeoutMs: Long,
+            condition: () -> Boolean,
+        ) {
             val deadline = System.currentTimeMillis() + timeoutMs
             while (System.currentTimeMillis() < deadline) {
                 if (condition()) return
