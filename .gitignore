@@ -20,3 +20,5 @@ detail-design*.png
 # Release artifacts
 dist/
 .gstack/
+.clawpatch/
+.kode-review/
