@@ -31,7 +31,11 @@ sealed interface DownloadButtonState {
     /** Terminal failure. Renders the Download icon in `c.danger`; tap re-enqueues. */
     data object Failed : DownloadButtonState
 
-    /** Terminal success: the file exists at `Download.localPath`. Renders a check. */
+    /**
+     * Terminal success: the file exists at `Download.localPath`. The button
+     * paints the "downloaded" affordance — currently a Trash icon — and tap
+     * routes to `onDelete` so the local copy can be removed.
+     */
     data object Done : DownloadButtonState
 }
 

@@ -41,7 +41,7 @@ class DownloadButtonStateTest {
     fun completed_withNullLocalPath_isPending() {
         // Defensive: a Completed row whose localPath hasn't been written yet
         // (between updateState and markCompleted) shouldn't claim Done — that
-        // would briefly show a Check icon then revert.
+        // would briefly show the Trash (downloaded) affordance and then revert.
         assertEquals(
             DownloadButtonState.Pending,
             row(state = "Completed", localPath = null, bytes = 1L, total = 1L).toDownloadButtonState(),
@@ -53,8 +53,8 @@ class DownloadButtonStateTest {
         // Whitespace-only path is the load-bearing case — exercises the
         // `isBlank` half of `isNullOrBlank` independently of the null branch.
         // A weaker guard (`!= null && isNotEmpty()`) would slip through here
-        // and silently treat a blank path as Done, surfacing a Check icon on a
-        // row whose file isn't actually playable.
+        // and silently treat a blank path as Done, surfacing the Trash
+        // (downloaded) affordance on a row whose file isn't actually playable.
         assertEquals(
             DownloadButtonState.Pending,
             row(state = "Completed", localPath = "   ", bytes = 1L, total = 1L).toDownloadButtonState(),

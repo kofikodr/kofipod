@@ -383,6 +383,22 @@ class PodcastDetailViewModel(
         downloads.cancel(episodeId)
     }
 
+    /**
+     * Deletes the local copy of a downloaded episode. Wired to the Done-state
+     * (Trash) tap on [com.kofikodr.kofipod.ui.primitives.DownloadActionButton].
+     *
+     * Guards against deleting an in-flight or failed row: `downloads.delete`
+     * always tears down the engine job and the DB row, so a caller that reached
+     * this method while the episode is still Queued/Downloading/Paused/Failed
+     * would silently destroy work the user didn't ask to remove. Matches the
+     * `if (!state.value.downloaded) return` guard on
+     * [EpisodeDetailViewModel.deleteDownload].
+     */
+    fun deleteDownload(episodeId: String) {
+        if (downloads.rowFor(episodeId).toDownloadButtonState() != DownloadButtonState.Done) return
+        downloads.delete(episodeId)
+    }
+
     fun toggleAutoDownload(enabled: Boolean) {
         if (!state.value.inLibrary) return
         library.setAutoDownload(podcastId, enabled)

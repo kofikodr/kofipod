@@ -10,6 +10,7 @@ import app.cash.paparazzi.Paparazzi
 import com.kofikodr.kofipod.db.Episode
 import com.kofikodr.kofipod.db.EpisodeChapter
 import com.kofikodr.kofipod.db.Podcast
+import com.kofikodr.kofipod.ui.primitives.DownloadButtonState
 import com.kofikodr.kofipod.ui.screens.detail.EpisodeDetailContent
 import com.kofikodr.kofipod.ui.screens.detail.EpisodeDetailUiState
 import com.kofikodr.kofipod.ui.theme.KofipodTheme
@@ -176,7 +177,13 @@ private fun downloadedWithChapters(): EpisodeDetailUiState =
         episode = sampleEpisode(),
         podcast = samplePodcast(),
         chapters = sampleChapters(),
+        // Production VM derives `downloaded` and `downloadButtonState` from the
+        // same Download row, so they're always in sync — keep the fixture in
+        // the same shape. `Done` is what the row maps to once `state="Completed"`
+        // and `localPath` is non-blank, which is exactly the `downloaded = true`
+        // case below.
         downloaded = true,
+        downloadButtonState = DownloadButtonState.Done,
         played = false,
         loading = false,
     )
