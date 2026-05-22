@@ -4,16 +4,15 @@ package com.kofikodr.kofipod.ui.primitives
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
 
 /**
- * The Kofipod brand mark: purple play triangle with a smiling face and pink sound waves.
+ * The Kofipod brand mark: a soft tile with a centered waveform.
  *
  * Geometry matches the launcher icon (`ic_launcher_foreground.xml`) — 108-unit viewport,
  * composition centered on (54, 54). Caller supplies the canvas size via [modifier].
@@ -25,73 +24,49 @@ fun KofipodMark(modifier: Modifier = Modifier) {
     val pink = c.pink
 
     Canvas(modifier = modifier) {
-        val s = size.minDimension / 108f
+        val side = size.minDimension
+        val origin = Offset((size.width - side) / 2f, (size.height - side) / 2f)
+        val s = side / 108f
 
-        val triangle =
-            Path().apply {
-                moveTo(52.75f * s, 35.5f * s)
-                cubicTo(
-                    71.825f * s,
-                    48.45f * s,
-                    71.825f * s,
-                    59.55f * s,
-                    52.75f * s,
-                    72.5f * s,
-                )
-                cubicTo(
-                    33.675f * s,
-                    85.45f * s,
-                    25.5f * s,
-                    79.9f * s,
-                    25.5f * s,
-                    54f * s,
-                )
-                cubicTo(
-                    25.5f * s,
-                    28.1f * s,
-                    33.675f * s,
-                    22.55f * s,
-                    52.75f * s,
-                    35.5f * s,
-                )
-                close()
-            }
-        drawPath(triangle, purple)
+        fun x(v: Float) = origin.x + v * s
 
-        val leftEye =
-            Path().apply {
-                moveTo(34f * s, 50f * s)
-                quadraticBezierTo(37.5f * s, 47f * s, 41f * s, 50f * s)
-            }
-        drawPath(leftEye, Color.White, style = Stroke(width = 2.8f * s, cap = StrokeCap.Round))
+        fun y(v: Float) = origin.y + v * s
 
-        val rightEye =
-            Path().apply {
-                moveTo(47f * s, 50f * s)
-                quadraticBezierTo(50.5f * s, 47f * s, 54f * s, 50f * s)
-            }
-        drawPath(rightEye, Color.White, style = Stroke(width = 2.8f * s, cap = StrokeCap.Round))
+        drawRoundRect(
+            color = Color(0xFFF7F1FF),
+            topLeft = Offset(x(15.188f), y(11.391f)),
+            size = Size(77.625f * s, 79.312f * s),
+            cornerRadius = CornerRadius(17.297f * s, 17.297f * s),
+        )
+        drawRoundRect(
+            color = Color.White.copy(alpha = 0.42f),
+            topLeft = Offset(x(15.188f), y(11.391f)),
+            size = Size(77.625f * s, 79.312f * s),
+            cornerRadius = CornerRadius(17.297f * s, 17.297f * s),
+        )
 
-        val smile =
-            Path().apply {
-                moveTo(36.5f * s, 56f * s)
-                quadraticBezierTo(44f * s, 62f * s, 51.5f * s, 56f * s)
-            }
-        drawPath(smile, pink, style = Stroke(width = 4.4f * s, cap = StrokeCap.Round))
-
-        val waveCenterX = 68f * s
-        val waveCenterY = 54f * s
-        listOf(5f, 9f, 13f).forEach { r ->
-            val rScaled = r * s
-            drawArc(
-                color = pink,
-                startAngle = -60f,
-                sweepAngle = 120f,
-                useCenter = false,
-                topLeft = Offset(waveCenterX - rScaled, waveCenterY - rScaled),
-                size = Size(2 * rScaled, 2 * rScaled),
-                style = Stroke(width = 3.0f * s, cap = StrokeCap.Round),
+        fun bar(
+            centerX: Float,
+            y1: Float,
+            y2: Float,
+            width: Float,
+            color: Color = purple,
+        ) {
+            drawLine(
+                color = color,
+                start = Offset(x(centerX), y(y1)),
+                end = Offset(x(centerX), y(y2)),
+                strokeWidth = width * s,
+                cap = StrokeCap.Round,
             )
         }
+
+        bar(29.215f, 48.199f, 59.801f, 4.852f)
+        bar(37.547f, 42.188f, 65.813f, 5.063f)
+        bar(46.09f, 34.277f, 73.723f, 5.273f)
+        bar(54f, 28.688f, 79.313f, 5.063f, pink)
+        bar(61.91f, 34.277f, 73.723f, 5.273f)
+        bar(70.453f, 42.188f, 65.813f, 5.063f)
+        bar(78.785f, 48.199f, 59.801f, 4.852f)
     }
 }

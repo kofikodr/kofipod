@@ -5,47 +5,47 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Themed-icon waveform silhouette (Android 13+). System tints strokes. -->
+    <!-- Splash-only brand mark: waveform without launcher tile/background. -->
     <path
         android:fillColor="#00000000"
         android:pathData="M29.215,48.199 L29.215,59.801"
-        android:strokeColor="#FFFFFF"
+        android:strokeColor="@color/splash_waveform_primary"
         android:strokeLineCap="round"
         android:strokeWidth="4.852" />
     <path
         android:fillColor="#00000000"
         android:pathData="M37.547,42.188 L37.547,65.813"
-        android:strokeColor="#FFFFFF"
+        android:strokeColor="@color/splash_waveform_primary"
         android:strokeLineCap="round"
         android:strokeWidth="5.063" />
     <path
         android:fillColor="#00000000"
         android:pathData="M46.09,34.277 L46.09,73.723"
-        android:strokeColor="#FFFFFF"
+        android:strokeColor="@color/splash_waveform_primary"
         android:strokeLineCap="round"
         android:strokeWidth="5.273" />
     <path
         android:fillColor="#00000000"
         android:pathData="M54,28.688 L54,79.313"
-        android:strokeColor="#FFFFFF"
+        android:strokeColor="@color/splash_waveform_accent"
         android:strokeLineCap="round"
         android:strokeWidth="5.063" />
     <path
         android:fillColor="#00000000"
         android:pathData="M61.91,34.277 L61.91,73.723"
-        android:strokeColor="#FFFFFF"
+        android:strokeColor="@color/splash_waveform_primary"
         android:strokeLineCap="round"
         android:strokeWidth="5.273" />
     <path
         android:fillColor="#00000000"
         android:pathData="M70.453,42.188 L70.453,65.813"
-        android:strokeColor="#FFFFFF"
+        android:strokeColor="@color/splash_waveform_primary"
         android:strokeLineCap="round"
         android:strokeWidth="5.063" />
     <path
         android:fillColor="#00000000"
         android:pathData="M78.785,48.199 L78.785,59.801"
-        android:strokeColor="#FFFFFF"
+        android:strokeColor="@color/splash_waveform_primary"
         android:strokeLineCap="round"
         android:strokeWidth="4.852" />
 </vector>

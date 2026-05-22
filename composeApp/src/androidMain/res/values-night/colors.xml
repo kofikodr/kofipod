@@ -2,4 +2,6 @@
 <resources>
     <!-- Dark variant of splash/window background. Mirrors KofipodColors.bg (dark). -->
     <color name="splash_background">#0D0814</color>
+    <color name="splash_waveform_primary">#BFA7FF</color>
+    <color name="splash_waveform_accent">#FF5DB8</color>
 </resources>

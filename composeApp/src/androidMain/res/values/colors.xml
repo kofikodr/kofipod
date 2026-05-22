@@ -2,4 +2,6 @@
 <resources>
     <!-- Splash / pre-first-frame window background. Mirrors KofipodColors.bg. -->
     <color name="splash_background">#FBF8FF</color>
+    <color name="splash_waveform_primary">#4B1E9E</color>
+    <color name="splash_waveform_accent">#FF2E9A</color>
 </resources>

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Adaptive-icon background = Canvas (matches "Primary (Light Mode)" mark). -->
-    <color name="ic_launcher_background">#FBF8FF</color>
+    <!-- Adaptive-icon background field behind the inner waveform tile. -->
+    <color name="ic_launcher_background">#EEE8FA</color>
 </resources>

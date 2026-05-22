@@ -5,63 +5,72 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Bubbly triangle as 3 cubic Beziers between edge midpoints.
-         Virtual vertices V1(25.5,17) V2(80,54) V3(25.5,91); α=0.7 vertex bias → pointier cubics.
-         Midpoints M12(52.75,35.5) M23(52.75,72.5) M31(25.5,54). G1 continuous at each junction.
-         Triangle bbox x[25.5, 67.06] y[28.73, 79.27].
-         Waves centered at (68,54) → composition centered on (54,54). -->
-
-    <!-- Purple play triangle -->
+    <!-- Soft inner tile. The adaptive-icon background provides the outer lavender field. -->
     <path
-        android:fillColor="#4B1E9E"
-        android:pathData="M52.75,35.5
-                          C71.825,48.45 71.825,59.55 52.75,72.5
-                          C33.675,85.45 25.5,79.9 25.5,54
-                          C25.5,28.1 33.675,22.55 52.75,35.5 Z" />
-
-    <!-- Left eye -->
+        android:fillColor="#F7F1FF"
+        android:pathData="M32.484,11.391
+                          H75.516
+                          A17.297,17.297 0,0 1,92.813 28.688
+                          V73.406
+                          A17.297,17.297 0,0 1,75.516 90.703
+                          H32.484
+                          A17.297,17.297 0,0 1,15.188 73.406
+                          V28.688
+                          A17.297,17.297 0,0 1,32.484 11.391 Z" />
     <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="2.8"
-        android:strokeLineCap="round"
+        android:fillAlpha="0.42"
+        android:fillColor="#FFFFFF"
+        android:pathData="M32.484,11.391
+                          H75.516
+                          A17.297,17.297 0,0 1,92.813 28.688
+                          V73.406
+                          A17.297,17.297 0,0 1,75.516 90.703
+                          H32.484
+                          A17.297,17.297 0,0 1,15.188 73.406
+                          V28.688
+                          A17.297,17.297 0,0 1,32.484 11.391 Z" />
+
+    <!-- Centered seven-bar waveform. -->
+    <path
         android:fillColor="#00000000"
-        android:pathData="M34,50 Q37.5,47 41,50" />
-
-    <!-- Right eye -->
-    <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="2.8"
+        android:pathData="M29.215,48.199 L29.215,59.801"
+        android:strokeColor="#4B1E9E"
         android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M47,50 Q50.5,47 54,50" />
-
-    <!-- Pink smile -->
+        android:strokeWidth="4.852" />
     <path
+        android:fillColor="#00000000"
+        android:pathData="M37.547,42.188 L37.547,65.813"
+        android:strokeColor="#4B1E9E"
+        android:strokeLineCap="round"
+        android:strokeWidth="5.063" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M46.09,34.277 L46.09,73.723"
+        android:strokeColor="#4B1E9E"
+        android:strokeLineCap="round"
+        android:strokeWidth="5.273" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,28.688 L54,79.313"
         android:strokeColor="#FF2E9A"
-        android:strokeWidth="4.4"
         android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M36.5,56 Q44,62 51.5,56" />
-
-    <!-- Sound waves -->
+        android:strokeWidth="5.063" />
     <path
-        android:strokeColor="#FF2E9A"
-        android:strokeWidth="3.0"
-        android:strokeLineCap="round"
         android:fillColor="#00000000"
-        android:pathData="M70.5,49.67 A5,5 0 0,1 70.5,58.33" />
-
+        android:pathData="M61.91,34.277 L61.91,73.723"
+        android:strokeColor="#4B1E9E"
+        android:strokeLineCap="round"
+        android:strokeWidth="5.273" />
     <path
-        android:strokeColor="#FF2E9A"
-        android:strokeWidth="3.0"
-        android:strokeLineCap="round"
         android:fillColor="#00000000"
-        android:pathData="M72.5,46.21 A9,9 0 0,1 72.5,61.79" />
-
+        android:pathData="M70.453,42.188 L70.453,65.813"
+        android:strokeColor="#4B1E9E"
+        android:strokeLineCap="round"
+        android:strokeWidth="5.063" />
     <path
-        android:strokeColor="#FF2E9A"
-        android:strokeWidth="3.0"
-        android:strokeLineCap="round"
         android:fillColor="#00000000"
-        android:pathData="M74.5,42.74 A13,13 0 0,1 74.5,65.26" />
+        android:pathData="M78.785,48.199 L78.785,59.801"
+        android:strokeColor="#4B1E9E"
+        android:strokeLineCap="round"
+        android:strokeWidth="4.852" />
 </vector>
