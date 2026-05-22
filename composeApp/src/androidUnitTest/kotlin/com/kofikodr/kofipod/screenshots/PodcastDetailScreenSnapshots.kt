@@ -176,11 +176,13 @@ private fun PodcastDetailHarness(
                 onToggleBell = {},
                 onDownloadNewest = {},
                 onCancelNewestDownload = {},
+                onDeleteNewestDownload = {},
                 onToggleAutoDownload = {},
                 onEpisodeTap = {},
                 onPlayEpisode = {},
                 onDownloadEpisode = {},
                 onCancelDownload = {},
+                onDeleteEpisodeDownload = {},
                 onShareEpisode = {},
                 onLoadMore = {},
             )

@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.kofikodr.kofipod.ui.primitives
 
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -42,12 +45,15 @@ import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
  * - [DownloadButtonState.InProgress] — determinate gradient arc at the given
  *   fraction around a Close icon. Tap → [onCancel].
  * - [DownloadButtonState.Failed] — Download icon in danger red. Tap → [onRetry].
- * - [DownloadButtonState.Done] — Check icon in success green. Non-interactive.
+ * - [DownloadButtonState.Done] — Trash icon in danger red. Tap → [onDelete].
+ *   (Previously a passive success-tinted check; the button is now the single
+ *   download-AND-delete affordance, collapsing what used to be a separate
+ *   Trash widget on the Episode Detail tertiary slot.)
  *
- * Used at three sizes across the app (28 dp per-row indicator, 44 dp podcast
- * detail header, 46 dp episode detail tertiary). All visual variation is
- * carried by the size + color tokens passed in; the state machine itself is
- * identical at every site.
+ * Used at three sizes across the app (28–32 dp per-row indicator, 44 dp
+ * podcast detail header, 46 dp episode detail tertiary). All visual variation
+ * is carried by the size + color tokens passed in; the state machine itself
+ * is identical at every site.
  */
 @Composable
 fun DownloadActionButton(
@@ -57,6 +63,7 @@ fun DownloadActionButton(
     onIdleClick: () -> Unit,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
+    onDelete: () -> Unit,
     modifier: Modifier = Modifier,
     background: Color = Color.Transparent,
     border: BorderStroke? = null,
@@ -64,9 +71,8 @@ fun DownloadActionButton(
     arcStroke: Dp = 2.dp,
 ) {
     val c = LocalKofipodColors.current
-    // Whole-button tap dispatch. The interactive states share the same Box
-    // chrome (background + border + clip), so routing the click here lets
-    // each branch focus on the inner glyph + arc only.
+    // Whole-button tap dispatch. Every state is interactive — Done used to be
+    // a passive check, but is now the delete affordance.
     val onClick: () -> Unit =
         when (state) {
             DownloadButtonState.Idle -> onIdleClick
@@ -74,43 +80,57 @@ fun DownloadActionButton(
             DownloadButtonState.Pending,
             is DownloadButtonState.InProgress,
             -> onCancel
-            DownloadButtonState.Done -> ({})
+            DownloadButtonState.Done -> onDelete
         }
-    val isInteractive = state !is DownloadButtonState.Done
-    var box =
+    val box =
         modifier
             .size(size)
             .clip(CircleShape)
             .background(background)
-    if (border != null) box = box.border(border, CircleShape)
-    if (isInteractive) box = box.clickable(onClick = onClick)
+            .let { if (border != null) it.border(border, CircleShape) else it }
+            .clickable(onClick = onClick)
 
     Box(modifier = box, contentAlignment = Alignment.Center) {
-        // Crossfade between the visual modes. 160ms matches the existing
-        // animateFloatAsState cadence (PlayerScrubber, EpisodeRow).
+        // AnimatedContent (not Crossfade) keyed by visual mode so updates that
+        // keep the same mode don't re-fade. Two bugs this avoids:
         //
-        // Pass the full `state` as targetState so the lambda receives the
-        // animated frame's state (not a closed-over outer value). Reading
-        // `state` from the outer scope inside the lambda would cause a flash
-        // of the new tint on the fading-OUT frame mid-transition (e.g.
-        // Idle→Failed would briefly tint the disappearing Download icon red).
-        Crossfade(targetState = state, label = "downloadBtnXf") { animated ->
-            when (animated.crossfadeKey()) {
-                XfKey.IdleOrFailed -> {
-                    val tint = if (animated is DownloadButtonState.Failed) c.danger else iconColor
-                    KPIcon(name = KPIconName.Download, color = tint, size = iconSize)
+        //  1. Crossfade compares `targetState` by equality. `InProgress(fraction)`
+        //     is a data class, so each ~5 Hz progress tick produced a new
+        //     instance and restarted the alpha fade between two same-mode
+        //     frames — visible as the icon "pulsating" while downloading.
+        //  2. Crossfade's internal Box defaults to Alignment.TopStart, so
+        //     branches that emitted a bare KPIcon (Idle/Failed/Done) landed
+        //     in the upper-left of the button while the InFlight branch
+        //     centred its own content — visible as a small icon flashing in
+        //     the top-left corner during every transition.
+        //
+        // `contentKey = { it.crossfadeKey() }` collapses fraction-only updates
+        // into the same slot (no transition), and each branch is wrapped in a
+        // centred fillMaxSize Box so the glyph stays anchored at the centre.
+        AnimatedContent(
+            targetState = state,
+            contentKey = { it.crossfadeKey() },
+            transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(160)) },
+            label = "downloadBtnXf",
+        ) { animated ->
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                when (animated.crossfadeKey()) {
+                    XfKey.IdleOrFailed -> {
+                        val tint = if (animated is DownloadButtonState.Failed) c.danger else iconColor
+                        KPIcon(name = KPIconName.Download, color = tint, size = iconSize)
+                    }
+                    XfKey.Done -> KPIcon(name = KPIconName.Trash, color = c.danger, size = iconSize)
+                    XfKey.InFlight ->
+                        InFlightArc(
+                            state = animated,
+                            arcStroke = arcStroke,
+                            iconSize = iconSize,
+                            trackColor = c.purpleTint,
+                            gradientStart = c.purple,
+                            gradientEnd = c.pink,
+                            iconColor = c.textSoft,
+                        )
                 }
-                XfKey.Done -> KPIcon(name = KPIconName.Check, color = c.success, size = iconSize, strokeWidth = 2.2f)
-                XfKey.InFlight ->
-                    InFlightArc(
-                        state = animated,
-                        arcStroke = arcStroke,
-                        iconSize = iconSize,
-                        trackColor = c.purpleTint,
-                        gradientStart = c.purple,
-                        gradientEnd = c.pink,
-                        iconColor = c.textSoft,
-                    )
             }
         }
     }

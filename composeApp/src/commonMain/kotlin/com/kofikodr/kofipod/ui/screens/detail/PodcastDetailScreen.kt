@@ -172,11 +172,16 @@ fun PodcastDetailScreen(
             val newest = state.storedEpisodes.firstOrNull()?.id
             if (newest != null) viewModel.cancelDownload(newest)
         },
+        onDeleteNewestDownload = {
+            val newest = state.storedEpisodes.firstOrNull()?.id
+            if (newest != null) viewModel.deleteDownload(newest)
+        },
         onToggleAutoDownload = { viewModel.toggleAutoDownload(it) },
         onEpisodeTap = onEpisodeTap,
         onPlayEpisode = { viewModel.play(it) },
         onDownloadEpisode = { viewModel.download(it) },
         onCancelDownload = { viewModel.cancelDownload(it) },
+        onDeleteEpisodeDownload = { viewModel.deleteDownload(it) },
         onShareEpisode = { viewModel.shareEpisode(it) },
         onLoadMore = { viewModel.loadMoreEpisodes() },
         onOpenPlayer = onOpenPlayer,
@@ -227,11 +232,13 @@ internal fun PodcastDetailContent(
     onToggleBell: () -> Unit,
     onDownloadNewest: () -> Unit,
     onCancelNewestDownload: () -> Unit,
+    onDeleteNewestDownload: () -> Unit,
     onToggleAutoDownload: (Boolean) -> Unit,
     onEpisodeTap: (String) -> Unit,
     onPlayEpisode: (String) -> Unit,
     onDownloadEpisode: (String) -> Unit,
     onCancelDownload: (String) -> Unit,
+    onDeleteEpisodeDownload: (String) -> Unit,
     onShareEpisode: (String) -> Unit,
     onLoadMore: () -> Unit,
     onOpenPlayer: () -> Unit = {},
@@ -259,11 +266,13 @@ internal fun PodcastDetailContent(
                 onToggleBell = onToggleBell,
                 onDownloadNewest = onDownloadNewest,
                 onCancelNewestDownload = onCancelNewestDownload,
+                onDeleteNewestDownload = onDeleteNewestDownload,
                 onToggleAutoDownload = onToggleAutoDownload,
                 onEpisodeTap = onEpisodeTap,
                 onPlayEpisode = onPlayEpisode,
                 onDownloadEpisode = onDownloadEpisode,
                 onCancelDownload = onCancelDownload,
+                onDeleteEpisodeDownload = onDeleteEpisodeDownload,
                 onShareEpisode = onShareEpisode,
                 onLoadMore = onLoadMore,
             )
@@ -320,11 +329,13 @@ private fun PodcastDetailSingleColumn(
     onToggleBell: () -> Unit,
     onDownloadNewest: () -> Unit,
     onCancelNewestDownload: () -> Unit,
+    onDeleteNewestDownload: () -> Unit,
     onToggleAutoDownload: (Boolean) -> Unit,
     onEpisodeTap: (String) -> Unit,
     onPlayEpisode: (String) -> Unit,
     onDownloadEpisode: (String) -> Unit,
     onCancelDownload: (String) -> Unit,
+    onDeleteEpisodeDownload: (String) -> Unit,
     onShareEpisode: (String) -> Unit,
     onLoadMore: () -> Unit,
 ) {
@@ -429,6 +440,7 @@ private fun PodcastDetailSingleColumn(
                     onToggleBell = onToggleBell,
                     onDownload = onDownloadNewest,
                     onCancelDownload = onCancelNewestDownload,
+                    onDeleteDownload = onDeleteNewestDownload,
                     downloadEnabled = state.inLibrary,
                     newestEpisodeId = newestId,
                     downloadStatesFlow = downloadStatesFlow,
@@ -469,6 +481,7 @@ private fun PodcastDetailSingleColumn(
                         onPlay = { onPlayEpisode(ep.id) },
                         onDownload = { onDownloadEpisode(ep.id) },
                         onCancelDownload = { onCancelDownload(ep.id) },
+                        onDeleteDownload = { onDeleteEpisodeDownload(ep.id) },
                     )
                 }
                 if (hasMore) {
@@ -624,6 +637,7 @@ private fun ActionRow(
     onToggleBell: () -> Unit,
     onDownload: () -> Unit,
     onCancelDownload: () -> Unit,
+    onDeleteDownload: () -> Unit,
     downloadEnabled: Boolean,
     newestEpisodeId: String?,
     downloadStatesFlow: StateFlow<Map<String, DownloadButtonState>>,
@@ -676,6 +690,7 @@ private fun ActionRow(
             onIdleClick = onDownload,
             onCancel = onCancelDownload,
             onRetry = onDownload,
+            onDelete = onDeleteDownload,
             iconSize = 18.dp,
         )
     }
@@ -817,6 +832,7 @@ private fun EpisodeRow(
     onPlay: () -> Unit,
     onDownload: () -> Unit,
     onCancelDownload: () -> Unit,
+    onDeleteDownload: () -> Unit,
     isSelected: Boolean = false,
 ) {
     val c = LocalKofipodColors.current
@@ -864,6 +880,7 @@ private fun EpisodeRow(
             downloadStatesFlow = downloadStatesFlow,
             onDownload = { if (playable && canDownload) onDownload() },
             onCancelDownload = onCancelDownload,
+            onDelete = onDeleteDownload,
         )
     }
 }
@@ -949,6 +966,7 @@ private fun StateIndicator(
     downloadStatesFlow: StateFlow<Map<String, DownloadButtonState>>,
     onDownload: () -> Unit,
     onCancelDownload: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     val c = LocalKofipodColors.current
     // Per-row collect: this is the only point in the row tree that re-reads the
@@ -967,6 +985,7 @@ private fun StateIndicator(
         onIdleClick = { if (active) onDownload() },
         onCancel = onCancelDownload,
         onRetry = { if (active) onDownload() },
+        onDelete = onDelete,
     )
 }
 

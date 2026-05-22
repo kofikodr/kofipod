@@ -708,29 +708,23 @@ private fun ActionRow(
             onClick = onMarkPlayed,
             testTag = "episodeMarkPlayedButton",
         )
-        when (tertiaryAction(downloaded = downloaded, canDownload = canDownload)) {
-            TertiaryAction.Delete ->
-                CircleAction(
-                    icon = KPIconName.Trash,
-                    tint = c.danger,
-                    background = c.pinkSoft,
-                    onClick = onDeleteDownload,
-                    testTag = "episodeDeleteDownloadButton",
-                )
-            TertiaryAction.Download ->
-                DownloadActionButton(
-                    state = downloadButtonState,
-                    size = 46.dp,
-                    iconColor = c.pink,
-                    background = c.pinkSoft,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, c.border),
-                    iconSize = 18.dp,
-                    onIdleClick = onDownload,
-                    onCancel = onCancelDownload,
-                    onRetry = onDownload,
-                    modifier = Modifier.testTag("episodeDownloadButton"),
-                )
-            TertiaryAction.Hidden -> Unit
+        if (showTertiaryDownload(downloaded = downloaded, canDownload = canDownload)) {
+            // Single button covers Idle / Pending / InProgress / Failed / Done.
+            // Done (file exists locally) renders a red Trash and taps to delete —
+            // replaces the old separate CircleAction(Trash) widget.
+            DownloadActionButton(
+                state = downloadButtonState,
+                size = 46.dp,
+                iconColor = c.pink,
+                background = c.pinkSoft,
+                border = androidx.compose.foundation.BorderStroke(1.dp, c.border),
+                iconSize = 18.dp,
+                onIdleClick = onDownload,
+                onCancel = onCancelDownload,
+                onRetry = onDownload,
+                onDelete = onDeleteDownload,
+                modifier = Modifier.testTag("episodeDownloadButton"),
+            )
         }
     }
 }
@@ -750,21 +744,19 @@ internal fun playButtonLabel(
     }
 
 /**
- * The rightmost action-row circle has three states: Trash if the user has a local
- * download to remove, Download if there's a fetchable enclosure but no local copy,
- * or hidden when neither applies (e.g. an episode whose feed lacks an enclosure URL).
+ * Whether the rightmost action-row circle should render at all.
+ *
+ * `true` when either the episode is already downloaded (Done state → tap-to-delete)
+ * or it has a fetchable enclosure (Idle → tap-to-download). `false` when neither
+ * applies — e.g. a feed item with no enclosure — and the slot is hidden entirely.
+ *
+ * The Idle/Done split itself is carried by [com.kofikodr.kofipod.ui.primitives.DownloadButtonState]
+ * inside the button; this helper only decides visibility.
  */
-internal enum class TertiaryAction { Delete, Download, Hidden }
-
-internal fun tertiaryAction(
+internal fun showTertiaryDownload(
     downloaded: Boolean,
     canDownload: Boolean,
-): TertiaryAction =
-    when {
-        downloaded -> TertiaryAction.Delete
-        canDownload -> TertiaryAction.Download
-        else -> TertiaryAction.Hidden
-    }
+): Boolean = downloaded || canDownload
 
 @Composable
 private fun CircleAction(

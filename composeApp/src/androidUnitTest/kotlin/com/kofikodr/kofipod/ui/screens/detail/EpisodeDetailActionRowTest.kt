@@ -3,12 +3,16 @@ package com.kofikodr.kofipod.ui.screens.detail
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * Pins the action-row state machine. The Episode Detail screen reads three
- * independent state inputs (player, download, played) and produces a label and
- * a tertiary-circle action that visually distinguishes "fetch this episode"
- * from "delete the local copy" from "no enclosure to act on".
+ * independent state inputs (player, download, played) and produces a label
+ * plus a visibility flag for the tertiary circle. The icon shown inside the
+ * circle (Download / arc / Trash) is now driven entirely by
+ * [com.kofikodr.kofipod.ui.primitives.DownloadButtonState]; this helper only
+ * decides whether the slot renders at all.
  *
  * These cases were previously only exercised through Paparazzi snapshots —
  * which catch visual regressions but say nothing about the decision logic.
@@ -59,38 +63,29 @@ class EpisodeDetailActionRowTest {
         )
     }
 
-    // ---- tertiaryAction -----------------------------------------------------
+    // ---- showTertiaryDownload ----------------------------------------------
 
     @Test
-    fun tertiaryAction_isDelete_whenDownloaded() {
-        // Downloaded wins regardless of canDownload — once a local file exists,
-        // the next available action is removing it, not re-downloading.
-        assertEquals(
-            TertiaryAction.Delete,
-            tertiaryAction(downloaded = true, canDownload = true),
-        )
-        assertEquals(
-            TertiaryAction.Delete,
-            tertiaryAction(downloaded = true, canDownload = false),
-        )
+    fun showTertiaryDownload_visible_whenDownloaded() {
+        // A downloaded episode always shows the slot — the button renders the
+        // Done state (Trash icon, tap-to-delete) regardless of whether a fresh
+        // enclosure URL is still resolvable.
+        assertTrue(showTertiaryDownload(downloaded = true, canDownload = true))
+        assertTrue(showTertiaryDownload(downloaded = true, canDownload = false))
     }
 
     @Test
-    fun tertiaryAction_isDownload_whenNotDownloadedAndCanDownload() {
-        assertEquals(
-            TertiaryAction.Download,
-            tertiaryAction(downloaded = false, canDownload = true),
-        )
+    fun showTertiaryDownload_visible_whenNotDownloadedAndCanDownload() {
+        // Fresh enclosure available, nothing local yet — the button renders
+        // Idle (Download icon, tap-to-fetch).
+        assertTrue(showTertiaryDownload(downloaded = false, canDownload = true))
     }
 
     @Test
-    fun tertiaryAction_isHidden_whenNotDownloadedAndNoEnclosure() {
+    fun showTertiaryDownload_hidden_whenNotDownloadedAndNoEnclosure() {
         // Not all feed items have an enclosure (e.g. text-only podcast posts or
         // podroll entries surfaced via the API). The screen hides the circle
         // entirely instead of showing a disabled "Download" button.
-        assertEquals(
-            TertiaryAction.Hidden,
-            tertiaryAction(downloaded = false, canDownload = false),
-        )
+        assertFalse(showTertiaryDownload(downloaded = false, canDownload = false))
     }
 }
