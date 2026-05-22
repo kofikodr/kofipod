@@ -45,6 +45,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -92,24 +93,37 @@ fun SearchScreen(
     val state by viewModel.state.collectAsState()
     val selectedSearchResultId by viewModel.selectedSearchResultId.collectAsState()
 
-    // Surface "out of reshuffles" as a transient toast string, consumed by the rendering below.
+    // Surface transient events (reshuffle cap, iTunes hydration failure, …) as a
+    // toast string consumed by the rendering below.
     var toastText by remember { mutableStateOf<String?>(null) }
+    val tabletSize = LocalTabletSize.current
+    // Capture `tabletSize` through `rememberUpdatedState` and key the LaunchedEffect
+    // ONLY on the ViewModel. If we keyed on `tabletSize` directly, every rotation /
+    // multi-window resize would cancel and restart the events collector, and a
+    // one-shot event emitted in that microsecond gap (e.g. an iTunes
+    // `NavigateToPodcast` resolving mid-rotation) would be silently dropped — the
+    // SharedFlow doesn't replay. `rememberUpdatedState` lets the handler read the
+    // current `tabletSize` without re-keying the effect.
+    val currentTabletSize by rememberUpdatedState(tabletSize)
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
-            toastText =
-                when (event) {
-                    SearchEvent.OutOfReshuffles -> "All shuffled out for today — come back tomorrow."
-                }
+            when (event) {
+                SearchEvent.OutOfReshuffles ->
+                    toastText = "All shuffled out for today — come back tomorrow."
+                is SearchEvent.HydrationFailed -> toastText = event.message
+                is SearchEvent.NavigateToPodcast ->
+                    when (val action = routeSearchResultTap(currentTabletSize, event.podcastId)) {
+                        is SearchResultTapAction.Navigate -> onOpenPodcast(action.podcastId)
+                        is SearchResultTapAction.Select -> viewModel.selectSearchResult(action.podcastId)
+                    }
+            }
         }
     }
 
-    val tabletSize = LocalTabletSize.current
-    val onResultTap: (String) -> Unit = { podcastId ->
-        when (val action = routeSearchResultTap(tabletSize, podcastId)) {
-            is SearchResultTapAction.Navigate -> onOpenPodcast(action.podcastId)
-            is SearchResultTapAction.Select -> viewModel.selectSearchResult(action.podcastId)
-        }
-    }
+    // Result tap: ask the viewmodel to resolve the id (iTunes-only results need PI
+    // hydration first). The viewmodel emits NavigateToPodcast / HydrationFailed via
+    // [viewModel.events], handled above.
+    val onResultTap: (String) -> Unit = { podcastId -> viewModel.requestNavigation(podcastId) }
 
     SearchContent(
         state = state,
@@ -418,7 +432,7 @@ private fun SearchBodyContent(
     )
     Spacer(Modifier.height(2.dp))
     Text(
-        "Powered by the Podcast Index",
+        "Powered by Podcast Index and Apple iTunes",
         color = c.textMute,
         fontSize = 13.sp,
     )

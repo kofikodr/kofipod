@@ -1,6 +1,6 @@
 # Kofipod Privacy Policy
 
-_Last updated: 2026-05-06_
+_Last updated: 2026-05-23_
 
 Kofipod is a personal podcast app. This page describes what data the app
 collects, what it does **not** collect, and how you can turn it off.
@@ -25,6 +25,16 @@ collects, what it does **not** collect, and how you can turn it off.
 In normal use the app talks to:
 
 - **Podcast Index** — to search for shows and fetch episode metadata.
+- **Apple iTunes Search API** (`itunes.apple.com/search`) — the second
+  podcast catalogue Kofipod queries alongside Podcast Index, so shows
+  one index has and the other doesn't are still findable. Your typed
+  search term and your selected **search storefront** (a country code
+  like `US` / `GB` / `DE` chosen in Settings → Search) are sent to
+  Apple in the URL. No identifier, no account, no cookies — the request
+  is anonymous from Apple's side. Apple's privacy policy applies:
+  <https://www.apple.com/legal/privacy/>. You can avoid this endpoint
+  entirely by clearing your search query — no requests are made until
+  you type.
 - **The podcast publisher's own servers** — to download or stream the
   audio file you asked for, and to fetch artwork.
 - **Google Generative Language API** — only if you have configured
@@ -56,12 +66,12 @@ fix them. Sent over HTTPS to a self-hosted GlitchTip instance
 | Device model | `Pixel 7` | Not unique |
 | App version | `1.4.2` | |
 | Locale | `en-US` | |
-| Breadcrumbs | navigation events | URLs to Gemini, Google APIs, and Podcast Index dropped; `query`-category breadcrumbs (SQL) dropped |
+| Breadcrumbs | navigation events | URLs to Gemini, Google APIs, Podcast Index, and Apple iTunes dropped; `query`-category breadcrumbs (SQL) dropped |
 | Release tag | `1.4.2` | |
 
 **Explicitly NOT sent:** IP address (server-side dropped), user ID,
 email, screen contents, view hierarchy, breadcrumbs containing URLs to
-Gemini / Podcast Index / Google APIs.
+Gemini / Podcast Index / Apple iTunes / Google APIs.
 
 ### Anonymous usage data
 

@@ -4,6 +4,7 @@ package com.kofikodr.kofipod.ui.screens.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kofikodr.kofipod.data.api.PodcastIndexApi
+import com.kofikodr.kofipod.data.api.isItunesOnlyId
 import com.kofikodr.kofipod.data.net.NetworkErrorHandler
 import com.kofikodr.kofipod.data.recommend.RecommendationsRepository
 import com.kofikodr.kofipod.data.recommend.RecommendationsSource
@@ -11,7 +12,9 @@ import com.kofikodr.kofipod.data.recommend.ReshuffleResult
 import com.kofikodr.kofipod.data.repo.CategoriesSource
 import com.kofikodr.kofipod.data.repo.SearchSource
 import com.kofikodr.kofipod.domain.PodcastSummary
+import com.kofikodr.kofipod.domain.toSummary
 import com.mr3y.podcastindex.model.Category
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -33,6 +36,22 @@ enum class SearchTab { All, Title, Person }
 
 sealed interface SearchEvent {
     data object OutOfReshuffles : SearchEvent
+
+    /**
+     * The viewmodel resolved a tapped result to a numeric Podcast Index id. The
+     * screen reacts by routing through `SearchResultTapAction` (Navigate on phone /
+     * tablet portrait, Select on tablet landscape). This indirection only matters
+     * for iTunes-only results that need PI hydration first — direct numeric ids
+     * fire this event synchronously.
+     */
+    data class NavigateToPodcast(val podcastId: String) : SearchEvent
+
+    /**
+     * Tapping an iTunes-only result failed to resolve to a Podcast Index feed (PI
+     * 404, network error, or unexpected response). The screen surfaces [message]
+     * as a snackbar. Slice B will replace this with a direct-RSS fallback path.
+     */
+    data class HydrationFailed(val message: String) : SearchEvent
 }
 
 data class SearchUiState(
@@ -49,6 +68,15 @@ data class SearchUiState(
     /** Stable while [recsLoading] is true so the UI doesn't flicker between quips. */
     val recsLoadingQuip: String = "",
     val recsReshufflesRemaining: Int = RecommendationsRepository.MAX_DAILY_RESHUFFLES,
+    /**
+     * The result id currently being hydrated (PI lookup in flight for an iTunes-only
+     * tap). Used by [SearchViewModel.requestNavigation] to suppress repeat taps on
+     * the same row while a hydration is already in flight. `null` when no hydration
+     * is pending. A row-level loading affordance is not wired in Slice A — adding one
+     * would require a result-row recomposition path; the suppression alone keeps the
+     * VM idempotent under rapid double-taps.
+     */
+    val hydratingId: String? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
@@ -59,15 +87,33 @@ class SearchViewModel(
     private val appScope: CoroutineScope,
     private val errors: NetworkErrorHandler,
     private val telemetry: com.kofikodr.kofipod.diagnostics.Telemetry,
+    /**
+     * Podcast Index direct handle, used only by [requestNavigation] to convert an
+     * iTunes-only result's `feedUrl` into a numeric Podcast Index `feedId` so the
+     * existing PodcastDetailViewModel (which Long-parses the id) can render it.
+     */
+    private val podcastIndexApi: PodcastIndexApi,
 ) : ViewModel() {
     private val _state = MutableStateFlow(SearchUiState(popularCategories = categories.popular()))
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
 
+    // One-shot navigation/notification events.
+    //
+    // NOTE on rotation/resize: the original concern was that the screen-side
+    // collector re-keyed on `tabletSize`, causing it to detach + re-attach during
+    // rotation and drop events emitted in the gap. The fix lives in `SearchScreen` —
+    // the LaunchedEffect now keys ONLY on the ViewModel and reads `tabletSize` via
+    // `rememberUpdatedState` so the collector never tears down on rotation. With
+    // that in place a SharedFlow is the right choice: a buffered Channel would have
+    // queued events past the user's screen exit and replayed stale navigation when
+    // they came back to Search (Search is a bottom-nav destination whose VM
+    // survives tab switches).
     private val _events = MutableSharedFlow<SearchEvent>(extraBufferCapacity = 1)
     val events: SharedFlow<SearchEvent> = _events.asSharedFlow()
 
     private var searchJob: Job? = null
     private var currentLimit: Int = PodcastIndexApi.PAGE_SIZE
+    private var hydrateJob: Job? = null
 
     /**
      * Debounced query channel. [setQuery]/[setTab] push the user's intent here without
@@ -166,10 +212,89 @@ class SearchViewModel(
         _state.value = _state.value.copy(recsLoading = true, recsLoadingQuip = quip)
     }
 
+    /**
+     * Resolves a tapped result id to a numeric Podcast Index id, then emits
+     * [SearchEvent.NavigateToPodcast]. For results that came directly from Podcast
+     * Index (or merged with PI's identity) the id is already numeric and the event
+     * fires synchronously. For iTunes-only results (id prefixed with `itunes:`) we
+     * look the feed up against PI by URL; on success, navigate with the resolved
+     * feedId; on failure, emit [SearchEvent.HydrationFailed] so the screen can show
+     * a snackbar.
+     *
+     * A tap on a different iTunes-only row cancels any in-flight hydration. A tap on
+     * the **same** in-flight row is a no-op so a rapid double-tap doesn't queue two
+     * lookups.
+     */
+    fun requestNavigation(rawId: String) {
+        if (!rawId.isItunesOnlyId()) {
+            // A tap on a Podcast Index row supersedes any in-flight iTunes hydration
+            // — otherwise the hydration could complete later and navigate the user
+            // away from the row they just opened.
+            cancelHydration()
+            _events.tryEmit(SearchEvent.NavigateToPodcast(rawId))
+            return
+        }
+        // Suppress repeat taps on the row already being hydrated. A different row
+        // still cancels the old job below.
+        if (_state.value.hydratingId == rawId) return
+        val tapped = _state.value.results.firstOrNull { it.id == rawId }
+        val feedUrl = tapped?.feedUrl
+        if (feedUrl.isNullOrBlank()) {
+            _events.tryEmit(SearchEvent.HydrationFailed(HYDRATION_FALLBACK_MESSAGE))
+            return
+        }
+        hydrateJob?.cancel()
+        _state.value = _state.value.copy(hydratingId = rawId)
+        hydrateJob =
+            viewModelScope.launch {
+                try {
+                    val feed = podcastIndexApi.podcastByFeedUrl(feedUrl)
+                    // Stale check — a query change / tab change / non-iTunes tap that
+                    // happened mid-flight cleared hydratingId. Emitting NavigateToPodcast
+                    // now would steal focus from whatever the user just did.
+                    if (_state.value.hydratingId != rawId) return@launch
+                    val resolved = feed.toSummary()
+                    // Rewrite the row's id from the itunes: sentinel to the resolved PI
+                    // id so (a) the tablet-landscape selection highlight matches the
+                    // tapped row after Select, and (b) re-taps go straight through the
+                    // numeric branch instead of re-hydrating.
+                    val updatedResults =
+                        _state.value.results.map { p ->
+                            if (p.id == rawId) p.copy(id = resolved.id, feedId = resolved.feedId) else p
+                        }
+                    _state.value = _state.value.copy(results = updatedResults, hydratingId = null)
+                    _events.tryEmit(SearchEvent.NavigateToPodcast(resolved.id))
+                } catch (e: CancellationException) {
+                    // Structured cancellation must propagate. Do NOT clear hydratingId
+                    // here — the cancelling caller already updated it.
+                    throw e
+                } catch (e: Throwable) {
+                    if (_state.value.hydratingId != rawId) return@launch
+                    _state.value = _state.value.copy(hydratingId = null)
+                    val resolved =
+                        errors.handle(e, hasCachedData = false, fallback = HYDRATION_FALLBACK_MESSAGE)
+                            ?: HYDRATION_FALLBACK_MESSAGE
+                    _events.tryEmit(SearchEvent.HydrationFailed(resolved))
+                }
+            }
+    }
+
+    private fun cancelHydration() {
+        hydrateJob?.cancel()
+        hydrateJob = null
+        val current = _state.value
+        if (current.hydratingId != null) {
+            _state.value = current.copy(hydratingId = null)
+        }
+    }
+
     fun setQuery(q: String) {
         // Cancel any in-flight loadMore before resetting limit so a stale paged result
         // can't write back over the fresh query's first page.
         searchJob?.cancel()
+        // Also drop any in-flight iTunes hydration — its target row may no longer be
+        // in the result list once the new query lands.
+        cancelHydration()
         _state.value = _state.value.copy(query = q)
         currentLimit = PodcastIndexApi.PAGE_SIZE
         queryChannel.value = QueryKey(q, _state.value.tab)
@@ -180,6 +305,7 @@ class SearchViewModel(
 
     fun setTab(tab: SearchTab) {
         searchJob?.cancel()
+        cancelHydration()
         _state.value = _state.value.copy(tab = tab)
         currentLimit = PodcastIndexApi.PAGE_SIZE
         queryChannel.value = QueryKey(_state.value.query, tab)
@@ -208,13 +334,13 @@ class SearchViewModel(
                 error = null,
             )
         val limit = currentLimit
-        runCatching {
-            when (key.tab) {
-                SearchTab.All -> repo.searchAll(key.query, limit)
-                SearchTab.Title -> repo.searchByTitle(key.query, limit)
-                SearchTab.Person -> repo.searchByPerson(key.query, limit)
-            }
-        }.onSuccess { results ->
+        try {
+            val results =
+                when (key.tab) {
+                    SearchTab.All -> repo.searchAll(key.query, limit)
+                    SearchTab.Title -> repo.searchByTitle(key.query, limit)
+                    SearchTab.Person -> repo.searchByPerson(key.query, limit)
+                }
             _state.value =
                 _state.value.copy(
                     results = results,
@@ -229,7 +355,15 @@ class SearchViewModel(
                     ),
                 )
             }
-        }.onFailure { e ->
+        } catch (e: CancellationException) {
+            // The `collectLatest` driver above cancels us when a newer query
+            // arrives. `runCatching` would swallow this and let the cancelled run
+            // clear loading state or surface a phantom error for the newer search
+            // — break the cancellation chain. AggregateSearchSource already
+            // converts timeouts to a thrown error before this point, so any
+            // CancellationException reaching here is structural.
+            throw e
+        } catch (e: Throwable) {
             _state.value =
                 _state.value.copy(
                     loading = false,
@@ -241,6 +375,14 @@ class SearchViewModel(
 
     companion object {
         const val DEBOUNCE_MS: Long = 600
+
+        /**
+         * User-facing message when an iTunes-only result can't be resolved to a
+         * Podcast Index feed (PI doesn't have it, network unavailable, etc.).
+         * Slice B (direct-RSS fallback) will narrow this down or eliminate it.
+         */
+        internal const val HYDRATION_FALLBACK_MESSAGE: String =
+            "This feed isn't in our index yet — try again later"
 
         // Long enough for PullToRefreshBox to observe recsLoading=true and play its retract
         // animation cleanly when we short-circuit (e.g. daily cap hit, no API call needed).

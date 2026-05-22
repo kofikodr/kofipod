@@ -17,6 +17,8 @@ import com.kofikodr.kofipod.data.repo.LibraryRepository
 import com.kofikodr.kofipod.data.repo.SettingsRepository
 import com.kofikodr.kofipod.data.repo.UpdateRepository
 import com.kofikodr.kofipod.data.repo.UpdateUiState
+import com.kofikodr.kofipod.data.search.ItunesStorefront
+import com.kofikodr.kofipod.data.search.ItunesStorefrontStore
 import com.kofikodr.kofipod.diagnostics.DiagnosticsConfigRepository
 import com.kofikodr.kofipod.opml.OpmlAction
 import com.kofikodr.kofipod.opml.OpmlController
@@ -79,6 +81,7 @@ data class SettingsUiState(
     val crashesEnabled: Boolean = true,
     val usageEnabled: Boolean = true,
     val disclosureAcknowledged: Boolean = false,
+    val itunesStorefront: ItunesStorefront = ItunesStorefront.Default,
 )
 
 class SettingsViewModel(
@@ -103,6 +106,7 @@ class SettingsViewModel(
     private val episodes: EpisodesRepository,
     private val notifier: Notifier,
     private val uiEvents: UiEventBus,
+    private val itunesStorefronts: ItunesStorefrontStore,
 ) : ViewModel() {
     // Refreshes the displayed cache usage once per second while Settings is visible.
     private val cacheUsedFlow =
@@ -195,7 +199,13 @@ class SettingsViewModel(
                 proEntitlement = proBlock.entitlement,
                 restoreInFlight = proBlock.restoreInFlight,
             )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
+        }
+            // Chained because outer combine already takes 5 typed slices and adding
+            // a 6th would force vararg form and lose the inference.
+            .combine(itunesStorefronts.storefrontFlow()) { settings, storefront ->
+                settings.copy(itunesStorefront = storefront)
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
     fun setTheme(mode: KofipodThemeMode) =
         viewModelScope.launch {
@@ -212,6 +222,10 @@ class SettingsViewModel(
     fun setWifiOnly(on: Boolean) = viewModelScope.launch { repo.setWifiOnly(on) }
 
     fun setAutoUpdateCheck(on: Boolean) = viewModelScope.launch { repo.setAutoUpdateCheckEnabled(on) }
+
+    fun setItunesStorefront(storefront: ItunesStorefront) {
+        itunesStorefronts.setStorefront(storefront)
+    }
 
     fun setCap(bytes: Long) = viewModelScope.launch { repo.setStorageCapBytes(bytes) }
 

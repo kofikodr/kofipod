@@ -19,6 +19,8 @@ import com.kofikodr.kofipod.backup.DbFileBytes
 import com.kofikodr.kofipod.backup.StageDbFile
 import com.kofikodr.kofipod.data.db.DatabaseFactory
 import com.kofikodr.kofipod.data.repo.SettingsRepository
+import com.kofikodr.kofipod.data.search.AndroidItunesStorefrontStore
+import com.kofikodr.kofipod.data.search.ItunesStorefrontStore
 import com.kofikodr.kofipod.diagnostics.AndroidCrashReporter
 import com.kofikodr.kofipod.diagnostics.AndroidDiagnosticsConfigRepository
 import com.kofikodr.kofipod.diagnostics.AndroidTelemetry
@@ -126,6 +128,7 @@ val androidPlatformModule =
         single { AndroidBackupFilePort(androidContext()) }
         single<BackupFilePort> { get<AndroidBackupFilePort>() }
         single<BackupFolderStore> { AndroidBackupFolderStore(androidContext()) }
+        single<ItunesStorefrontStore> { AndroidItunesStorefrontStore(androidContext()) }
         single<DbFileBytes> {
             val ctx = androidContext()
             val driver = get<app.cash.sqldelight.db.SqlDriver>()

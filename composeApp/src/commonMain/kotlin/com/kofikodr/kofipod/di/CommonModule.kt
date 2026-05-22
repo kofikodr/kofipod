@@ -26,6 +26,7 @@ import com.kofikodr.kofipod.backup.DbFileBytes
 import com.kofikodr.kofipod.backup.StageDbFile
 import com.kofikodr.kofipod.config.AppInfo
 import com.kofikodr.kofipod.data.api.GithubReleasesApi
+import com.kofikodr.kofipod.data.api.ItunesSearchApi
 import com.kofikodr.kofipod.data.api.PodcastIndexApi
 import com.kofikodr.kofipod.data.db.DatabaseFactory
 import com.kofikodr.kofipod.data.net.NetworkErrorHandler
@@ -34,6 +35,7 @@ import com.kofikodr.kofipod.data.recommend.PodcastIndexRecommendationApi
 import com.kofikodr.kofipod.data.recommend.RecommendationApi
 import com.kofikodr.kofipod.data.recommend.RecommendationsRepository
 import com.kofikodr.kofipod.data.recommend.RecommendationsSource
+import com.kofikodr.kofipod.data.repo.AggregateSearchSource
 import com.kofikodr.kofipod.data.repo.CategoriesRepository
 import com.kofikodr.kofipod.data.repo.CategoriesSource
 import com.kofikodr.kofipod.data.repo.ChaptersRepository
@@ -42,6 +44,7 @@ import com.kofikodr.kofipod.data.repo.DiscoverySource
 import com.kofikodr.kofipod.data.repo.DownloadRepository
 import com.kofikodr.kofipod.data.repo.EpisodeSource
 import com.kofikodr.kofipod.data.repo.EpisodesRepository
+import com.kofikodr.kofipod.data.repo.ItunesSearchRepository
 import com.kofikodr.kofipod.data.repo.LibraryRepository
 import com.kofikodr.kofipod.data.repo.RecentlyViewedRepository
 import com.kofikodr.kofipod.data.repo.SearchRepository
@@ -101,7 +104,30 @@ val commonDataModule =
         single { LibraryRepository(get()) }
         single { RecentlyViewedRepository(get()) }
         single { SearchRepository(get()) }
-        single<SearchSource> { get<SearchRepository>() }
+        // iTunes search uses the shared HttpClient (no auth required, no separate
+        // logging-sensitive client needed). The storefront store is platform-bound
+        // (SharedPreferences on Android, in-memory on iOS) so it resolves from the
+        // platform module.
+        single { ItunesSearchApi(get()) }
+        single {
+            ItunesSearchRepository(
+                api = get(),
+                storefronts = get<com.kofikodr.kofipod.data.search.ItunesStorefrontStore>(),
+            )
+        }
+        // Aggregator order: Podcast Index first (drives identity / numeric feedId
+        // for downstream callers). iTunes second (contributes broader catalogue
+        // and multi-source agreement boost). [AggregateSearchSource] takes care of
+        // dedup + ranking.
+        single<SearchSource> {
+            AggregateSearchSource(
+                sources =
+                    listOf(
+                        get<SearchRepository>(),
+                        get<ItunesSearchRepository>(),
+                    ),
+            )
+        }
         single { DiscoveryRepository(get()) }
         single<DiscoverySource> { get<DiscoveryRepository>() }
         single { CategoriesRepository() }
@@ -459,6 +485,7 @@ val commonDataModule =
                 appScope = get(org.koin.core.qualifier.named("appScope")),
                 errors = get(),
                 telemetry = get(),
+                podcastIndexApi = get(),
             )
         }
         // 7 positional deps: repo, episodes, opml, pro, paywallRouter,
@@ -508,6 +535,7 @@ val commonDataModule =
                 episodes = get<EpisodesRepository>(),
                 notifier = get(),
                 uiEvents = get(),
+                itunesStorefronts = get<com.kofikodr.kofipod.data.search.ItunesStorefrontStore>(),
             )
         }
         viewModel { AiSetupViewModel(config = get(), client = get(), summaries = get(), discuss = get()) }

@@ -63,6 +63,20 @@ class CrashReporterScrubberTest {
     }
 
     @Test
+    fun `scrubBreadcrumb drops http breadcrumbs containing iTunes search`() {
+        // The user's search term lands in the URL query; without dropping the whole
+        // breadcrumb the host + term would leak to crash reports even with
+        // query-string scrubbing elsewhere.
+        val crumb =
+            Breadcrumb(
+                category = "http",
+                message = "GET https://itunes.apple.com/search?term=secret-show&media=podcast",
+                data = mapOf("url" to "https://itunes.apple.com/search?term=secret-show"),
+            )
+        assertNull(CrashReporterScrubber.scrubBreadcrumb(crumb))
+    }
+
+    @Test
     fun `scrubBreadcrumb drops query category breadcrumbs`() {
         val crumb =
             Breadcrumb(

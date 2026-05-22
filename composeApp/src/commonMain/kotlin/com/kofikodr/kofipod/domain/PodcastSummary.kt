@@ -21,6 +21,10 @@ data class PodcastSummary(
      *  conversions; empty when the source didn't expose categories. The recommender uses these
      *  for scoring; everything else displays only [category]. */
     val categoryIds: List<Int> = emptyList(),
+    /** Search-time provenance — which index(es) returned this podcast. Default reflects
+     *  in-library / Podcast Index origin so existing call sites keep their meaning. The
+     *  aggregator unions this set when merging duplicates across sources. */
+    val sources: Set<SourceId> = setOf(SourceId.PodcastIndex),
 )
 
 fun PodcastFeed.toSummary(): PodcastSummary =
@@ -35,6 +39,7 @@ fun PodcastFeed.toSummary(): PodcastSummary =
         category = categories?.firstOrNull()?.label.orEmpty(),
         episodeCount = episodeCount,
         categoryIds = categories?.map { it.id }.orEmpty(),
+        sources = setOf(SourceId.PodcastIndex),
     )
 
 fun TrendingFeed.toSummary(): PodcastSummary =
@@ -49,6 +54,7 @@ fun TrendingFeed.toSummary(): PodcastSummary =
         category = categories?.firstOrNull()?.label.orEmpty(),
         episodeCount = 0,
         categoryIds = categories?.map { it.id }.orEmpty(),
+        sources = setOf(SourceId.PodcastIndex),
     )
 
 fun Podcast.toSummary(): PodcastSummary =
@@ -61,4 +67,5 @@ fun Podcast.toSummary(): PodcastSummary =
         artworkUrl = artworkUrl,
         feedUrl = feedUrl,
         category = primaryCategory,
+        sources = setOf(SourceId.PodcastIndex),
     )

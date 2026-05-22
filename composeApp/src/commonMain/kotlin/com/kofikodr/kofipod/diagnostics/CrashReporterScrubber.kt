@@ -14,7 +14,7 @@ data class Breadcrumb(
 object CrashReporterScrubber {
     private val urlWithQueryRegex = Regex("""(https?://[^\s?]+)\?[^\s]*""")
 
-    private val sensitiveHttpHosts = listOf("gemini", "googleapis", "podcastindex")
+    private val sensitiveHttpHosts = listOf("gemini", "googleapis", "podcastindex", "itunes.apple.com")
 
     private val droppedCategories = setOf("query")
 

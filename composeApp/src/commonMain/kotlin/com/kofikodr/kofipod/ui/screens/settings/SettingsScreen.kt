@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kofikodr.kofipod.config.AppInfo
 import com.kofikodr.kofipod.data.repo.UpdateUiState
+import com.kofikodr.kofipod.data.search.ItunesStorefront
 import com.kofikodr.kofipod.diagnostics.DiagnosticsCapabilities
 import com.kofikodr.kofipod.opml.OpmlAction
 import com.kofikodr.kofipod.pro.BillingCapability
@@ -104,6 +105,7 @@ fun SettingsScreen(
     var reviewerTapCount by remember { mutableStateOf(0) }
     var reviewerLastTapMs by remember { mutableStateOf(0L) }
     var reviewerCodeDialogVisible by remember { mutableStateOf(false) }
+    var storefrontPickerVisible by remember { mutableStateOf(false) }
 
     Column(
         Modifier
@@ -240,6 +242,17 @@ fun SettingsScreen(
             )
         }
 
+        SectionLabel("Search", topSpacing = 22.dp)
+        SettingRow(
+            icon = KPIconName.Search,
+            title = "Search storefront",
+            subtitle = "Apple iTunes catalogue · ${state.itunesStorefront.label}",
+            onClick = { storefrontPickerVisible = true },
+            trailing = {
+                KPIcon(name = KPIconName.ChevronRight, color = c.textMute, size = 18.dp)
+            },
+        )
+
         SectionLabel("AI features (optional)", topSpacing = 22.dp)
         SettingRow(
             icon = KPIconName.Pencil,
@@ -355,7 +368,7 @@ fun SettingsScreen(
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            "Podcast data powered by Podcast Index",
+            "Podcast data powered by Podcast Index and Apple iTunes",
             color = c.textMute,
             fontSize = 11.sp,
         )
@@ -370,6 +383,76 @@ fun SettingsScreen(
             },
         )
     }
+
+    if (storefrontPickerVisible) {
+        StorefrontPickerDialog(
+            selected = state.itunesStorefront,
+            onPick = { storefront ->
+                viewModel.setItunesStorefront(storefront)
+                storefrontPickerVisible = false
+            },
+            onCancel = { storefrontPickerVisible = false },
+        )
+    }
+}
+
+@Composable
+private fun StorefrontPickerDialog(
+    selected: ItunesStorefront,
+    onPick: (ItunesStorefront) -> Unit,
+    onCancel: () -> Unit,
+) {
+    val c = LocalKofipodColors.current
+    AlertDialog(
+        onDismissRequest = onCancel,
+        containerColor = c.surface,
+        title = {
+            Text("Search storefront", color = c.text, fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "Which national Apple Podcasts catalogue should be searched alongside Podcast Index?",
+                    color = c.textMute,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+                ItunesStorefront.entries.forEach { sf ->
+                    val active = sf == selected
+                    Row(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (active) c.purpleTint else Color.Transparent)
+                                .clickable { onPick(sf) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp)
+                                .testTag("storefrontRow_${sf.iso2}"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            sf.label,
+                            color = c.text,
+                            fontWeight = if (active) FontWeight.Bold else FontWeight.SemiBold,
+                            fontSize = 14.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (active) {
+                            KPIcon(name = KPIconName.Check, color = c.purple, size = 18.dp)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Text(
+                "Cancel",
+                color = c.textMute,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable { onCancel() }.padding(8.dp),
+            )
+        },
+    )
 }
 
 @Composable

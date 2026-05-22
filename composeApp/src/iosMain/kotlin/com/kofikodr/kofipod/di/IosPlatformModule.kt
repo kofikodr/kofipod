@@ -14,6 +14,8 @@ import com.kofikodr.kofipod.backup.DbFileBytes
 import com.kofikodr.kofipod.backup.IosBackupFilePort
 import com.kofikodr.kofipod.backup.IosBackupFolderStore
 import com.kofikodr.kofipod.backup.StageDbFile
+import com.kofikodr.kofipod.data.search.IosItunesStorefrontStore
+import com.kofikodr.kofipod.data.search.ItunesStorefrontStore
 import com.kofikodr.kofipod.diagnostics.CrashReporter
 import com.kofikodr.kofipod.diagnostics.DiagnosticsConfigRepository
 import com.kofikodr.kofipod.diagnostics.NoOpCrashReporter
@@ -65,6 +67,7 @@ val iosPlatformModule =
         single<OpmlFilePort> { IosOpmlFilePort() }
         single<BackupFilePort> { IosBackupFilePort() }
         single<BackupFolderStore> { IosBackupFolderStore() }
+        single<ItunesStorefrontStore> { IosItunesStorefrontStore() }
         single<DbFileBytes> { DbFileBytes { error("backup not supported on iOS") } }
         single<StageDbFile> { StageDbFile { error("backup not supported on iOS") } }
         single<CrashReporter> { NoOpCrashReporter }
