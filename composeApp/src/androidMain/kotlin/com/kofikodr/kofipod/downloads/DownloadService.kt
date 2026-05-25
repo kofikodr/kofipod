@@ -8,12 +8,18 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -25,6 +31,10 @@ class DownloadService : Service() {
     private val client = OkHttpClient()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val active = ConcurrentHashMap<String, Job>()
+
+    // Retained so ACTION_CANCEL can abort a *stalled* socket read — coroutine
+    // cancellation alone can't interrupt a thread blocked in OkHttp's read().
+    private val calls = ConcurrentHashMap<String, Call>()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -48,27 +58,52 @@ class DownloadService : Service() {
                 DownloadBroadcaster.tryEmit(
                     DownloadProgress(episodeId, 0, 0, DownloadProgress.State.Queued),
                 )
-                active[episodeId] =
-                    scope.launch {
-                        runCatching { downloadWithResume(episodeId, url, name) }
-                            .onFailure {
+                // Lazy-start so the Job is registered in `active` *before* the body can run.
+                // Otherwise a coroutine that finishes before the map assignment could leave a
+                // stale completed entry behind (stopIfIdle would never fire).
+                val job =
+                    scope.launch(start = CoroutineStart.LAZY) {
+                        try {
+                            downloadWithResume(episodeId, url, name)
+                        } catch (e: CancellationException) {
+                            // User cancelled — ACTION_CANCEL already emitted Paused.
+                            // Propagate so the coroutine completes as cancelled.
+                            throw e
+                        } catch (e: Throwable) {
+                            if (isActive) {
                                 DownloadBroadcaster.emit(
                                     DownloadProgress(
                                         episodeId,
                                         0,
                                         0,
                                         DownloadProgress.State.Failed,
-                                        it.message,
+                                        e.message,
                                     ),
                                 )
+                            } else {
+                                // Cancelled mid blocking-read: Call.cancel() surfaces as an
+                                // IOException, not CancellationException. Treat it as a pause,
+                                // never a failure. tryEmit because the coroutine is cancelling.
+                                DownloadBroadcaster.tryEmit(
+                                    DownloadProgress(episodeId, 0, 0, DownloadProgress.State.Paused),
+                                )
                             }
-                        active.remove(episodeId)
-                        stopIfIdle()
+                        } finally {
+                            // Value-conditional remove so a fast cancel+retry for the same
+                            // episode isn't clobbered by this (older) coroutine's cleanup.
+                            active.remove(episodeId, coroutineContext[Job])
+                            stopIfIdle()
+                        }
                     }
+                active[episodeId] = job
+                job.start()
             }
             ACTION_CANCEL -> {
                 val episodeId = intent.getStringExtra(EXTRA_EPISODE_ID) ?: return START_NOT_STICKY
+                // Cancel the Job *before* aborting the call so the IOException from the
+                // aborted read is observed as a cancel (isActive == false), not a failure.
                 active.remove(episodeId)?.cancel()
+                calls.remove(episodeId)?.cancel()
                 DownloadBroadcaster.tryEmit(
                     DownloadProgress(episodeId, 0, 0, DownloadProgress.State.Paused),
                 )
@@ -94,32 +129,45 @@ class DownloadService : Service() {
             Request.Builder().url(url).apply {
                 if (sentRange) addHeader("Range", "bytes=$existing-")
             }.build()
-        client.newCall(request).execute().use { resp ->
-            when (val plan = resumePlan(existingBytes = existing, sentRangeRequest = sentRange, responseCode = resp.code)) {
-                is ResumePlan.Fail -> {
-                    DownloadBroadcaster.emit(
-                        DownloadProgress(
-                            episodeId,
-                            existing,
-                            existing,
-                            DownloadProgress.State.Failed,
-                            "HTTP ${plan.httpCode}",
-                        ),
-                    )
-                    return
+        // Bail before the blocking execute() if we were already cancelled — the Call isn't
+        // registered yet, so ACTION_CANCEL's calls.remove() couldn't have aborted it.
+        currentCoroutineContext().ensureActive()
+        val call = client.newCall(request)
+        calls[episodeId] = call
+        try {
+            call.execute().use { resp ->
+                when (val plan = resumePlan(existingBytes = existing, sentRangeRequest = sentRange, responseCode = resp.code)) {
+                    is ResumePlan.Fail -> {
+                        DownloadBroadcaster.emit(
+                            DownloadProgress(
+                                episodeId,
+                                existing,
+                                existing,
+                                DownloadProgress.State.Failed,
+                                "HTTP ${plan.httpCode}",
+                            ),
+                        )
+                        return
+                    }
+                    is ResumePlan.Overwrite -> writeBody(episodeId, file, resp, startOffset = 0L, appendToExisting = false)
+                    is ResumePlan.Append -> writeBody(episodeId, file, resp, startOffset = plan.from, appendToExisting = true)
                 }
-                is ResumePlan.Overwrite -> writeBody(episodeId, file, resp, startOffset = 0L, appendToExisting = false)
-                is ResumePlan.Append -> writeBody(episodeId, file, resp, startOffset = plan.from, appendToExisting = true)
+                // Don't report Completed if a cancel landed right as the stream finished.
+                currentCoroutineContext().ensureActive()
+                DownloadBroadcaster.emit(
+                    DownloadProgress(
+                        episodeId = episodeId,
+                        downloadedBytes = file.length(),
+                        totalBytes = file.length(),
+                        state = DownloadProgress.State.Completed,
+                        localPath = file.absolutePath,
+                    ),
+                )
             }
-            DownloadBroadcaster.emit(
-                DownloadProgress(
-                    episodeId = episodeId,
-                    downloadedBytes = file.length(),
-                    totalBytes = file.length(),
-                    state = DownloadProgress.State.Completed,
-                    localPath = file.absolutePath,
-                ),
-            )
+        } finally {
+            // Conditional remove: only drop the entry if it's still *our* Call, so a retry
+            // that re-registered under the same episodeId keeps its (cancellable) Call.
+            calls.remove(episodeId, call)
         }
     }
 
@@ -142,26 +190,14 @@ class DownloadService : Service() {
         val total = if (contentLength > 0) contentLength + startOffset else -1L
         resp.body?.byteStream()?.use { stream ->
             FileOutputStream(file, appendToExisting).use { out ->
-                val buf = ByteArray(64 * 1024)
-                var read: Int
-                var received = startOffset
-                var lastEmit = 0L
-                while (stream.read(buf).also { read = it } > 0) {
-                    out.write(buf, 0, read)
-                    received += read
-                    val now = System.currentTimeMillis()
-                    if (now - lastEmit > 200) {
-                        DownloadBroadcaster.emit(
-                            DownloadProgress(
-                                episodeId,
-                                received,
-                                total.coerceAtLeast(received),
-                                DownloadProgress.State.Downloading,
-                            ),
-                        )
-                        lastEmit = now
-                    }
-                }
+                copyWithProgress(
+                    episodeId = episodeId,
+                    input = stream,
+                    output = out,
+                    startOffset = startOffset,
+                    total = total,
+                    emit = { DownloadBroadcaster.emit(it) },
+                )
             }
         }
     }
@@ -192,6 +228,10 @@ class DownloadService : Service() {
     }
 
     override fun onDestroy() {
+        // Cancelling the scope alone can't interrupt a thread blocked in OkHttp's read();
+        // abort the calls explicitly so no socket/IO thread leaks past teardown.
+        calls.values.forEach { it.cancel() }
+        calls.clear()
         scope.cancel()
         super.onDestroy()
     }
