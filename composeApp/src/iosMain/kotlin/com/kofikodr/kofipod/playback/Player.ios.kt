@@ -5,31 +5,31 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-actual class KofipodPlayer {
+actual class KofipodPlayer : Player {
     private val _state = MutableStateFlow(PlayerState())
-    actual val state: StateFlow<PlayerState> = _state.asStateFlow()
+    override val state: StateFlow<PlayerState> = _state.asStateFlow()
 
     // TODO: tap AVAudioEngine / MTAudioProcessingTap to produce real levels on iOS.
     private val _audioLevels = MutableStateFlow(FloatArray(AUDIO_LEVEL_BAR_COUNT))
-    actual val audioLevels: StateFlow<FloatArray> = _audioLevels.asStateFlow()
+    override val audioLevels: StateFlow<FloatArray> = _audioLevels.asStateFlow()
 
-    actual fun play(episode: PlayableEpisode) { /* TODO AVPlayer */ }
+    override fun play(episode: PlayableEpisode) { /* TODO AVPlayer */ }
 
-    actual fun pause() {}
+    override fun pause() {}
 
-    actual fun resume() {}
+    override fun resume() {}
 
-    actual fun seekTo(ms: Long) {}
+    override fun seekTo(ms: Long) {}
 
-    actual fun setSpeed(speed: Float) {}
+    override fun setSpeed(speed: Float) {}
 
-    actual fun skipForward() {}
+    override fun skipForward() {}
 
-    actual fun skipBack() {}
+    override fun skipBack() {}
 
-    actual fun setSleepTimer(ms: Long?) {}
+    override fun setSleepTimer(ms: Long?) {}
 
-    actual fun stop() {}
+    override fun stop() {}
 
-    actual fun release() {}
+    override fun release() {}
 }

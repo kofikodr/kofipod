@@ -9,8 +9,8 @@ import com.kofikodr.kofipod.data.repo.EpisodeSource
 import com.kofikodr.kofipod.data.repo.PlaybackRepository
 import com.kofikodr.kofipod.data.repo.SettingsRepository
 import com.kofikodr.kofipod.db.Episode
-import com.kofikodr.kofipod.playback.KofipodPlayer
 import com.kofikodr.kofipod.playback.PlayableEpisode
+import com.kofikodr.kofipod.playback.Player
 import com.kofikodr.kofipod.playback.PlayerState
 import com.kofikodr.kofipod.pro.PaywallRouter
 import com.kofikodr.kofipod.pro.ProEntitlement
@@ -42,7 +42,7 @@ data class PlayerUiState(
 )
 
 class PlayerViewModel(
-    private val player: KofipodPlayer,
+    private val player: Player,
     private val playback: PlaybackRepository,
     private val episodes: EpisodeSource,
     private val settings: SettingsRepository,

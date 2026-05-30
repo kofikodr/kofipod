@@ -5,6 +5,7 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import com.kofikodr.kofipod.db.KofipodDatabase
 import com.kofikodr.kofipod.db.PlaybackState
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 
@@ -18,7 +19,12 @@ data class InProgressEpisode(
     val artworkUrl: String,
 )
 
-class PlaybackRepository(private val db: KofipodDatabase) {
+class PlaybackRepository(
+    private val db: KofipodDatabase,
+    // Injectable so flow-driven VM tests can route SQLDelight emissions through a test
+    // scheduler (mirrors LibraryRepository.queryDispatcher). Production uses Default.
+    private val queryDispatcher: CoroutineDispatcher = Dispatchers.Default,
+) {
     fun save(
         episodeId: String,
         positionMs: Long,
@@ -58,7 +64,7 @@ class PlaybackRepository(private val db: KofipodDatabase) {
         db.playbackStateQueries
             .selectByEpisode(episodeId)
             .asFlow()
-            .mapToOneOrNull(Dispatchers.Default)
+            .mapToOneOrNull(queryDispatcher)
 
     fun mostRecentIncomplete(): PlaybackState? =
         db.playbackStateQueries

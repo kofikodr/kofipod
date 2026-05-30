@@ -28,7 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kofikodr.kofipod.playback.KofipodPlayer
+import com.kofikodr.kofipod.playback.Player
 import com.kofikodr.kofipod.playback.PlayerState
 import com.kofikodr.kofipod.ui.primitives.KPIcon
 import com.kofikodr.kofipod.ui.primitives.KPIconName
@@ -50,7 +50,7 @@ fun DockedMiniPlayer(
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val player = koinInject<KofipodPlayer>()
+    val player = koinInject<Player>()
     val state by player.state.collectAsState()
     if (state.episodeId == null) return
     DockedMiniPlayerContent(

@@ -6,8 +6,8 @@ import android.content.Intent
 import androidx.core.content.FileProvider
 import java.io.File
 
-actual class Sharer(private val context: Context) {
-    actual fun shareText(
+actual class PlatformSharer(private val context: Context) : Sharer {
+    override fun shareText(
         title: String,
         text: String,
     ) {
@@ -24,7 +24,7 @@ actual class Sharer(private val context: Context) {
         context.startActivity(chooser)
     }
 
-    actual fun shareFile(
+    override fun shareFile(
         title: String,
         path: String,
         mimeType: String,

@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.kofikodr.kofipod.share
 
-actual class Sharer {
-    actual fun shareText(
+actual class PlatformSharer : Sharer {
+    override fun shareText(
         title: String,
         text: String,
     ) {
         // TODO: present UIActivityViewController with [title, text]
     }
 
-    actual fun shareFile(
+    override fun shareFile(
         title: String,
         path: String,
         mimeType: String,

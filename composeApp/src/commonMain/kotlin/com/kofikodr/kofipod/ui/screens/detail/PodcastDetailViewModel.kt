@@ -20,8 +20,8 @@ import com.kofikodr.kofipod.domain.PodcastSummary
 import com.kofikodr.kofipod.domain.toSummary
 import com.kofikodr.kofipod.downloads.DownloadJob
 import com.kofikodr.kofipod.downloads.downloadFileName
-import com.kofikodr.kofipod.playback.KofipodPlayer
 import com.kofikodr.kofipod.playback.PlayableEpisode
+import com.kofikodr.kofipod.playback.Player
 import com.kofikodr.kofipod.share.Sharer
 import com.kofikodr.kofipod.ui.primitives.DownloadButtonState
 import com.kofikodr.kofipod.ui.primitives.toDownloadButtonState
@@ -72,7 +72,7 @@ class PodcastDetailViewModel(
     private val library: LibraryRepository,
     private val episodes: EpisodeSource,
     private val api: PodcastIndexApi,
-    private val player: KofipodPlayer,
+    private val player: Player,
     private val playback: PlaybackRepository,
     private val downloads: DownloadRepository,
     private val sharer: Sharer,

@@ -9,8 +9,8 @@ import com.kofikodr.kofipod.data.repo.DownloadRepository
 import com.kofikodr.kofipod.data.repo.EpisodeSource
 import com.kofikodr.kofipod.pkm.PkmExportCoordinator
 import com.kofikodr.kofipod.pkm.PkmExportRequest
-import com.kofikodr.kofipod.playback.KofipodPlayer
 import com.kofikodr.kofipod.playback.PlayableEpisode
+import com.kofikodr.kofipod.playback.Player
 import com.kofikodr.kofipod.pro.PaywallRouter
 import com.kofikodr.kofipod.pro.ProEntitlement
 import com.kofikodr.kofipod.pro.ProEntitlementRepository
@@ -61,7 +61,7 @@ data class BookmarksUiState(
  */
 class BookmarksViewModel(
     private val bookmarks: BookmarkRepository,
-    private val player: KofipodPlayer,
+    private val player: Player,
     private val episodes: EpisodeSource,
     private val downloads: DownloadRepository,
     private val pkmExport: PkmExportCoordinator,

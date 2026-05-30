@@ -25,7 +25,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.kofikodr.kofipod.playback.KofipodPlayer
+import com.kofikodr.kofipod.playback.Player
 import com.kofikodr.kofipod.ui.primitives.KPIcon
 import com.kofikodr.kofipod.ui.primitives.KPIconName
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
@@ -33,7 +33,7 @@ import org.koin.compose.koinInject
 
 @Composable
 fun MiniPlayer(onOpen: () -> Unit) {
-    val player = koinInject<KofipodPlayer>()
+    val player = koinInject<Player>()
     val state by player.state.collectAsState()
     if (state.episodeId == null) return
     val c = LocalKofipodColors.current

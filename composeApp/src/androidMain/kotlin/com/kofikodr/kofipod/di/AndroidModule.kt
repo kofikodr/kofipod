@@ -35,8 +35,10 @@ import com.kofikodr.kofipod.opml.AndroidOpmlFilePort
 import com.kofikodr.kofipod.opml.OpmlFilePort
 import com.kofikodr.kofipod.playback.KofipodPlayer
 import com.kofikodr.kofipod.playback.PlaybackCache
+import com.kofikodr.kofipod.playback.Player
 import com.kofikodr.kofipod.pro.AndroidEntitlementCache
 import com.kofikodr.kofipod.pro.EntitlementCache
+import com.kofikodr.kofipod.share.PlatformSharer
 import com.kofikodr.kofipod.share.Sharer
 import com.kofikodr.kofipod.snippets.FileChecker
 import com.kofikodr.kofipod.snippets.PcmDecoder
@@ -59,7 +61,7 @@ import java.io.File
 val androidPlatformModule =
     module {
         single { DatabaseFactory(androidContext()) }
-        single { KofipodPlayer(androidContext()) }
+        single<Player> { KofipodPlayer(androidContext()) }
         single { DownloadEngine(androidContext()) }
         single<DownloadEngineApi> { get<DownloadEngine>() }
         single<NetworkMonitor> { AndroidNetworkMonitor(androidContext()) }
@@ -75,7 +77,7 @@ val androidPlatformModule =
         single<AiSummaryScheduler> { AndroidAiSummaryScheduler(androidContext()) }
         single<PkmExportScheduler> { AndroidPkmExportScheduler(androidContext()) }
         single { Notifier(androidContext()) }
-        single { Sharer(androidContext()) }
+        single<Sharer> { PlatformSharer(androidContext()) }
         // Snippets (Slice 3) — Context-bound bindings live alongside Sharer because
         // they need an Android Context for FileProvider, MediaCodec, and the
         // foreground service launcher.

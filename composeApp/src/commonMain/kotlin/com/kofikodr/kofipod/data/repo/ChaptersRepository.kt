@@ -10,6 +10,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.Mutex
@@ -29,6 +30,9 @@ import kotlin.math.roundToLong
 class ChaptersRepository(
     private val db: KofipodDatabase,
     private val http: HttpClient,
+    // Injectable so flow-driven VM tests can route SQLDelight emissions through a test
+    // scheduler (mirrors LibraryRepository.queryDispatcher). Production uses Default.
+    private val queryDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     // Single Mutex covers all refreshes — chapter fetches are rare (only on detail-screen
     // open of an episode with chaptersUrl + no cached rows), so contention is negligible
@@ -36,7 +40,7 @@ class ChaptersRepository(
     private val refreshLock = Mutex()
 
     fun chaptersFlow(episodeId: String): Flow<List<EpisodeChapter>> =
-        db.episodeChapterQueries.selectByEpisode(episodeId).asFlow().mapToList(Dispatchers.Default)
+        db.episodeChapterQueries.selectByEpisode(episodeId).asFlow().mapToList(queryDispatcher)
 
     fun hasCached(episodeId: String): Boolean = db.episodeChapterQueries.countByEpisode(episodeId).executeAsOne() > 0L
 

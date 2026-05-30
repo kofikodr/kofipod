@@ -9,8 +9,8 @@ import com.kofikodr.kofipod.data.repo.DownloadRepository
 import com.kofikodr.kofipod.data.repo.EpisodeSource
 import com.kofikodr.kofipod.data.repo.LibraryRepository
 import com.kofikodr.kofipod.data.repo.PlaybackRepository
-import com.kofikodr.kofipod.playback.KofipodPlayer
 import com.kofikodr.kofipod.playback.PlayableEpisode
+import com.kofikodr.kofipod.playback.Player
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -46,7 +46,7 @@ class AskGeminiViewModel(
     private val library: LibraryRepository,
     private val playback: PlaybackRepository,
     private val downloads: DownloadRepository,
-    private val player: KofipodPlayer,
+    private val player: Player,
 ) : ViewModel() {
     val state: StateFlow<DiscussUiState> =
         repo.observeFor(episodeId).stateIn(

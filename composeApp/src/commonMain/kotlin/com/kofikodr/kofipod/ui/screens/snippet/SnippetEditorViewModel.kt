@@ -6,8 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.kofikodr.kofipod.data.repo.DownloadRepository
 import com.kofikodr.kofipod.data.repo.EpisodeSource
 import com.kofikodr.kofipod.data.repo.LibraryRepository
-import com.kofikodr.kofipod.playback.KofipodPlayer
 import com.kofikodr.kofipod.playback.PlayableEpisode
+import com.kofikodr.kofipod.playback.Player
 import com.kofikodr.kofipod.snippets.RenderProgress
 import com.kofikodr.kofipod.snippets.Snippet
 import com.kofikodr.kofipod.snippets.SnippetFormat
@@ -70,7 +70,7 @@ class SnippetEditorViewModel(
     private val snippetId: String,
     private val snippets: SnippetRepository,
     private val launcher: SnippetRenderLauncher,
-    private val player: KofipodPlayer,
+    private val player: Player,
     private val waveformGen: WaveformGenerator,
     private val episodes: EpisodeSource,
     private val library: LibraryRepository,

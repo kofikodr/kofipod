@@ -20,8 +20,8 @@ import com.kofikodr.kofipod.downloads.DownloadJob
 import com.kofikodr.kofipod.downloads.downloadFileName
 import com.kofikodr.kofipod.pkm.PkmExportCoordinator
 import com.kofikodr.kofipod.pkm.PkmExportRequest
-import com.kofikodr.kofipod.playback.KofipodPlayer
 import com.kofikodr.kofipod.playback.PlayableEpisode
+import com.kofikodr.kofipod.playback.Player
 import com.kofikodr.kofipod.pro.PaywallRouter
 import com.kofikodr.kofipod.pro.ProEntitlement
 import com.kofikodr.kofipod.pro.ProEntitlementRepository
@@ -67,7 +67,7 @@ class EpisodeDetailViewModel(
     private val library: LibraryRepository,
     private val playback: PlaybackRepository,
     private val downloads: DownloadRepository,
-    private val player: KofipodPlayer,
+    private val player: Player,
     private val sharer: Sharer,
     private val chapters: ChaptersRepository,
     aiConfig: AiConfigRepository,
@@ -187,22 +187,27 @@ class EpisodeDetailViewModel(
             if (s.isPlayingThis) player.pause() else player.resume()
             return
         }
-        viewModelScope.launch {
-            val sourceUrl = downloads.resolvedSourceUrl(episodeId, ep.enclosureUrl) ?: return@launch
-            val startMs = playback.positionFor(episodeId)
-            player.play(
-                PlayableEpisode(
-                    episodeId = episodeId,
-                    podcastId = pod.id,
-                    podcastTitle = pod.title,
-                    title = ep.title,
-                    artworkUrl = ep.imageUrl.ifBlank { pod.artworkUrl },
-                    sourceUrl = sourceUrl,
-                    startPositionMs = startMs,
-                    episodeNumber = ep.episodeNumber?.toInt(),
-                ),
-            )
-        }
+        // Start playback synchronously (not in viewModelScope.launch). The screen's
+        // onPlay handler navigates to the player immediately after this call, which
+        // tears down this ViewModel's scope — a launched coroutine would be cancelled
+        // before player.play() ran, so the episode never actually played (the player
+        // showed a stale/blank item). resolvedSourceUrl() and positionFor() are
+        // synchronous DB reads and player.play() must run on the main thread anyway,
+        // so there is nothing to offload here.
+        val sourceUrl = downloads.resolvedSourceUrl(episodeId, ep.enclosureUrl) ?: return
+        val startMs = playback.positionFor(episodeId)
+        player.play(
+            PlayableEpisode(
+                episodeId = episodeId,
+                podcastId = pod.id,
+                podcastTitle = pod.title,
+                title = ep.title,
+                artworkUrl = ep.imageUrl.ifBlank { pod.artworkUrl },
+                sourceUrl = sourceUrl,
+                startPositionMs = startMs,
+                episodeNumber = ep.episodeNumber?.toInt(),
+            ),
+        )
     }
 
     fun markPlayed() {
@@ -273,21 +278,22 @@ class EpisodeDetailViewModel(
         }
         val ep = s.episode ?: return
         val pod = s.podcast ?: return
-        viewModelScope.launch {
-            val sourceUrl = downloads.resolvedSourceUrl(episodeId, ep.enclosureUrl) ?: return@launch
-            player.play(
-                PlayableEpisode(
-                    episodeId = episodeId,
-                    podcastId = pod.id,
-                    podcastTitle = pod.title,
-                    title = ep.title,
-                    artworkUrl = ep.imageUrl.ifBlank { pod.artworkUrl },
-                    sourceUrl = sourceUrl,
-                    startPositionMs = startMs,
-                    episodeNumber = ep.episodeNumber?.toInt(),
-                ),
-            )
-        }
+        // Synchronous for the same reason as togglePlay(): onChapterTap navigates to the
+        // player right after this call, which would cancel a launched coroutine before
+        // player.play() ran.
+        val sourceUrl = downloads.resolvedSourceUrl(episodeId, ep.enclosureUrl) ?: return
+        player.play(
+            PlayableEpisode(
+                episodeId = episodeId,
+                podcastId = pod.id,
+                podcastTitle = pod.title,
+                title = ep.title,
+                artworkUrl = ep.imageUrl.ifBlank { pod.artworkUrl },
+                sourceUrl = sourceUrl,
+                startPositionMs = startMs,
+                episodeNumber = ep.episodeNumber?.toInt(),
+            ),
+        )
     }
 
     /**

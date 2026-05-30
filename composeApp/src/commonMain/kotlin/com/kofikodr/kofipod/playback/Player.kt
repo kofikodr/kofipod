@@ -42,7 +42,12 @@ data class PlayerState(
  */
 const val AUDIO_LEVEL_BAR_COUNT: Int = 24
 
-expect class KofipodPlayer {
+/**
+ * Playback contract the UI/ViewModels depend on. Extracted as an interface so the platform
+ * [KofipodPlayer] — an `expect`/`actual` class that can't be subclassed in tests — can be
+ * substituted by a fake in unit tests.
+ */
+interface Player {
     val state: StateFlow<PlayerState>
 
     /**
@@ -72,3 +77,10 @@ expect class KofipodPlayer {
 
     fun release()
 }
+
+/**
+ * Platform media player. The Android actual wraps Media3 ExoPlayer via a `MediaController`;
+ * the iOS actual is a no-op stub. Common code never constructs it — it is resolved from Koin
+ * as a [Player].
+ */
+expect class KofipodPlayer : Player

@@ -17,6 +17,7 @@ import com.kofikodr.kofipod.network.NetworkType
 import com.kofikodr.kofipod.snippets.FileCheckerApi
 import com.kofikodr.kofipod.ui.UiEvent
 import com.kofikodr.kofipod.ui.UiEventBus
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -90,6 +91,9 @@ class DownloadRepository(
     private val telemetry: com.kofikodr.kofipod.diagnostics.Telemetry,
     private val fileChecker: FileCheckerApi,
     private val uiEvents: UiEventBus,
+    // Injectable so flow-driven VM tests can route SQLDelight emissions through a test
+    // scheduler (mirrors LibraryRepository.queryDispatcher). Production uses Default.
+    private val queryDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     init {
         engine.events.onEach { p ->
@@ -154,10 +158,10 @@ class DownloadRepository(
         }
     }
 
-    fun all(): Flow<List<Download>> = db.downloadQueries.selectAll().asFlow().mapToList(Dispatchers.Default)
+    fun all(): Flow<List<Download>> = db.downloadQueries.selectAll().asFlow().mapToList(queryDispatcher)
 
     fun forEpisodeFlow(episodeId: String): Flow<Download?> =
-        db.downloadQueries.selectByEpisode(episodeId).asFlow().mapToOneOrNull(Dispatchers.Default)
+        db.downloadQueries.selectByEpisode(episodeId).asFlow().mapToOneOrNull(queryDispatcher)
 
     /**
      * Raw filesystem path for the completed local file for [episodeId], or null.
@@ -185,7 +189,7 @@ class DownloadRepository(
     fun allWithMeta(): Flow<List<DownloadRow>> =
         db.downloadQueries.selectAllWithMeta()
             .asFlow()
-            .mapToList(Dispatchers.Default)
+            .mapToList(queryDispatcher)
             .map { rows -> rows.map { it.toDownloadRow() } }
 
     fun completedWithMetaNow(): List<CompletedDownload> =

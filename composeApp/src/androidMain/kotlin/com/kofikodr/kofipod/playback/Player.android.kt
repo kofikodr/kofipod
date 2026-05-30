@@ -22,11 +22,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-actual class KofipodPlayer(private val context: Context) {
+// Fully-qualified supertype: this file imports androidx.media3.common.Player (for
+// Player.Listener), which would otherwise shadow our same-package playback.Player.
+actual class KofipodPlayer(private val context: Context) : com.kofikodr.kofipod.playback.Player {
     private val _state = MutableStateFlow(PlayerState())
-    actual val state: StateFlow<PlayerState> = _state.asStateFlow()
+    override val state: StateFlow<PlayerState> = _state.asStateFlow()
 
-    actual val audioLevels: StateFlow<FloatArray> = KofipodAudioAnalyzer.levels
+    override val audioLevels: StateFlow<FloatArray> = KofipodAudioAnalyzer.levels
 
     private var controller: MediaController? = null
     private var tickJob: Job? = null
@@ -144,36 +146,36 @@ actual class KofipodPlayer(private val context: Context) {
         c.play()
     }
 
-    actual fun play(episode: PlayableEpisode) {
+    override fun play(episode: PlayableEpisode) {
         val c = controller
         if (c != null) doPlay(c, episode) else pendingEpisode = episode
     }
 
-    actual fun pause() {
+    override fun pause() {
         controller?.pause()
     }
 
-    actual fun resume() {
+    override fun resume() {
         controller?.play()
     }
 
-    actual fun seekTo(ms: Long) {
+    override fun seekTo(ms: Long) {
         controller?.seekTo(ms)
     }
 
-    actual fun setSpeed(speed: Float) {
+    override fun setSpeed(speed: Float) {
         controller?.setPlaybackSpeed(speed)
     }
 
-    actual fun skipForward() {
+    override fun skipForward() {
         controller?.let { it.seekTo(it.currentPosition + 30_000) }
     }
 
-    actual fun skipBack() {
+    override fun skipBack() {
         controller?.let { it.seekTo((it.currentPosition - 10_000).coerceAtLeast(0)) }
     }
 
-    actual fun setSleepTimer(ms: Long?) {
+    override fun setSleepTimer(ms: Long?) {
         sleepJob?.cancel()
         sleepJob = null
         if (ms == null || ms <= 0L) {
@@ -192,7 +194,7 @@ actual class KofipodPlayer(private val context: Context) {
         pushState()
     }
 
-    actual fun stop() {
+    override fun stop() {
         // stop() alone leaves the current MediaItem loaded, so the mini-player keeps
         // showing it. clearMediaItems() drops the queue and fires onMediaItemTransition,
         // which pushes a state with a null episodeId — the mini-player's dismiss signal.
@@ -202,7 +204,7 @@ actual class KofipodPlayer(private val context: Context) {
         }
     }
 
-    actual fun release() {
+    override fun release() {
         tickJob?.cancel()
         tickJob = null
         sleepJob?.cancel()
