@@ -2,7 +2,6 @@
 package com.kofikodr.kofipod.diagnostics
 
 import com.kofikodr.kofipod.config.AppInfo
-import com.kofikodr.kofipod.config.BuildKonfig
 import io.sentry.kotlin.multiplatform.Sentry
 import io.sentry.kotlin.multiplatform.protocol.Breadcrumb as SentryBreadcrumb
 
@@ -22,9 +21,10 @@ class AndroidCrashReporter : CrashReporter {
 
     override fun enable() {
         if (enabled) return
-        if (BuildKonfig.SENTRY_DSN.isBlank()) return
+        val dsn = DiagnosticsConfig.sentryDsn
+        if (dsn.isBlank()) return
         Sentry.init { options ->
-            options.dsn = BuildKonfig.SENTRY_DSN
+            options.dsn = dsn
             options.release = AppInfo.versionName
             options.environment = if (AppInfo.isDebugBuild) "debug" else "release"
             options.attachStackTrace = true
