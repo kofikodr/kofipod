@@ -2,6 +2,7 @@
 package com.kofikodr.kofipod.data.db
 
 import android.content.Context
+import androidx.sqlite.db.SupportSQLiteDatabase
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.kofikodr.kofipod.db.KofipodDatabase
@@ -22,5 +23,11 @@ actual class DatabaseFactory(private val context: Context) {
             context = context,
             name = "kofipod.db",
             factory = RequerySQLiteOpenHelperFactory(),
+            callback =
+                object : AndroidSqliteDriver.Callback(KofipodDatabase.Schema) {
+                    override fun onConfigure(db: SupportSQLiteDatabase) {
+                        db.setForeignKeyConstraintsEnabled(true)
+                    }
+                },
         )
 }
