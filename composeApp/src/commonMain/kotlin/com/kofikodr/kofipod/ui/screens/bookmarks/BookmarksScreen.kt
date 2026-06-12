@@ -29,6 +29,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +62,43 @@ fun BookmarksScreen(
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
     viewModel: BookmarksViewModel = koinViewModel(),
+) {
+    BookmarksRouteGate(
+        canEnterRoute = viewModel.canEnterRoute(),
+        requestRoutePaywall = viewModel::requestRoutePaywall,
+        onBack = onBack,
+    ) {
+        BookmarksContent(
+            onBack = onBack,
+            onOpenPlayer = onOpenPlayer,
+            viewModel = viewModel,
+        )
+    }
+}
+
+@Composable
+internal fun BookmarksRouteGate(
+    canEnterRoute: Boolean,
+    requestRoutePaywall: () -> Unit,
+    onBack: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    if (!canEnterRoute) {
+        LaunchedEffect(Unit) {
+            requestRoutePaywall()
+            onBack()
+        }
+        return
+    }
+
+    content()
+}
+
+@Composable
+private fun BookmarksContent(
+    onBack: () -> Unit,
+    onOpenPlayer: () -> Unit,
+    viewModel: BookmarksViewModel,
 ) {
     val state by viewModel.state.collectAsState()
     val c = LocalKofipodColors.current

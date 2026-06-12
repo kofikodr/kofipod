@@ -131,6 +131,12 @@ class BookmarksViewModel(
             }
     }
 
+    fun canEnterRoute(): Boolean = canOpenBookmarksRoute(pro.state.value)
+
+    fun requestRoutePaywall() {
+        paywallRouter.requestPaywall("paywall_bookmark")
+    }
+
     fun delete(id: String) {
         // SQLDelight write — push off the Main dispatcher to avoid jank.
         viewModelScope.launch { bookmarks.deleteById(id) }
@@ -177,3 +183,5 @@ class BookmarksViewModel(
             (bookmark.note?.lowercase()?.contains(needle) == true)
     }
 }
+
+internal fun canOpenBookmarksRoute(entitlement: ProEntitlement): Boolean = entitlement is ProEntitlement.Pro
