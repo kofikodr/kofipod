@@ -17,9 +17,16 @@ CREATE TABLE Podcast (
 CREATE INDEX podcast_listId ON Podcast(listId);
 
 insert:
-INSERT OR REPLACE INTO Podcast
+INSERT INTO Podcast
 (id, title, author, description, artworkUrl, feedUrl, listId, autoDownloadEnabled, notifyNewEpisodesEnabled, lastCheckedAt, addedAt, primaryCategory)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+    title = excluded.title,
+    author = excluded.author,
+    description = excluded.description,
+    artworkUrl = excluded.artworkUrl,
+    feedUrl = excluded.feedUrl,
+    primaryCategory = excluded.primaryCategory;
 
 selectAll:
 SELECT * FROM Podcast ORDER BY title COLLATE NOCASE ASC;

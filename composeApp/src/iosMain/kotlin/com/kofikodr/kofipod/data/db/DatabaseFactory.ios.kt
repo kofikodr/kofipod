@@ -6,5 +6,14 @@ import app.cash.sqldelight.driver.native.NativeSqliteDriver
 import com.kofikodr.kofipod.db.KofipodDatabase
 
 actual class DatabaseFactory {
-    actual fun createDriver(): SqlDriver = NativeSqliteDriver(KofipodDatabase.Schema, "kofipod.db")
+    actual fun createDriver(): SqlDriver =
+        NativeSqliteDriver(
+            schema = KofipodDatabase.Schema,
+            name = "kofipod.db",
+            onConfiguration = { config ->
+                config.copy(
+                    extendedConfig = config.extendedConfig.copy(foreignKeyConstraints = true),
+                )
+            },
+        )
 }
