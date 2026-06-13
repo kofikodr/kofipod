@@ -491,7 +491,7 @@ val commonDataModule =
                 appScope = get(org.koin.core.qualifier.named("appScope")),
                 errors = get(),
                 telemetry = get(),
-                podcastIndexApi = get(),
+                feedLookup = get(),
             )
         }
         // 7 positional deps: repo, episodes, opml, pro, paywallRouter,
