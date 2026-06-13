@@ -205,6 +205,9 @@ internal suspend fun streamApkInto(
             if (existingBytes > 0L) header(HttpHeaders.Range, "bytes=$existingBytes-")
         }
         .execute { response ->
+            if (response.status.value !in 200..299) {
+                throw UpdateDownloadHttpException(response.status.value)
+            }
             val resumed = existingBytes > 0L && response.status == HttpStatusCode.PartialContent
             if (!resumed && partial.exists()) {
                 // Server ignored our Range (200 OK) or we had no partial to begin with —
@@ -238,3 +241,7 @@ internal suspend fun streamApkInto(
     }
     return target.absolutePath
 }
+
+internal class UpdateDownloadHttpException(
+    val statusCode: Int,
+) : IllegalStateException("Update APK download failed with HTTP $statusCode")

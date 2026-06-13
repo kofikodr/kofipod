@@ -15,6 +15,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -103,6 +104,28 @@ class UpdateInstallerTest {
             assertEquals(APK_SIZE, final.length())
             assertContentEquals(fullBody, final.readBytes(), "final must reflect the fresh body, not stale partial")
             assertFalse(File(dir, "kofipod-1.4.0.apk.partial").exists(), "partial must be gone after clean restart")
+        }
+
+    @Test
+    fun `non-success response is rejected without promoting the error body`() =
+        runTest {
+            val partial = File(dir, "kofipod-1.4.0.apk.partial")
+            val final = File(dir, "kofipod-1.4.0.apk")
+            val existingPartial = "partial bytes".encodeToByteArray()
+            val existingFinal = "previous apk".encodeToByteArray()
+            partial.writeBytes(existingPartial)
+            final.writeBytes(existingFinal)
+
+            val client = newClient { _ -> respond("not an apk".encodeToByteArray(), HttpStatusCode.NotFound) }
+
+            val error =
+                assertFailsWith<UpdateDownloadHttpException> {
+                    streamApkInto(client, dir, info, onProgress = { _, _ -> })
+                }
+
+            assertEquals(404, error.statusCode)
+            assertContentEquals(existingPartial, partial.readBytes(), "failed response must not replace the resumable partial")
+            assertContentEquals(existingFinal, final.readBytes(), "failed response must not be promoted over the last good APK")
         }
 
     // NOTE on the partial-preservation-on-exception invariant: streamApkInto's structure
