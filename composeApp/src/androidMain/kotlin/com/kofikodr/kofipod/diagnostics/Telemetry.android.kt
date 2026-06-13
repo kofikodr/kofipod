@@ -3,7 +3,6 @@ package com.kofikodr.kofipod.diagnostics
 
 import android.content.Context
 import com.aptabase.Aptabase
-import com.kofikodr.kofipod.config.BuildKonfig
 
 /**
  * Android-side usage telemetry using Aptabase. Identifier-less by
@@ -19,8 +18,9 @@ class AndroidTelemetry(private val context: Context) : Telemetry {
 
     override fun enable() {
         if (enabled) return
-        if (BuildKonfig.APTABASE_APP_KEY.isBlank()) return
-        Aptabase.instance.initialize(context, BuildKonfig.APTABASE_APP_KEY)
+        val key = DiagnosticsConfig.aptabaseAppKey
+        if (key.isBlank()) return
+        Aptabase.instance.initialize(context, key)
         enabled = true
     }
 
@@ -36,8 +36,8 @@ class AndroidTelemetry(private val context: Context) : Telemetry {
     }
 
     override fun debugSmokeTest(eventName: String): String {
-        val key = BuildKonfig.APTABASE_APP_KEY
-        if (key.isBlank()) return "FAIL: APTABASE_APP_KEY blank in BuildKonfig"
+        val key = DiagnosticsConfig.aptabaseAppKey
+        if (key.isBlank()) return "FAIL: APTABASE_APP_KEY blank in DiagnosticsConfig"
         return runCatching {
             Aptabase.instance.initialize(context, key)
             Aptabase.instance.trackEvent(eventName, emptyMap())

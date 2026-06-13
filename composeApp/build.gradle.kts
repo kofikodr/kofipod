@@ -186,6 +186,10 @@ android {
             // scoped to the Play flavor so public FOSS builds do not ship them.
             buildConfigField("String", "PODCAST_INDEX_KEY", buildConfigStringLiteral(readSecret("PODCAST_INDEX_KEY")))
             buildConfigField("String", "PODCAST_INDEX_SECRET", buildConfigStringLiteral(readSecret("PODCAST_INDEX_SECRET")))
+            // Diagnostics keys point at the maintainer's accounts and belong
+            // only in the Play/revenue flavor.
+            buildConfigField("String", "SENTRY_DSN", buildConfigStringLiteral(readSecret("SENTRY_DSN")))
+            buildConfigField("String", "APTABASE_APP_KEY", buildConfigStringLiteral(readSecret("APTABASE_APP_KEY")))
         }
         create("foss") {
             dimension = "distribution"
@@ -207,6 +211,10 @@ android {
             // published FOSS APK must not embed the Play account credentials.
             buildConfigField("String", "PODCAST_INDEX_KEY", "\"\"")
             buildConfigField("String", "PODCAST_INDEX_SECRET", "\"\"")
+            // Public FOSS builds must not report into the maintainer's
+            // diagnostics accounts.
+            buildConfigField("String", "SENTRY_DSN", "\"\"")
+            buildConfigField("String", "APTABASE_APP_KEY", "\"\"")
         }
     }
     compileOptions {
@@ -315,16 +323,24 @@ fun podcastIndexSecrets(): List<Pair<String, String>> =
 fun configuredPodcastIndexSecrets(): List<Pair<String, String>> =
     podcastIndexSecrets().filter { (_, value) -> value.isNotBlank() }
 
+fun diagnosticsSecrets(): List<Pair<String, String>> =
+    listOf(
+        "SENTRY_DSN" to readSecret("SENTRY_DSN"),
+        "APTABASE_APP_KEY" to readSecret("APTABASE_APP_KEY"),
+    )
+
+fun configuredDiagnosticsSecrets(): List<Pair<String, String>> =
+    diagnosticsSecrets().filter { (_, value) -> value.isNotBlank() }
+
 buildkonfig {
     packageName = "com.kofikodr.kofipod.config"
     defaultConfigs {
         buildConfigField(STRING, "USER_AGENT", "Kofipod/$appVersionName (github.com/kofikodr/kofipod)")
         buildConfigField(STRING, "VERSION_NAME", appVersionName)
         buildConfigField(INT, "VERSION_CODE", appVersionCode.toString())
-        buildConfigField(STRING, "SENTRY_DSN", readSecret("SENTRY_DSN"))
-        buildConfigField(STRING, "APTABASE_APP_KEY", readSecret("APTABASE_APP_KEY"))
-        // Flavor-specific Android fields such as the sideload updater and Play
-        // reviewer unlock hash live in AGP BuildConfig, not shared BuildKonfig.
+        // Flavor-specific Android secrets (reviewer unlock hash, Podcast Index
+        // credentials, and diagnostics keys) live in AGP BuildConfig, not shared
+        // BuildKonfig.
     }
 }
 
@@ -400,6 +416,82 @@ tasks.register("verifyPlayDebugIncludesPodcastIndexSecrets") {
         val missing = secrets.map { (name, _) -> name }.filterNot { it in matches }
         check(missing.isEmpty()) {
             "Play debug APK is missing configured Podcast Index values for: ${missing.joinToString()}"
+        }
+    }
+}
+
+fun scanApkForDiagnosticsSecrets(
+    apk: File,
+    secrets: List<Pair<String, String>>,
+): List<String> {
+    val secretBytes = secrets.map { (name, value) -> name to value.toByteArray(Charsets.UTF_8) }
+    val matches = mutableListOf<String>()
+    ZipFile(apk).use { zip ->
+        val entries = zip.entries()
+        while (entries.hasMoreElements()) {
+            val entry = entries.nextElement()
+            if (entry.isDirectory) continue
+            val bytes = zip.getInputStream(entry).use { it.readBytes() }
+            secretBytes.forEach { (name, value) ->
+                if (bytes.containsByteSequence(value)) {
+                    matches += "$name in ${entry.name}"
+                }
+            }
+        }
+    }
+    return matches
+}
+
+tasks.register("verifyFossReleaseExcludesDiagnosticsSecrets") {
+    description = "Assemble the FOSS release APK and fail if configured diagnostics secrets are embedded."
+    group = "verification"
+    dependsOn("assembleFossRelease")
+
+    doLast {
+        val secrets = configuredDiagnosticsSecrets()
+        if (secrets.isEmpty()) {
+            logger.lifecycle("No diagnostics secrets configured; FOSS release APK secret scan skipped.")
+            return@doLast
+        }
+
+        val apkDir = layout.buildDirectory.dir("outputs/apk/foss/release").get().asFile
+        val apk = apkDir.listFiles()
+            ?.singleOrNull { file -> file.extension == "apk" }
+            ?: error("Expected exactly one FOSS release APK in ${apkDir.absolutePath}")
+        val matches = scanApkForDiagnosticsSecrets(apk, secrets)
+        check(matches.isEmpty()) {
+            "FOSS release APK contains diagnostics secret values: ${matches.joinToString()}"
+        }
+    }
+}
+
+tasks.register("verifyPlayDebugIncludesDiagnosticsSecrets") {
+    description = "Assemble the Play debug APK and verify configured diagnostics secrets reach that flavor."
+    group = "verification"
+    dependsOn("assemblePlayDebug")
+
+    doLast {
+        val secrets = diagnosticsSecrets()
+        val missingSecrets = secrets.filter { (_, value) -> value.isBlank() }.map { (name, _) -> name }
+        if (missingSecrets.isNotEmpty()) {
+            val allowMissingSecrets =
+                providers.gradleProperty("allowMissingDiagnosticsSecrets").orNull.toBoolean()
+            check(allowMissingSecrets) {
+                "Diagnostics secrets are required for Play verification; missing: ${missingSecrets.joinToString()}. " +
+                    "Set -PallowMissingDiagnosticsSecrets=true only for fork/no-secret builds."
+            }
+            logger.lifecycle("No diagnostics secrets configured; Play debug APK secret scan explicitly skipped.")
+            return@doLast
+        }
+
+        val apkDir = layout.buildDirectory.dir("outputs/apk/play/debug").get().asFile
+        val apk = apkDir.listFiles()
+            ?.singleOrNull { file -> file.extension == "apk" }
+            ?: error("Expected exactly one Play debug APK in ${apkDir.absolutePath}")
+        val matches = scanApkForDiagnosticsSecrets(apk, secrets).map { it.substringBefore(" in ") }.toSet()
+        val missing = secrets.map { (name, _) -> name }.filterNot { it in matches }
+        check(missing.isEmpty()) {
+            "Play debug APK is missing configured diagnostics values for: ${missing.joinToString()}"
         }
     }
 }

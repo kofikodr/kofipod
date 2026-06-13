@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.kofikodr.kofipod.diagnostics
 
-import com.kofikodr.kofipod.config.BuildKonfig
-
 /**
  * Build-time view on which diagnostic channels are even reachable in
  * this APK. Forks / F-Droid builds with no secrets configured will see
@@ -11,7 +9,7 @@ import com.kofikodr.kofipod.config.BuildKonfig
  * the user can't actually opt into.
  */
 object DiagnosticsCapabilities {
-    val crashReportingAvailable: Boolean = BuildKonfig.SENTRY_DSN.isNotBlank()
-    val usageTelemetryAvailable: Boolean = BuildKonfig.APTABASE_APP_KEY.isNotBlank()
+    val crashReportingAvailable: Boolean = DiagnosticsConfig.sentryDsn.isNotBlank()
+    val usageTelemetryAvailable: Boolean = DiagnosticsConfig.aptabaseAppKey.isNotBlank()
     val anyAvailable: Boolean get() = crashReportingAvailable || usageTelemetryAvailable
 }
