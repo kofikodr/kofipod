@@ -55,9 +55,6 @@ class DownloadService : Service() {
                 val episodeId = intent.getStringExtra(EXTRA_EPISODE_ID) ?: return START_NOT_STICKY
                 val url = intent.getStringExtra(EXTRA_URL) ?: return START_NOT_STICKY
                 val name = intent.getStringExtra(EXTRA_FILENAME) ?: episodeId
-                DownloadBroadcaster.tryEmit(
-                    DownloadProgress(episodeId, 0, 0, DownloadProgress.State.Queued),
-                )
                 // Lazy-start so the Job is registered in `active` *before* the body can run.
                 // Otherwise a coroutine that finishes before the map assignment could leave a
                 // stale completed entry behind (stopIfIdle would never fire).
@@ -95,8 +92,17 @@ class DownloadService : Service() {
                             stopIfIdle()
                         }
                     }
-                active[episodeId] = job
-                job.start()
+                startActiveDownloadIfIdle(
+                    active = active,
+                    episodeId = episodeId,
+                    job = job,
+                    onQueued = {
+                        DownloadBroadcaster.tryEmit(
+                            DownloadProgress(episodeId, 0, 0, DownloadProgress.State.Queued),
+                        )
+                    },
+                    startJob = Job::start,
+                )
             }
             ACTION_CANCEL -> {
                 val episodeId = intent.getStringExtra(EXTRA_EPISODE_ID) ?: return START_NOT_STICKY
@@ -245,4 +251,21 @@ class DownloadService : Service() {
         private const val CHANNEL_ID = "kofipod.downloads"
         private const val NOTIF_ID = 77
     }
+}
+
+internal fun startActiveDownloadIfIdle(
+    active: ConcurrentHashMap<String, Job>,
+    episodeId: String,
+    job: Job,
+    onQueued: () -> Unit,
+    startJob: (Job) -> Unit,
+): Boolean {
+    if (active.putIfAbsent(episodeId, job) != null) {
+        job.cancel()
+        return false
+    }
+
+    onQueued()
+    startJob(job)
+    return true
 }
