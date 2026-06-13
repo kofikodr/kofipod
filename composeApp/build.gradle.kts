@@ -3,6 +3,7 @@ import com.codingfeline.buildkonfig.compiler.FieldSpec.Type.STRING
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
+import java.util.zip.ZipFile
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -181,6 +182,10 @@ android {
             // SHA-256 of the reviewer unlock code. Play-only: FOSS is already Pro
             // and must not ship this revenue-build reviewer secret.
             buildConfigField("String", "REVIEWER_UNLOCK_HASH", buildConfigStringLiteral(readSecret("REVIEWER_UNLOCK_HASH")))
+            // Podcast Index credentials are account-bound secrets. Keep them
+            // scoped to the Play flavor so public FOSS builds do not ship them.
+            buildConfigField("String", "PODCAST_INDEX_KEY", buildConfigStringLiteral(readSecret("PODCAST_INDEX_KEY")))
+            buildConfigField("String", "PODCAST_INDEX_SECRET", buildConfigStringLiteral(readSecret("PODCAST_INDEX_SECRET")))
         }
         create("foss") {
             dimension = "distribution"
@@ -198,6 +203,10 @@ android {
             // FOSS is unconditionally Pro via FossBillingClientPort and must not
             // embed the Play reviewer unlock secret.
             buildConfigField("String", "REVIEWER_UNLOCK_HASH", "\"\"")
+            // FOSS self-builders can inject their own credentials in forks; the
+            // published FOSS APK must not embed the Play account credentials.
+            buildConfigField("String", "PODCAST_INDEX_KEY", "\"\"")
+            buildConfigField("String", "PODCAST_INDEX_SECRET", "\"\"")
         }
     }
     compileOptions {
@@ -280,11 +289,35 @@ fun readSecret(name: String): String {
 fun buildConfigStringLiteral(value: String): String =
     "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
+fun ByteArray.containsByteSequence(needle: ByteArray): Boolean {
+    if (needle.isEmpty()) return true
+    if (needle.size > size) return false
+
+    for (start in 0..(size - needle.size)) {
+        var matched = true
+        for (offset in needle.indices) {
+            if (this[start + offset] != needle[offset]) {
+                matched = false
+                break
+            }
+        }
+        if (matched) return true
+    }
+    return false
+}
+
+fun podcastIndexSecrets(): List<Pair<String, String>> =
+    listOf(
+        "PODCAST_INDEX_KEY" to readSecret("PODCAST_INDEX_KEY"),
+        "PODCAST_INDEX_SECRET" to readSecret("PODCAST_INDEX_SECRET"),
+    )
+
+fun configuredPodcastIndexSecrets(): List<Pair<String, String>> =
+    podcastIndexSecrets().filter { (_, value) -> value.isNotBlank() }
+
 buildkonfig {
     packageName = "com.kofikodr.kofipod.config"
     defaultConfigs {
-        buildConfigField(STRING, "PODCAST_INDEX_KEY", readSecret("PODCAST_INDEX_KEY"))
-        buildConfigField(STRING, "PODCAST_INDEX_SECRET", readSecret("PODCAST_INDEX_SECRET"))
         buildConfigField(STRING, "USER_AGENT", "Kofipod/$appVersionName (github.com/kofikodr/kofipod)")
         buildConfigField(STRING, "VERSION_NAME", appVersionName)
         buildConfigField(INT, "VERSION_CODE", appVersionCode.toString())
@@ -292,6 +325,82 @@ buildkonfig {
         buildConfigField(STRING, "APTABASE_APP_KEY", readSecret("APTABASE_APP_KEY"))
         // Flavor-specific Android fields such as the sideload updater and Play
         // reviewer unlock hash live in AGP BuildConfig, not shared BuildKonfig.
+    }
+}
+
+fun scanApkForPodcastIndexSecrets(
+    apk: File,
+    secrets: List<Pair<String, String>>,
+): List<String> {
+    val secretBytes = secrets.map { (name, value) -> name to value.toByteArray(Charsets.UTF_8) }
+    val matches = mutableListOf<String>()
+    ZipFile(apk).use { zip ->
+        val entries = zip.entries()
+        while (entries.hasMoreElements()) {
+            val entry = entries.nextElement()
+            if (entry.isDirectory) continue
+            val bytes = zip.getInputStream(entry).use { it.readBytes() }
+            secretBytes.forEach { (name, value) ->
+                if (bytes.containsByteSequence(value)) {
+                    matches += "$name in ${entry.name}"
+                }
+            }
+        }
+    }
+    return matches
+}
+
+tasks.register("verifyFossReleaseExcludesPodcastIndexSecrets") {
+    description = "Assemble the FOSS release APK and fail if configured Podcast Index secrets are embedded."
+    group = "verification"
+    dependsOn("assembleFossRelease")
+
+    doLast {
+        val secrets = configuredPodcastIndexSecrets()
+        if (secrets.isEmpty()) {
+            logger.lifecycle("No Podcast Index credentials configured; FOSS release APK secret scan skipped.")
+            return@doLast
+        }
+
+        val apkDir = layout.buildDirectory.dir("outputs/apk/foss/release").get().asFile
+        val apk = apkDir.listFiles()
+            ?.singleOrNull { file -> file.extension == "apk" }
+            ?: error("Expected exactly one FOSS release APK in ${apkDir.absolutePath}")
+        val matches = scanApkForPodcastIndexSecrets(apk, secrets)
+        check(matches.isEmpty()) {
+            "FOSS release APK contains Podcast Index secret values: ${matches.joinToString()}"
+        }
+    }
+}
+
+tasks.register("verifyPlayDebugIncludesPodcastIndexSecrets") {
+    description = "Assemble the Play debug APK and verify configured Podcast Index secrets reach that flavor."
+    group = "verification"
+    dependsOn("assemblePlayDebug")
+
+    doLast {
+        val secrets = podcastIndexSecrets()
+        val missingSecrets = secrets.filter { (_, value) -> value.isBlank() }.map { (name, _) -> name }
+        if (missingSecrets.isNotEmpty()) {
+            val allowMissingSecrets =
+                providers.gradleProperty("allowMissingPodcastIndexSecrets").orNull.toBoolean()
+            check(allowMissingSecrets) {
+                "Podcast Index credentials are required for Play verification; missing: ${missingSecrets.joinToString()}. " +
+                    "Set -PallowMissingPodcastIndexSecrets=true only for fork/no-secret builds."
+            }
+            logger.lifecycle("No Podcast Index credentials configured; Play debug APK secret scan explicitly skipped.")
+            return@doLast
+        }
+
+        val apkDir = layout.buildDirectory.dir("outputs/apk/play/debug").get().asFile
+        val apk = apkDir.listFiles()
+            ?.singleOrNull { file -> file.extension == "apk" }
+            ?: error("Expected exactly one Play debug APK in ${apkDir.absolutePath}")
+        val matches = scanApkForPodcastIndexSecrets(apk, secrets).map { it.substringBefore(" in ") }.toSet()
+        val missing = secrets.map { (name, _) -> name }.filterNot { it in matches }
+        check(missing.isEmpty()) {
+            "Play debug APK is missing configured Podcast Index values for: ${missing.joinToString()}"
+        }
     }
 }
 

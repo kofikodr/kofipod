@@ -60,8 +60,8 @@ class PodcastIndexApi(private val client: PodcastIndexClient) {
         fun create(): PodcastIndexApi =
             PodcastIndexApi(
                 Ktor3PodcastIndexClient(
-                    authKey = BuildKonfig.PODCAST_INDEX_KEY,
-                    authSecret = BuildKonfig.PODCAST_INDEX_SECRET,
+                    authKey = PodcastIndexCredentials.key,
+                    authSecret = PodcastIndexCredentials.secret,
                     userAgent = BuildKonfig.USER_AGENT,
                 ),
             )
