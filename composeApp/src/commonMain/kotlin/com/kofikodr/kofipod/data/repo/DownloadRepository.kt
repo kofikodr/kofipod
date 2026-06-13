@@ -96,6 +96,8 @@ class DownloadRepository(
     private val queryDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     init {
+        db.downloadQueries.pauseActiveOnStartup()
+
         engine.events.onEach { p ->
             when (p.state) {
                 DownloadProgress.State.Queued ->

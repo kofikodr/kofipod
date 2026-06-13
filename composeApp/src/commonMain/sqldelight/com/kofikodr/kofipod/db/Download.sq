@@ -56,6 +56,9 @@ SELECT COALESCE(SUM(totalBytes), 0) AS total FROM Download WHERE state = 'Comple
 updateState:
 UPDATE Download SET state = ?, errorMessage = ? WHERE episodeId = ?;
 
+pauseActiveOnStartup:
+UPDATE Download SET state = 'Paused', errorMessage = NULL WHERE state IN ('Queued', 'Downloading');
+
 updateProgress:
 UPDATE Download SET downloadedBytes = ?, totalBytes = ? WHERE episodeId = ?;
 

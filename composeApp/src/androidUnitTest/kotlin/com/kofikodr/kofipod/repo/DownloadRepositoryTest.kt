@@ -223,6 +223,34 @@ class DownloadRepositoryTest {
         }
 
     @Test
+    fun startup_pausesStaleQueuedAndDownloadingRows_withoutTouchingTerminalOrDeferredRows() =
+        runHarnessTest(
+            network = NetworkType.None,
+            beforeRepositoryStart = {
+                insertDownloadRow("ep-queued", state = "Queued", downloadedBytes = 10L, totalBytes = 100L)
+                insertDownloadRow("ep-downloading", state = "Downloading", downloadedBytes = 25L, totalBytes = 100L)
+                insertDownloadRow("ep-paused", state = "Paused", downloadedBytes = 1L, totalBytes = 100L)
+                insertDownloadRow("ep-waiting", state = STATE_WAITING_WIFI, downloadedBytes = 0L, totalBytes = 100L)
+                insertDownloadRow("ep-failed", state = "Failed", downloadedBytes = 2L, totalBytes = 100L, errorMessage = "HTTP 500")
+                insertDownloadRow("ep-completed", state = "Completed", downloadedBytes = 100L, totalBytes = 100L)
+            },
+        ) {
+            assertEquals("Paused", stateOf("ep-queued"), "stale Queued rows should be user-resumable after cold start")
+            assertEquals("Paused", stateOf("ep-downloading"), "stale Downloading rows should not remain active forever")
+            assertEquals("Paused", stateOf("ep-paused"), "already-paused rows should stay paused")
+            assertEquals(STATE_WAITING_WIFI, stateOf("ep-waiting"), "network-deferred rows should keep their retry gate")
+            assertEquals("Failed", stateOf("ep-failed"), "failed rows should keep their terminal state")
+            assertEquals("Completed", stateOf("ep-completed"), "completed rows should not be downgraded")
+
+            val downloading = db.downloadQueries.selectByEpisode("ep-downloading").executeAsOne()
+            assertEquals(25L, downloading.downloadedBytes, "startup recovery should preserve partial progress")
+            assertEquals(100L, downloading.totalBytes, "startup recovery should preserve the expected total")
+            assertNull(downloading.errorMessage, "stale active rows should not surface a phantom error")
+            assertTrue(engine.enqueued.isEmpty(), "startup recovery should not silently restart downloads")
+            assertTrue(engine.cancelled.isEmpty(), "there is no live engine job to cancel after process death")
+        }
+
+    @Test
     fun deferredRow_flushesToEngine_whenNetworkTransitionsToWifi() =
         runHarnessTest(network = NetworkType.Metered, wifiOnly = true) {
             seedEpisode("ep-4", mime = "audio/mpeg")
@@ -584,6 +612,7 @@ class DownloadRepositoryTest {
         network: NetworkType = NetworkType.Wifi,
         wifiOnly: Boolean = false,
         fileChecker: FileCheckerApi = AlwaysExistsFileChecker,
+        beforeRepositoryStart: KofipodDatabase.() -> Unit = {},
         block: suspend Harness.() -> Unit,
     ) = runTest {
         val dispatcher = UnconfinedTestDispatcher(testScheduler)
@@ -602,6 +631,7 @@ class DownloadRepositoryTest {
         uiEvents.events
             .onEach { event -> if (event is UiEvent.Snackbar) snackbars += event.message }
             .launchIn(testScope)
+        db.beforeRepositoryStart()
         val repo =
             DownloadRepository(
                 db,
@@ -628,6 +658,26 @@ class DownloadRepositoryTest {
 
     private object AlwaysExistsFileChecker : FileCheckerApi {
         override fun exists(path: String): Boolean = true
+    }
+
+    private fun KofipodDatabase.insertDownloadRow(
+        episodeId: String,
+        state: String,
+        downloadedBytes: Long,
+        totalBytes: Long,
+        errorMessage: String? = null,
+    ) {
+        downloadQueries.upsert(
+            episodeId = episodeId,
+            state = state,
+            localPath = if (state == "Completed") "/tmp/$episodeId.mp3" else null,
+            downloadedBytes = downloadedBytes,
+            totalBytes = totalBytes,
+            source = "Manual",
+            startedAt = 1L,
+            completedAt = if (state == "Completed") 2L else null,
+            errorMessage = errorMessage,
+        )
     }
 
     private class RecordingDownloadEngine : DownloadEngineApi {
