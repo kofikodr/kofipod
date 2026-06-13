@@ -178,6 +178,9 @@ android {
             buildConfigField("boolean", "UPDATER_ENABLED", "false")
             // Play Billing is wired in this flavor; "Restore purchase" is meaningful.
             buildConfigField("boolean", "BILLING_ENABLED", "true")
+            // SHA-256 of the reviewer unlock code. Play-only: FOSS is already Pro
+            // and must not ship this revenue-build reviewer secret.
+            buildConfigField("String", "REVIEWER_UNLOCK_HASH", buildConfigStringLiteral(readSecret("REVIEWER_UNLOCK_HASH")))
         }
         create("foss") {
             dimension = "distribution"
@@ -192,6 +195,9 @@ android {
             buildConfigField("boolean", "UPDATER_ENABLED", "true")
             // No Play Billing in this flavor — there is nothing to restore.
             buildConfigField("boolean", "BILLING_ENABLED", "false")
+            // FOSS is unconditionally Pro via FossBillingClientPort and must not
+            // embed the Play reviewer unlock secret.
+            buildConfigField("String", "REVIEWER_UNLOCK_HASH", "\"\"")
         }
     }
     compileOptions {
@@ -271,6 +277,9 @@ fun readSecret(name: String): String {
     return props.getProperty(name) ?: System.getenv(name) ?: ""
 }
 
+fun buildConfigStringLiteral(value: String): String =
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
 buildkonfig {
     packageName = "com.kofikodr.kofipod.config"
     defaultConfigs {
@@ -281,11 +290,8 @@ buildkonfig {
         buildConfigField(INT, "VERSION_CODE", appVersionCode.toString())
         buildConfigField(STRING, "SENTRY_DSN", readSecret("SENTRY_DSN"))
         buildConfigField(STRING, "APTABASE_APP_KEY", readSecret("APTABASE_APP_KEY"))
-        // Sideload-update channel is now flavor-scoped via AGP buildConfigField
-        // in the play/foss product flavor blocks (see UpdaterCapability).
-        // SHA-256 of the reviewer unlock code (lower-case hex, 64 chars). Empty
-        // string disables the Settings → tap-version-7× unlock affordance.
-        buildConfigField(STRING, "REVIEWER_UNLOCK_HASH", readSecret("REVIEWER_UNLOCK_HASH"))
+        // Flavor-specific Android fields such as the sideload updater and Play
+        // reviewer unlock hash live in AGP BuildConfig, not shared BuildKonfig.
     }
 }
 

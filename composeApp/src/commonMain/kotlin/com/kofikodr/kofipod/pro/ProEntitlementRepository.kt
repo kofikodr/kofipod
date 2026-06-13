@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.kofikodr.kofipod.pro
 
-import com.kofikodr.kofipod.config.BuildKonfig
 import com.kofikodr.kofipod.crypto.constantTimeHexEquals
 import com.kofikodr.kofipod.crypto.sha256Hex
 import kotlinx.coroutines.CoroutineScope
@@ -36,10 +35,10 @@ class ProEntitlementRepository(
     private val appScope: CoroutineScope,
     /**
      * SHA-256 (lower-case hex, 64 chars) of the reviewer unlock code. Production
-     * reads this from [BuildKonfig.REVIEWER_UNLOCK_HASH]; tests inject a known
+     * reads this from [ReviewerUnlockConfig.hash]; tests inject a known
      * hash. Empty string disables [applyReviewerUnlock] entirely.
      */
-    private val reviewerUnlockHash: String = BuildKonfig.REVIEWER_UNLOCK_HASH,
+    private val reviewerUnlockHash: String = ReviewerUnlockConfig.hash,
 ) {
     private val _state = MutableStateFlow<ProEntitlement>(ProEntitlement.Unknown)
     val state: StateFlow<ProEntitlement> = _state.asStateFlow()
@@ -139,7 +138,7 @@ class ProEntitlementRepository(
 
     /**
      * Hidden reviewer affordance: validates [code] against the SHA-256 hash baked
-     * into the binary at build time ([BuildKonfig.REVIEWER_UNLOCK_HASH]). On match,
+     * into the binary at build time ([ReviewerUnlockConfig.hash]). On match,
      * sets the sticky cache flag and emits [ProEntitlement.Pro] with
      * [ProSource.ReviewerUnlock].
      *
