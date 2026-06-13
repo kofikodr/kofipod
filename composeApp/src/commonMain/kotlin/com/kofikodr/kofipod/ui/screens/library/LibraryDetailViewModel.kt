@@ -3,6 +3,7 @@ package com.kofikodr.kofipod.ui.screens.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.kofikodr.kofipod.data.api.isItunesOnlyId
 import com.kofikodr.kofipod.data.net.NetworkErrorHandler
 import com.kofikodr.kofipod.data.repo.EpisodeSource
 import com.kofikodr.kofipod.data.repo.LibraryRepository
@@ -10,6 +11,7 @@ import com.kofikodr.kofipod.data.repo.RecentlyViewedRepository
 import com.kofikodr.kofipod.data.repo.SearchSource
 import com.kofikodr.kofipod.db.Podcast
 import com.kofikodr.kofipod.domain.PodcastSummary
+import com.kofikodr.kofipod.opml.PodcastFeedLookup
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -42,6 +44,7 @@ class LibraryDetailViewModel(
     private val recentlyViewed: RecentlyViewedRepository,
     episodes: EpisodeSource,
     private val errors: NetworkErrorHandler,
+    private val feedLookup: PodcastFeedLookup,
 ) : ViewModel() {
     private val searchQuery = MutableStateFlow("")
     private val searchResults = MutableStateFlow<List<PodcastSummary>>(emptyList())
@@ -49,6 +52,8 @@ class LibraryDetailViewModel(
     private val searchError = MutableStateFlow<String?>(null)
 
     private var searchJob: Job? = null
+    private var saveJob: Job? = null
+    private var saveGeneration: Long = 0L
 
     val state: StateFlow<LibraryDetailUiState> =
         combine(
@@ -98,9 +103,50 @@ class LibraryDetailViewModel(
     }
 
     fun addSummaryToList(summary: PodcastSummary) {
+        val generation = nextSaveGeneration()
+        if (summary.id.isItunesOnlyId()) {
+            hydrateAndSaveItunesSummary(summary, generation)
+            return
+        }
+        searchError.value = null
+        saveSummaryToList(summary, forgetId = summary.id)
+    }
+
+    private fun nextSaveGeneration(): Long {
+        saveJob?.cancel()
+        saveGeneration += 1
+        return saveGeneration
+    }
+
+    private fun hydrateAndSaveItunesSummary(
+        summary: PodcastSummary,
+        generation: Long,
+    ) {
+        searchError.value = null
+        saveJob =
+            viewModelScope.launch {
+                try {
+                    val feedUrl = summary.feedUrl.trim()
+                    if (feedUrl.isBlank()) error("This feed can't be saved because it has no feed URL.")
+                    val resolved = feedLookup.resolve(feedUrl)
+                    if (generation != saveGeneration) return@launch
+                    saveSummaryToList(resolved, forgetId = summary.id)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    if (generation != saveGeneration) return@launch
+                    searchError.value = errors.handle(e, hasCachedData = false, fallback = "Could not save podcast")
+                }
+            }
+    }
+
+    private fun saveSummaryToList(
+        summary: PodcastSummary,
+        forgetId: String,
+    ) {
         val now = Clock.System.now().toEpochMilliseconds()
         repo.savePodcast(summary, listId, now)
-        recentlyViewed.forget(summary.id)
+        recentlyViewed.forget(forgetId)
     }
 
     private fun scheduleSearch() {

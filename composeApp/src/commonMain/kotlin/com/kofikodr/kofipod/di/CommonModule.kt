@@ -518,7 +518,7 @@ val commonDataModule =
                 router = get(),
             )
         }
-        viewModel { (listId: String?) -> LibraryDetailViewModel(listId, get(), get(), get(), get(), get()) }
+        viewModel { (listId: String?) -> LibraryDetailViewModel(listId, get(), get(), get(), get(), get(), get()) }
         viewModel {
             SettingsViewModel(
                 repo = get(),
