@@ -315,7 +315,7 @@ private fun PodcastIndexDisconnectConfirmDialog(
         text = {
             Text(
                 "Your saved key and secret will be removed from this device. " +
-                    "Podcast search will fall back to the default credentials until you connect again.",
+                    "Podcast search will stop working until you add a key again.",
                 color = c.textMute,
                 fontSize = 13.sp,
             )

@@ -12,8 +12,11 @@ interface PodcastIndexValidator {
 
 /**
  * Validates Podcast Index creds with one cheap authenticated call (trending, max 1) using a
- * throwaway client built from the candidate creds. 401/403 in the error chain → Invalid;
+ * short-lived client built from the candidate creds. 401/403 in the error chain → Invalid;
  * anything else that throws → NetworkError. [probe] is injected so tests don't hit the network.
+ *
+ * The probe client is wired to the shared [PodcastIndexSharedEngineFactory], so repeated "Connect"
+ * taps reuse one engine instead of leaking a fresh engine (connection pool + threads) per attempt.
  */
 class DefaultPodcastIndexValidator(
     private val probe: suspend (PodcastIndexCreds) -> Unit = { creds ->
@@ -21,15 +24,22 @@ class DefaultPodcastIndexValidator(
             authKey = creds.key,
             authSecret = creds.secret,
             userAgent = BuildKonfig.USER_AGENT,
-        ).misc.getTrending(limit = 1, includeCategories = emptyList())
+        ) {
+            httpClient(PodcastIndexSharedEngineFactory) {}
+        }.misc.getTrending(limit = 1, includeCategories = emptyList())
     },
 ) : PodcastIndexValidator {
     override suspend fun validate(creds: PodcastIndexCreds): PodcastIndexValidation =
-        runCatching { probe(creds) }
-            .fold(
-                onSuccess = { PodcastIndexValidation.Valid },
-                onFailure = { classifyPodcastIndexFailure(it) },
-            )
+        try {
+            probe(creds)
+            PodcastIndexValidation.Valid
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            // Structured concurrency: a cancellation is not a validation outcome — rethrow it
+            // rather than misclassifying it as NetworkError.
+            throw e
+        } catch (e: Throwable) {
+            classifyPodcastIndexFailure(e)
+        }
 }
 
 /** Walks the throwable cause chain looking for an HTTP 401/403 signal → Invalid, else NetworkError. */

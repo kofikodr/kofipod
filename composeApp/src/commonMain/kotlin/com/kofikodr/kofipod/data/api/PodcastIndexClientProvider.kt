@@ -13,6 +13,10 @@ import com.mr3y.podcastindex.ktor3.PodcastIndexClient as Ktor3PodcastIndexClient
  * key/secret at construction, so rebuilding is how credential changes take effect without an app
  * restart. A [Mutex] keeps concurrent callers from racing the rebuild.
  *
+ * The dropped client on a creds change is never closed (the SDK's `PodcastIndexClient` is not
+ * `Closeable`), but it does not leak a transport: every SDK client we build is wired to the shared
+ * [PodcastIndexSharedEngineFactory], so a rebuild only discards a thin Ktor wrapper, not an engine.
+ *
  * The type parameter [C] is `PodcastIndexClient` in production; tests inject a simpler type to
  * avoid constructing the real SDK client (which is a final class, not an interface).
  */
@@ -49,7 +53,12 @@ class PodcastIndexClientProvider<C : Any>(
                         authKey = creds.key,
                         authSecret = creds.secret,
                         userAgent = BuildKonfig.USER_AGENT,
-                    )
+                    ) {
+                        // Reuse one app-shared engine across rebuilds instead of spawning a new
+                        // engine per construction. The SDK still layers its per-instance auth +
+                        // serialization plugins on top, so each client signs with its own creds.
+                        httpClient(PodcastIndexSharedEngineFactory) {}
+                    }
                 },
             )
     }

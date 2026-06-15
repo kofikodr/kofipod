@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.kofikodr.kofipod.data.api
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class PodcastIndexValidatorTest {
     @Test
@@ -32,6 +34,13 @@ class PodcastIndexValidatorTest {
         runTest {
             val v = DefaultPodcastIndexValidator(probe = { throw RuntimeException("Unable to resolve host") })
             assertEquals(PodcastIndexValidation.NetworkError, v.validate(PodcastIndexCreds("k", "s")))
+        }
+
+    @Test
+    fun cancellation_propagates() =
+        runTest {
+            val v = DefaultPodcastIndexValidator(probe = { throw CancellationException("cancelled") })
+            assertFailsWith<CancellationException> { v.validate(PodcastIndexCreds("k", "s")) }
         }
 
     @Test
