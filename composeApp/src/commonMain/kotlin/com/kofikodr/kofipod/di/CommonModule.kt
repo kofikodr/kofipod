@@ -25,9 +25,12 @@ import com.kofikodr.kofipod.backup.DB_SCHEMA_VERSION
 import com.kofikodr.kofipod.backup.DbFileBytes
 import com.kofikodr.kofipod.backup.StageDbFile
 import com.kofikodr.kofipod.config.AppInfo
+import com.kofikodr.kofipod.data.api.EffectivePodcastIndexCredentials
 import com.kofikodr.kofipod.data.api.GithubReleasesApi
 import com.kofikodr.kofipod.data.api.ItunesSearchApi
 import com.kofikodr.kofipod.data.api.PodcastIndexApi
+import com.kofikodr.kofipod.data.api.PodcastIndexClientProvider
+import com.kofikodr.kofipod.data.api.PodcastIndexConfigRepository
 import com.kofikodr.kofipod.data.db.DatabaseFactory
 import com.kofikodr.kofipod.data.net.NetworkErrorHandler
 import com.kofikodr.kofipod.data.net.buildHttpClient
@@ -95,7 +98,13 @@ val commonDataModule =
         single { buildHttpClient() }
         single { UiEventBus() }
         single { NetworkErrorHandler() }
-        single { PodcastIndexApi.create() }
+        single { PodcastIndexConfigRepository(store = get(), appScope = get(org.koin.core.qualifier.named("appScope"))) }
+        single { EffectivePodcastIndexCredentials(config = get()) }
+        single {
+            val effective = get<EffectivePodcastIndexCredentials>()
+            PodcastIndexClientProvider(resolve = { effective.resolve() })
+        }
+        single { PodcastIndexApi(get()) }
         // Driver is exposed separately from KofipodDatabase so the SAF backup path
         // can issue a `PRAGMA wal_checkpoint(TRUNCATE)` before reading the on-disk
         // file — otherwise recent committed writes still in the `-wal` sidecar

@@ -14,6 +14,8 @@ import com.kofikodr.kofipod.backup.DbFileBytes
 import com.kofikodr.kofipod.backup.IosBackupFilePort
 import com.kofikodr.kofipod.backup.IosBackupFolderStore
 import com.kofikodr.kofipod.backup.StageDbFile
+import com.kofikodr.kofipod.data.api.IosPodcastIndexCredentialStoreStub
+import com.kofikodr.kofipod.data.api.PodcastIndexCredentialStore
 import com.kofikodr.kofipod.data.search.IosItunesStorefrontStore
 import com.kofikodr.kofipod.data.search.ItunesStorefrontStore
 import com.kofikodr.kofipod.diagnostics.CrashReporter
@@ -52,6 +54,7 @@ val iosPlatformModule =
         single<LocalApkPathStore> { IosLocalApkPathStore() }
         single { UpdateChecker() }
         single<KeyVault> { IosKeyVaultStub() }
+        single<PodcastIndexCredentialStore> { IosPodcastIndexCredentialStoreStub() }
         single<BillingClientPort> { IosBillingClientPort() }
         single<EntitlementCache> { IosEntitlementCache() }
         single<AiSummaryScheduler> { IosAiSummaryScheduler() }
