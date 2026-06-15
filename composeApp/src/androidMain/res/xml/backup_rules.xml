@@ -21,11 +21,12 @@
     * `kofipod_local` — device-local pointers (currently the downloaded-APK
       path) that must match what's actually on disk. Restoring onto a new
       device would crash the installer when it tried to open a missing file.
-    * `kofipod_secure` — encrypted store for the user's BYOK Gemini API
-      key. The key is per-device by design and must not sync; restoring it
-      onto another phone would expose the user's quota to a device they no
-      longer control. The user re-pastes their key on the new device if
-      they want AI features there.
+    * `kofipod_secure` — encrypted store for the user's BYOK secrets: the
+      Gemini API key and (FOSS builds) the Podcast Index API key + secret.
+      These are per-device by design and must not sync; restoring them onto
+      another phone would expose the user's quota to a device they no longer
+      control. The user re-pastes their key(s) on the new device if they want
+      AI features / FOSS search there.
     * `kofipod_entitlement` — last verified Pro entitlement reading. Excluded
       so a device clone / restore cannot resurrect a stale "Pro" state. Real
       entitlement re-verifies via Play Billing on every cold start.

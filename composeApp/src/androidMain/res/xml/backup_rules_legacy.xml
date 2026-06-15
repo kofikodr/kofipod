@@ -8,9 +8,10 @@
   Explicitly excluded:
     * `kofipod_local` — device-local pointers (downloaded-APK path) that
       mustn't survive a restore onto a fresh device.
-    * `kofipod_secure` — encrypted store for the user's BYOK Gemini API
-      key. The key is per-device; restoring it onto another phone would
-      expose the user's quota to a device they no longer control.
+    * `kofipod_secure` — encrypted store for the user's BYOK secrets: the
+      Gemini API key and (FOSS builds) the Podcast Index API key + secret.
+      Per-device; restoring onto another phone would expose the user's quota
+      to a device they no longer control.
     * `kofipod_entitlement` — last verified Pro entitlement reading.
       Real entitlement re-verifies via Play Billing on every cold start.
 -->
