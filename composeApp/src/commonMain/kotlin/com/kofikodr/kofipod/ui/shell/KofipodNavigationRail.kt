@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
@@ -186,12 +185,6 @@ internal fun RailContent(
                 )
             }
         }
-        if (mode == RailMode.Expanded) {
-            Spacer(Modifier.height(12.dp))
-            HorizontalDivider(color = c.border, thickness = 0.5.dp)
-            Spacer(Modifier.height(12.dp))
-            ProfileChip()
-        }
     }
 }
 
@@ -281,52 +274,5 @@ private fun BrandBlock() {
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
         )
-    }
-}
-
-/**
- * Profile chip shown at the bottom of the Expanded rail.
- *
- * NOTE: data is a presentational stub matching the design mock ("James M." / "● Drive").
- * No [com.kofikodr.kofipod.auth] / Drive sync repository is wired in commonMain today;
- * plumbing real account + sync state is intentionally deferred — out of scope for
- * Phase 1 Task 1.3 and tracked for a future phase.
- */
-@Composable
-private fun ProfileChip() {
-    val c = LocalKofipodColors.current
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Box(
-            modifier =
-                Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(c.purpleTint),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "JM",
-                color = c.purple,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "James M.",
-                color = c.text,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = "● Drive",
-                color = c.textMute,
-                fontSize = 11.sp,
-            )
-        }
     }
 }
