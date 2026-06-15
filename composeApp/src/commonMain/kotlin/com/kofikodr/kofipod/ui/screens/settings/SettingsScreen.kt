@@ -93,6 +93,7 @@ private const val REVIEWER_TAP_WINDOW_MS: Long = 3_000L
 fun SettingsScreen(
     onOpenScheduler: () -> Unit,
     onOpenAiSetup: () -> Unit,
+    onOpenPodcastIndexSetup: () -> Unit,
     onOpenConnections: () -> Unit,
     viewModel: SettingsViewModel = koinViewModel(),
 ) {
@@ -268,6 +269,22 @@ fun SettingsScreen(
                 KPIcon(name = KPIconName.ChevronRight, color = c.textMute, size = 18.dp)
             },
         )
+
+        if (state.showPodcastIndexByok) {
+            SectionLabel("Podcast search (FOSS)", topSpacing = 22.dp)
+            SettingRow(
+                icon = KPIconName.Search,
+                title = if (state.podcastIndexConnected) "Podcast Index connected" else "Add Podcast Index API key",
+                subtitle =
+                    if (state.podcastIndexConnected) {
+                        "Tap to manage your key"
+                    } else {
+                        "Search needs a free Podcast Index API key. Tap to add yours."
+                    },
+                onClick = onOpenPodcastIndexSetup,
+                trailing = { KPIcon(name = KPIconName.ChevronRight, color = c.textMute, size = 18.dp) },
+            )
+        }
 
         SectionLabel("Storage", topSpacing = 22.dp)
         MaxDownloadSizeCard(

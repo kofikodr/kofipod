@@ -29,6 +29,7 @@ import com.kofikodr.kofipod.ui.screens.search.LibrarySearchScreen
 import com.kofikodr.kofipod.ui.screens.search.SearchScreen
 import com.kofikodr.kofipod.ui.screens.settings.SettingsScreen
 import com.kofikodr.kofipod.ui.screens.settings.ai.AiSetupScreen
+import com.kofikodr.kofipod.ui.screens.settings.podcastindex.PodcastIndexSetupScreen
 import com.kofikodr.kofipod.ui.screens.snippet.SnippetEditorScreen
 import com.kofikodr.kofipod.ui.screens.stats.StatsScreen
 
@@ -125,6 +126,7 @@ fun KofipodNavHost(navController: NavHostController) {
             SettingsScreen(
                 onOpenScheduler = { navController.navigate(Route.SchedulerInfo) },
                 onOpenAiSetup = { navController.navigate(Route.AiSetup) },
+                onOpenPodcastIndexSetup = { navController.navigate(Route.PodcastIndexSetup) },
                 onOpenConnections = { navController.navigate(Route.Connections) },
             )
         }
@@ -133,6 +135,9 @@ fun KofipodNavHost(navController: NavHostController) {
         }
         composable<Route.AiSetup> {
             AiSetupScreen(onBack = { navController.popBackStack() })
+        }
+        composable<Route.PodcastIndexSetup> {
+            PodcastIndexSetupScreen(onBack = { navController.popBackStack() })
         }
         composable<Route.PodcastDetail> { entry ->
             val detail = entry.toRoute<Route.PodcastDetail>()
