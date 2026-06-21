@@ -12,7 +12,7 @@ import com.kofikodr.kofipod.data.recommend.ReshuffleResult
 import com.kofikodr.kofipod.data.repo.CategoriesSource
 import com.kofikodr.kofipod.data.repo.SearchSource
 import com.kofikodr.kofipod.domain.PodcastSummary
-import com.kofikodr.kofipod.domain.toSummary
+import com.kofikodr.kofipod.opml.PodcastFeedLookup
 import com.mr3y.podcastindex.model.Category
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -87,12 +87,7 @@ class SearchViewModel(
     private val appScope: CoroutineScope,
     private val errors: NetworkErrorHandler,
     private val telemetry: com.kofikodr.kofipod.diagnostics.Telemetry,
-    /**
-     * Podcast Index direct handle, used only by [requestNavigation] to convert an
-     * iTunes-only result's `feedUrl` into a numeric Podcast Index `feedId` so the
-     * existing PodcastDetailViewModel (which Long-parses the id) can render it.
-     */
-    private val podcastIndexApi: PodcastIndexApi,
+    private val feedLookup: PodcastFeedLookup,
 ) : ViewModel() {
     private val _state = MutableStateFlow(SearchUiState(popularCategories = categories.popular()))
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
@@ -113,6 +108,7 @@ class SearchViewModel(
 
     private var searchJob: Job? = null
     private var currentLimit: Int = PodcastIndexApi.PAGE_SIZE
+    private var searchGeneration: Long = 0L
     private var hydrateJob: Job? = null
 
     /**
@@ -123,9 +119,13 @@ class SearchViewModel(
      * `searchJob?.cancel() + viewModelScope.launch + delay(DEBOUNCE_MS)` pattern on every
      * keystroke, which piled up Main-thread frames under rapid input (see ANR bug fix).
      */
-    private data class QueryKey(val query: String, val tab: SearchTab)
+    private data class QueryKey(
+        val query: String,
+        val tab: SearchTab,
+        val generation: Long,
+    )
 
-    private val queryChannel = MutableStateFlow(QueryKey("", SearchTab.All))
+    private val queryChannel = MutableStateFlow(QueryKey("", SearchTab.All, searchGeneration))
 
     /**
      * Selected search result on tablet landscape. Drives the master-detail right pane
@@ -248,12 +248,11 @@ class SearchViewModel(
         hydrateJob =
             viewModelScope.launch {
                 try {
-                    val feed = podcastIndexApi.podcastByFeedUrl(feedUrl)
+                    val resolved = feedLookup.resolve(feedUrl)
                     // Stale check — a query change / tab change / non-iTunes tap that
                     // happened mid-flight cleared hydratingId. Emitting NavigateToPodcast
                     // now would steal focus from whatever the user just did.
                     if (_state.value.hydratingId != rawId) return@launch
-                    val resolved = feed.toSummary()
                     // Rewrite the row's id from the itunes: sentinel to the resolved PI
                     // id so (a) the tablet-landscape selection highlight matches the
                     // tapped row after Select, and (b) re-taps go straight through the
@@ -297,7 +296,8 @@ class SearchViewModel(
         cancelHydration()
         _state.value = _state.value.copy(query = q)
         currentLimit = PodcastIndexApi.PAGE_SIZE
-        queryChannel.value = QueryKey(q, _state.value.tab)
+        searchGeneration += 1
+        queryChannel.value = QueryKey(q, _state.value.tab, searchGeneration)
         // Stale selection would leave the tablet-landscape right pane pinned to the
         // previous query's result while the master shows new results.
         _selectedSearchResultId.value = null
@@ -308,7 +308,8 @@ class SearchViewModel(
         cancelHydration()
         _state.value = _state.value.copy(tab = tab)
         currentLimit = PodcastIndexApi.PAGE_SIZE
-        queryChannel.value = QueryKey(_state.value.query, tab)
+        searchGeneration += 1
+        queryChannel.value = QueryKey(_state.value.query, tab, searchGeneration)
         _selectedSearchResultId.value = null
     }
 
@@ -316,16 +317,19 @@ class SearchViewModel(
         val s = _state.value
         if (s.loading || s.loadingMore || !s.hasMore || s.query.isBlank()) return
         currentLimit += PodcastIndexApi.PAGE_SIZE
+        val loadMoreLimit = currentLimit
+        val loadMoreKey = QueryKey(s.query, s.tab, searchGeneration)
         searchJob?.cancel()
         searchJob =
             viewModelScope.launch {
-                runSearch(loadMore = true, key = QueryKey(s.query, s.tab))
+                runSearch(loadMore = true, key = loadMoreKey, limit = loadMoreLimit)
             }
     }
 
     private suspend fun runSearch(
         loadMore: Boolean,
         key: QueryKey,
+        limit: Int = currentLimit,
     ) {
         _state.value =
             _state.value.copy(
@@ -333,7 +337,6 @@ class SearchViewModel(
                 loadingMore = loadMore,
                 error = null,
             )
-        val limit = currentLimit
         try {
             val results =
                 when (key.tab) {
@@ -341,6 +344,7 @@ class SearchViewModel(
                     SearchTab.Title -> repo.searchByTitle(key.query, limit)
                     SearchTab.Person -> repo.searchByPerson(key.query, limit)
                 }
+            if (!isCurrentSearch(key)) return
             _state.value =
                 _state.value.copy(
                     results = results,
@@ -364,6 +368,7 @@ class SearchViewModel(
             // CancellationException reaching here is structural.
             throw e
         } catch (e: Throwable) {
+            if (!isCurrentSearch(key)) return
             _state.value =
                 _state.value.copy(
                     loading = false,
@@ -371,6 +376,11 @@ class SearchViewModel(
                     error = errors.handle(e, hasCachedData = false, fallback = "Search failed"),
                 )
         }
+    }
+
+    private fun isCurrentSearch(key: QueryKey): Boolean {
+        val current = _state.value
+        return current.query == key.query && current.tab == key.tab && searchGeneration == key.generation
     }
 
     companion object {
