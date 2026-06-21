@@ -95,9 +95,15 @@ class PkmExportCoordinator(
      * (Task 12) to re-attempt without any UI interaction.
      */
     suspend fun retry(entry: ExportLogEntry) {
-        val request = requestFromEntry(entry) ?: return
-        val destination =
-            destinationFromKind(entry.destinationKind) ?: return
+        val request = requestFromEntry(entry)
+        val destination = destinationFromKind(entry.destinationKind)
+        if (request == null || destination == null) {
+            // The row references an item kind or destination this build no longer
+            // understands, so executeInternal could never drain it — delete it rather
+            // than let selectQueuedOrFailed() keep retrying a dead row forever (issue #23).
+            exportLog.deleteByItem(entry.itemKind, entry.itemId)
+            return
+        }
         executeInternal(request, destination)
     }
 
@@ -110,6 +116,14 @@ class PkmExportCoordinator(
         try {
             val document = buildDocument(request)
             if (document == null) {
+                // The snippet / bookmark / summary (or its episode / podcast) was deleted
+                // before the queue drained. buildDocument will keep returning null, so a
+                // queued/failed ExportLog row for this item can never succeed —
+                // selectQueuedOrFailed() would otherwise hand it back to PkmExportWorker on
+                // every run, retrying a dead item forever. Remove every row for the item so
+                // the retry queue actually drains (issue #23). Harmless for zero-auth
+                // destinations, which never wrote a row in the first place.
+                exportLog.deleteByItem(itemKindOf(request), itemIdOf(request))
                 _results.emit(PkmExportResult.Failed("Item not found"))
                 return
             }
