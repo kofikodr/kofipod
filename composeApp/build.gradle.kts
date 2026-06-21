@@ -137,7 +137,23 @@ kotlin {
                 implementation(libs.ktor.client.mock)
             }
         }
+        val androidInstrumentedTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+                @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
+                implementation(compose.uiTest)
+                @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
+                implementation(compose.uiTestJUnit4)
+                implementation(libs.androidx.test.core)
+                implementation(libs.androidx.test.runner)
+            }
+        }
     }
+}
+
+dependencies {
+    debugImplementation(libs.androidx.test.core)
+    debugImplementation(libs.compose.ui.test.manifest)
 }
 
 val versionProps = Properties().apply {
@@ -164,6 +180,7 @@ android {
         targetSdk = 35
         versionCode = appVersionCode
         versionName = appVersionName
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["appLabel"] = "Kofipod"
     }
     flavorDimensions += "distribution"

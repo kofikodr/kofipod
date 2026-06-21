@@ -2,6 +2,7 @@
 kotlin = "2.0.21"
 agp = "8.13.2"
 composeMultiplatform = "1.7.3"
+androidxComposeUi = "1.7.6"
 androidxActivity = "1.9.3"
 androidxLifecycle = "2.8.7"
 androidxNavigation = "2.8.0-alpha10"
@@ -11,6 +12,8 @@ androidxCredentials = "1.3.0"
 androidxPalette = "1.0.0"
 androidxSecurityCrypto = "1.1.0-alpha06"
 androidxDocumentFile = "1.0.1"
+androidxTest = "1.6.2"
+androidxTestCore = "1.5.0"
 googleIdentity = "1.1.1"
 googlePlayBilling = "8.0.0"
 coil = "3.0.4"
@@ -35,6 +38,7 @@ xmlutil = "0.90.3"
 
 [libraries]
 compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest", version.ref = "androidxComposeUi" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidxActivity" }
 androidx-lifecycle-viewmodel = { module = "androidx.lifecycle:lifecycle-viewmodel", version.ref = "androidxLifecycle" }
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidxLifecycle" }
@@ -51,6 +55,8 @@ androidx-credentials-play-services-auth = { module = "androidx.credentials:crede
 androidx-palette = { module = "androidx.palette:palette-ktx", version.ref = "androidxPalette" }
 androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "androidxSecurityCrypto" }
 androidx-documentfile = { module = "androidx.documentfile:documentfile", version.ref = "androidxDocumentFile" }
+androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }
+androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTest" }
 google-identity = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleIdentity" }
 google-play-billing = { module = "com.android.billingclient:billing-ktx", version.ref = "googlePlayBilling" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }

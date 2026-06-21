@@ -479,7 +479,7 @@ private fun SearchBodyContent(
                             inlineLoading = state.recsLoading,
                             inlineQuip = state.recsLoadingQuip,
                             onReshuffle = onReshuffle,
-                            onOpenPodcast = onOpenPodcast,
+                            onResultTap = onResultTap,
                         )
                     EmptyQueryContent.ColdStart ->
                         SearchEmptyState(
@@ -745,7 +745,7 @@ private fun ForYouSection(
     inlineLoading: Boolean,
     inlineQuip: String,
     onReshuffle: () -> Unit,
-    onOpenPodcast: (String) -> Unit,
+    onResultTap: (String) -> Unit,
 ) {
     val c = LocalKofipodColors.current
     PullToRefreshBox(
@@ -772,7 +772,7 @@ private fun ForYouSection(
                 ResultCard(
                     p = p,
                     isTopMatch = false,
-                    onClick = { onOpenPodcast(p.id) },
+                    onClick = { onResultTap(p.id) },
                 )
             }
         }
