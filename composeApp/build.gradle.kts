@@ -291,6 +291,34 @@ android {
     }
 }
 
+// Fail fast if a release artifact is built without a signing config. The `release`
+// build type is configured on EVERY Gradle invocation (assembleDebug, tests, IDE sync),
+// so this guard can't live inside `buildTypes.release` without breaking debug
+// development for contributors who have no keystore. Instead inspect the actual task
+// graph and fail only when a release-producing task is scheduled. Mirrors the keystore
+// guard in scripts/release.sh for the case where the gradle task is invoked directly.
+// Excludes lint*Release and *ReleaseUnitTest/*ReleaseAndroidTest (those are debug-signed
+// or need no signing).
+val releaseArtifactTask = Regex("""^(assemble|bundle|install|package)(Play|Foss)?Release$""")
+// Capture primitives (not live `project`/`android` references) so the closure stays
+// configuration-cache compatible — Gradle 9 enables the config cache by default and
+// would reject a serialized `Project` extension. `android.signingConfigs` is fully
+// populated here because this block runs after the `android { }` block above.
+val releaseSigningConfigured = android.signingConfigs.findByName("release") != null
+val thisProjectPath = project.path
+gradle.taskGraph.whenReady {
+    val buildingReleaseArtifact = allTasks.any {
+        it.project.path == thisProjectPath && releaseArtifactTask.matches(it.name)
+    }
+    if (buildingReleaseArtifact && !releaseSigningConfigured) {
+        throw GradleException(
+            "keystore.properties is required for release builds, but none was found — " +
+                "a release APK/AAB must not be silently debug-signed. " +
+                "See the 'Release' section of README.md for keystore setup.",
+        )
+    }
+}
+
 sqldelight {
     databases {
         create("KofipodDatabase") {
