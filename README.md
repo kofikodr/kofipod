@@ -82,6 +82,8 @@ cp keystore.properties.template keystore.properties
 
 `keystore/`, `*.jks`, and `keystore.properties` are gitignored.
 
+Release builds require this keystore: invoking a release-artifact Gradle task directly (e.g. `assembleFossRelease`, `bundlePlayRelease`) without `keystore.properties` **fails the build** rather than silently debug-signing the artifact. Debug builds and lint/test tasks are unaffected and need no keystore.
+
 ### Cutting a release
 
 ```
