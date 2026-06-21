@@ -30,7 +30,6 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.navOptions
 import com.kofikodr.kofipod.ui.layout.RailMode
 import com.kofikodr.kofipod.ui.layout.TabletSize
 import com.kofikodr.kofipod.ui.nav.Route
@@ -59,17 +58,9 @@ fun KofipodNavigationRail(
         currentRoute = currentRoute,
         mode = size.railMode,
         onSelect = { destination ->
-            // Spec §3: pop to start destination — intentionally differs from the phone BottomNav (AppShell.kt:~266) until that is updated separately.
-            nav.navigate(
-                destination.route,
-                navOptions {
-                    popUpTo(nav.graph.findStartDestination().id) {
-                        saveState = true
-                    }
-                    launchSingleTop = true
-                    restoreState = true
-                },
-            )
+            // Spec §3: pop to start destination. Shared with the phone BottomNav via
+            // tabReselectNavOptions so the two tab-switch behaviours stay in lockstep.
+            nav.navigate(destination.route, tabReselectNavOptions(nav.graph.findStartDestination().id))
         },
         modifier = modifier,
     )

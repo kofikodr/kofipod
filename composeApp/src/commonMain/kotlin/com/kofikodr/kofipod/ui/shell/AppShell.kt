@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
+import androidx.navigation.NavOptions
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navOptions
@@ -240,6 +241,21 @@ private val TABS =
         Tab(Route.Settings, Route.Settings::class.qualifiedName!!, "Settings", KPIconName.Settings),
     )
 
+/**
+ * NavOptions for re-selecting a top-level destination from the phone bottom nav or the
+ * tablet rail. Pops up to [startDestinationId] saving the leaving tab's inner back stack,
+ * launches single-top, and restores the entered tab's saved stack. Shared by both
+ * [BottomNav] and [com.kofikodr.kofipod.ui.shell.KofipodNavigationRail] so their tab-switch
+ * behaviour can't drift — the drift that left intermediate screens in the back stack on
+ * phone (issue #13).
+ */
+internal fun tabReselectNavOptions(startDestinationId: Int): NavOptions =
+    navOptions {
+        popUpTo(startDestinationId) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
+    }
+
 @Composable
 internal fun BottomNav(nav: NavHostController) {
     val c = LocalKofipodColors.current
@@ -266,8 +282,13 @@ internal fun BottomNav(nav: NavHostController) {
                     modifier = Modifier.weight(1f),
                     onClick = {
                         if (selected) return@TabItem
-                        nav.popBackStack()
-                        nav.navigate(tab.route, navOptions { launchSingleTop = true })
+                        // Pop the whole back stack up to the start destination (saving
+                        // each tab's inner state) rather than popping only the top entry.
+                        // The old popBackStack() + navigate left intermediate screens
+                        // behind: Library > PodcastDetail > EpisodeDetail then tapping
+                        // Search left PodcastDetail under Search on Back. Shared with the
+                        // tablet rail so the two can't drift again. See issue #13.
+                        nav.navigate(tab.route, tabReselectNavOptions(nav.graph.findStartDestination().id))
                     },
                 )
             }
