@@ -3,6 +3,8 @@ package com.kofikodr.kofipod.ui.shell
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.layout.Box
@@ -18,6 +20,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navOptions
@@ -175,6 +178,11 @@ internal fun TabletScaffoldContent(
     content: @Composable () -> Unit,
 ) {
     val c = LocalKofipodColors.current
+    val railAlpha by animateFloatAsState(
+        targetValue = if (showRail) 1f else 0f,
+        animationSpec = if (showRail) tween(MINIPLAYER_FADE_IN_MS) else snap(),
+        label = "Tablet rail alpha",
+    )
     Scaffold(
         containerColor = c.bg,
         snackbarHost = {
@@ -192,8 +200,10 @@ internal fun TabletScaffoldContent(
                 .padding(padding)
                 .fillMaxSize(),
         ) {
-            if (showRail) {
-                rail()
+            if (showRail || railAlpha > 0f) {
+                Box(Modifier.alpha(railAlpha)) {
+                    rail()
+                }
             }
             Column(
                 Modifier
