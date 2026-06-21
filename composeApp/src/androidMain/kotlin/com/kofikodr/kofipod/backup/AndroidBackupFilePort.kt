@@ -66,10 +66,11 @@ class AndroidBackupFilePort(
      *
      * Atomic-ish write: stage to `<filename>.tmp` first, then rename into place once the
      * bytes are fully on disk. If the provider doesn't implement `renameTo`, fall back to
-     * creating the target directly and copying the temp's bytes. If anything fails before
-     * the rename, the previous file (if any) survives untouched. Retention pruning runs
-     * separately via [listBackups] + [deleteBackup] so this method stays focused on
-     * "produce one new file safely."
+     * creating the target directly and streaming [content] again. A same-name collision is
+     * deleted after the temp write and before rename because some SAF providers silently
+     * disambiguate occupied rename targets. Retention pruning runs separately via
+     * [listBackups] + [deleteBackup] so this method stays focused on "produce one new
+     * file safely."
      */
     override suspend fun writeBackup(
         treeUri: String,
@@ -78,50 +79,17 @@ class AndroidBackupFilePort(
     ): Unit =
         withContext(Dispatchers.IO) {
             val tree = resolveWritableTree(treeUri)
-            val tempName = "$filename.tmp"
-
-            // Clean up any leftover temp from a previous interrupted run before we start.
-            tree.findFile(tempName)?.delete()
-            val tempFile =
-                tree.createFile(BACKUP_MIME, tempName)
-                    ?: error("Couldn't create backup file in folder")
-            runCatching {
-                context.contentResolver.openOutputStream(tempFile.uri, "w")?.use { stream ->
-                    stream.write(content)
-                    stream.flush()
-                } ?: error("Couldn't open output stream for backup file")
-            }.onFailure { t ->
-                runCatching { tempFile.delete() }
-                throw t
-            }
-
-            // Temp is fully written. If a file with the final name already exists (rare —
-            // the timestamp would have to collide to the second), drop it first so the
-            // rename has a clean slot. Some providers silently disambiguate the rename
-            // (e.g. `kofipod-backup-…(1).kpbak`) and still return true; we re-read
-            // `tempFile.name` to verify the rename actually produced the requested name
-            // and fall through to the copy path if not — that branch creates the target
-            // by name directly, which providers honour even when rename does not.
-            val existing = tree.findFile(filename)
-            val renamedTrue = runCatching { tempFile.renameTo(filename) }.getOrDefault(false)
-            val renamed = renamedTrue && tempFile.name == filename
-            if (renamed) {
-                existing?.delete()
-            } else {
-                // Provider doesn't support rename. Create the final file and re-stream.
-                existing?.delete()
-                val target =
-                    tree.createFile(BACKUP_MIME, filename)
-                        ?: error("Couldn't create backup file in folder")
-                runCatching {
-                    context.contentResolver.openOutputStream(target.uri, "w")?.use { it.write(content) }
-                        ?: error("Couldn't open output stream for backup file")
-                    tempFile.delete()
-                }.onFailure { t ->
-                    runCatching { target.delete() }
-                    throw t
-                }
-            }
+            writeBackupToTree(
+                tree = DocumentBackupTree(tree),
+                filename = filename,
+                content = content,
+                writeBytes = { file, bytes ->
+                    context.contentResolver.openOutputStream(file.uri, "w")?.use { stream ->
+                        stream.write(bytes)
+                        stream.flush()
+                    } ?: error("Couldn't open output stream for backup file")
+                },
+            )
         }
 
     override suspend fun listBackups(treeUri: String): List<BackupFileInfo> =
@@ -184,4 +152,100 @@ class AndroidBackupFilePort(
     private companion object {
         const val PICKER_TIMEOUT_MS = 5L * 60_000L
     }
+}
+
+internal fun writeBackupToTree(
+    tree: BackupDocumentTree,
+    filename: String,
+    content: ByteArray,
+    writeBytes: (BackupDocumentFile, ByteArray) -> Unit,
+) {
+    val tempName = "$filename.tmp"
+
+    // Clean up any leftover temp from a previous interrupted run before we start.
+    val staleTemp = tree.findFile(tempName)
+    if (staleTemp != null && !staleTemp.delete()) {
+        error("Couldn't remove stale backup temp file")
+    }
+    val tempFile =
+        tree.createFile(BACKUP_MIME, tempName)
+            ?: error("Couldn't create backup file in folder")
+    runCatching {
+        writeBytes(tempFile, content)
+    }.onFailure { t ->
+        runCatching { tempFile.delete() }
+        throw t
+    }
+
+    // Temp is fully written. If a file with the final name already exists (rare —
+    // the timestamp would have to collide to the second), drop it before rename so
+    // providers that silently disambiguate occupied targets don't leave `(1).kpbak`
+    // siblings that later count against retention.
+    val existing = tree.findFile(filename)
+    if (existing != null && !existing.delete()) {
+        runCatching { tempFile.delete() }
+        error("Couldn't replace existing backup file")
+    }
+    val renamedTrue = runCatching { tempFile.renameTo(filename) }.getOrDefault(false)
+    val renamed = renamedTrue && tempFile.name == filename
+    if (!renamed) {
+        // Provider doesn't support exact rename. Remove the temp/disambiguated file,
+        // then create the final file by name directly and re-stream from memory.
+        val tempDeleted = runCatching { tempFile.delete() }.getOrDefault(false)
+        if (!tempDeleted) {
+            error("Couldn't remove backup temp file before copy fallback")
+        }
+        val target =
+            tree.createFile(BACKUP_MIME, filename)
+                ?: error("Couldn't create backup file in folder")
+        runCatching {
+            writeBytes(target, content)
+        }.onFailure { t ->
+            runCatching { target.delete() }
+            throw t
+        }
+    }
+}
+
+internal interface BackupDocumentTree {
+    fun findFile(name: String): BackupDocumentFile?
+
+    fun createFile(
+        mimeType: String,
+        name: String,
+    ): BackupDocumentFile?
+}
+
+internal interface BackupDocumentFile {
+    val name: String?
+    val uri: Uri
+
+    fun renameTo(displayName: String): Boolean
+
+    fun delete(): Boolean
+}
+
+private class DocumentBackupTree(
+    private val delegate: DocumentFile,
+) : BackupDocumentTree {
+    override fun findFile(name: String): BackupDocumentFile? = delegate.findFile(name)?.let(::DocumentBackupFile)
+
+    override fun createFile(
+        mimeType: String,
+        name: String,
+    ): BackupDocumentFile? = delegate.createFile(mimeType, name)?.let(::DocumentBackupFile)
+}
+
+private class DocumentBackupFile(
+    private val delegate: DocumentFile,
+) : BackupDocumentFile {
+    override val name: String?
+        get() = delegate.name
+
+    override val uri: Uri
+        get() = delegate.uri
+
+    override fun renameTo(displayName: String): Boolean = delegate.renameTo(displayName)
+
+    override fun delete(): Boolean = delegate.delete()
 }

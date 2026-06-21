@@ -26,7 +26,9 @@ interface BackupFilePort {
     /**
      * Write [content] to [filename] inside the persisted tree URI. Overwrites if the
      * file already exists. The caller is responsible for choosing a filename — typically
-     * [currentBackupFilename]. Throws on:
+     * [currentBackupFilename]. Android may delete a same-name target after staging the
+     * new bytes, before the final rename, so providers cannot silently create a suffixed
+     * sibling like `(1).kpbak` that would later count against retention. Throws on:
      *  - `SecurityException` if the URI was revoked (e.g. user removed access in the
      *    storage provider's app) — caller surfaces this as "folder no longer accessible".
      *  - `IOException` on out-of-space / network errors at the provider.
