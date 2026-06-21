@@ -52,6 +52,14 @@ class SettingsRepository(
 
     fun dailyCheckEnabled(): Flow<Boolean> = metaFlow(KEY_DAILY_CHECK).map { it?.toBoolean() ?: true }
 
+    /**
+     * Snapshot read of the daily-check setting for cold-start wiring. Defaults to `true`
+     * to match [dailyCheckEnabled] — [com.kofikodr.kofipod.KofipodApplication] uses this to
+     * (re)schedule the episode-check worker on launch, since the toggle defaults on but
+     * nothing schedules the job until the user touches it (issue #2).
+     */
+    fun dailyCheckEnabledNow(): Boolean = getMetaNow(KEY_DAILY_CHECK)?.toBoolean() ?: true
+
     fun setDailyCheckEnabled(enabled: Boolean) = put(KEY_DAILY_CHECK, enabled.toString())
 
     fun wifiOnly(): Flow<Boolean> = metaFlow(KEY_WIFI_ONLY).map { it?.toBoolean() ?: true }
