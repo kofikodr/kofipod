@@ -61,6 +61,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -74,6 +75,8 @@ import org.junit.After
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -112,9 +115,18 @@ class EpisodeDetailViewModelTest {
     private data class Harness(
         val vm: EpisodeDetailViewModel,
         val player: FakePlayer,
+        val downloads: DownloadRepository,
     )
 
-    private fun TestScope.harness(initialPlayerState: PlayerState = PlayerState()): Harness {
+    private fun TestScope.harness(
+        initialPlayerState: PlayerState = PlayerState(),
+        // When true, the DB-backed episode flow resolves the episode (an in-library /
+        // subscribed episode); when false, the episode exists only in RemoteEpisodeCache
+        // (the Search → unsubscribed projection). Drives `canDownload` for issue #28.
+        persisted: Boolean = false,
+        // The episode under test — override to vary fields like the enclosure URL.
+        episode: Episode = EPISODE,
+    ): Harness {
         val db = inMemoryDatabase()
         // UnconfinedTestDispatcher for the repos' DB-query flows so advanceUntilIdle() eagerly
         // drains every flow emission and populates state.value without manual pumping. Main stays
@@ -126,7 +138,7 @@ class EpisodeDetailViewModelTest {
 
         // Episode + its podcast are supplied via the in-memory RemoteEpisodeCache (the
         // "remote-only" projection path), so no DB rows are needed to populate state.
-        val cache = RemoteEpisodeCache().apply { put(listOf(RemoteEpisodeCache.Entry(EPISODE, PODCAST))) }
+        val cache = RemoteEpisodeCache().apply { put(listOf(RemoteEpisodeCache.Entry(episode, PODCAST))) }
 
         val downloads =
             DownloadRepository(
@@ -154,7 +166,7 @@ class EpisodeDetailViewModelTest {
         val vm =
             EpisodeDetailViewModel(
                 episodeId = EPISODE_ID,
-                episodes = FakeEpisodeSource(),
+                episodes = FakeEpisodeSource(episode = if (persisted) episode else null),
                 library = LibraryRepository(db, queryDispatcher = testDispatcher),
                 playback = PlaybackRepository(db, queryDispatcher = testDispatcher),
                 downloads = downloads,
@@ -181,7 +193,7 @@ class EpisodeDetailViewModelTest {
                     ),
                 remoteCache = cache,
             )
-        return Harness(vm, player)
+        return Harness(vm, player, downloads)
     }
 
     @Test
@@ -248,6 +260,75 @@ class EpisodeDetailViewModelTest {
             assertEquals(1, h.player.resumeCalls, "paused + current episode → resume")
             assertEquals(0, h.player.pauseCalls, "must not pause when resuming")
             assertEquals(0, h.player.playCalls.size, "must not re-load the media item")
+            collector.cancel()
+        }
+
+    @Test
+    fun download_remoteOnlyEpisode_isNoOp_andDoesNotWriteAnOrphanRow() =
+        runVmTest {
+            // The episode renders from RemoteEpisodeCache (Search → unsubscribed) and has an
+            // enclosure URL, but no persisted Episode row exists. The old code enabled
+            // Download on enclosure presence alone and enqueued a Download whose episodeId
+            // FK dangled — rejected (FK on) or an orphan the Downloads list's INNER JOIN
+            // Episode hides (FK off). The gate must suppress it (issue #28).
+            val h = harness(persisted = false)
+            val collector = launch { h.vm.state.collect {} }
+            advanceUntilIdle()
+
+            assertEquals(EPISODE_ID, h.vm.state.value.episode?.id, "precondition: episode is displayed")
+            assertTrue(h.vm.state.value.episode!!.enclosureUrl.isNotBlank(), "precondition: has an enclosure URL")
+            assertFalse(h.vm.state.value.canDownload, "a remote-only episode must not offer Download")
+
+            h.vm.download()
+            advanceUntilIdle()
+
+            assertNull(
+                h.downloads.forEpisodeFlow(EPISODE_ID).first(),
+                "download() on a remote-only episode must not write a Download row",
+            )
+            collector.cancel()
+        }
+
+    @Test
+    fun download_persistedEpisode_enqueuesNormally() =
+        runVmTest {
+            // The complement: a persisted (in-library) episode with an enclosure must still
+            // offer Download and enqueue a row, so the #28 gate doesn't over-block.
+            val h = harness(persisted = true)
+            val collector = launch { h.vm.state.collect {} }
+            advanceUntilIdle()
+
+            assertTrue(h.vm.state.value.canDownload, "a persisted episode with an enclosure must offer Download")
+
+            h.vm.download()
+            advanceUntilIdle()
+
+            assertNotNull(
+                h.downloads.forEpisodeFlow(EPISODE_ID).first(),
+                "download() on a persisted episode must enqueue a Download row",
+            )
+            collector.cancel()
+        }
+
+    @Test
+    fun download_persistedEpisodeWithBlankEnclosure_isNoOp() =
+        runVmTest {
+            // Completes the canDownload truth table: persisted but no enclosure URL (some
+            // feeds omit it on certain episode types) must still gate Download off — there's
+            // nothing to fetch. Guards against a regression that drops the isNotBlank() check.
+            val h = harness(persisted = true, episode = EPISODE.copy(enclosureUrl = ""))
+            val collector = launch { h.vm.state.collect {} }
+            advanceUntilIdle()
+
+            assertFalse(h.vm.state.value.canDownload, "a persisted episode with no enclosure must not offer Download")
+
+            h.vm.download()
+            advanceUntilIdle()
+
+            assertNull(
+                h.downloads.forEpisodeFlow(EPISODE_ID).first(),
+                "download() with a blank enclosure must not write a row",
+            )
             collector.cancel()
         }
 
@@ -351,9 +432,12 @@ private class FakeSharer : Sharer {
     ) = Unit
 }
 
-private class FakeEpisodeSource : EpisodeSource {
-    // DB lookup returns null; the episode is supplied by the RemoteEpisodeCache instead.
-    override fun episodeFlow(episodeId: String): Flow<Episode?> = flowOf(null)
+private class FakeEpisodeSource(
+    // Null models a remote-only episode (no persisted DB row — supplied via
+    // RemoteEpisodeCache instead); non-null models an in-library/subscribed episode.
+    private val episode: Episode? = null,
+) : EpisodeSource {
+    override fun episodeFlow(episodeId: String): Flow<Episode?> = flowOf(episode)
 
     override fun episodesFlow(podcastId: String): Flow<List<Episode>> = flowOf(emptyList())
 
