@@ -49,6 +49,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import org.koin.android.ext.android.inject
 import java.util.concurrent.Callable
@@ -70,6 +71,13 @@ class KofipodPlaybackService : MediaLibraryService() {
     // True while prepare() is seeking to the restored position. Guards against listener
     // callbacks overwriting the saved position with the pre-seek value (0).
     private var isRestoring = false
+
+    // True while a file:// playback error is being recovered (DB lookup + download wipe
+    // off-thread, then a re-stream on Main). onPlayerError recovery is now asynchronous,
+    // so without this single-flight guard a second error callback firing during the hop
+    // would launch an overlapping recovery and double-delete / double-play. Read and
+    // written only on the main thread, so no synchronization is needed.
+    private var isRecovering = false
 
     // Listening-session tracker state. Holds the last sample's episodeId and positionMs;
     // each persist call computes the forward delta and credits it to today's bucket for
@@ -183,29 +191,52 @@ class KofipodPlaybackService : MediaLibraryService() {
                 // in DownloadRepository.localPathFor(); this listener catches the rare
                 // race where a file disappears between the resolver check and open().
                 override fun onPlayerError(error: PlaybackException) {
+                    if (isRecovering) return
                     val item = player.currentMediaItem ?: return
                     val uri = item.localConfiguration?.uri ?: return
                     if (uri.scheme != "file") {
                         // Streaming failure — surface to the user. Without this the Play
                         // icon silently stays "Play" (because isPlaying never went true),
                         // which is what a removed-from-host enclosure looks like in the UI.
-                        uiEvents.emit(UiEvent.Snackbar("Couldn't play episode. Audio source unavailable."))
+                        uiEvents.emit(UiEvent.Snackbar(PLAYBACK_SOURCE_UNAVAILABLE_MESSAGE))
                         return
                     }
                     val episodeId = item.mediaId.removePrefix(MEDIA_ID_EPISODE_PREFIX)
                     if (episodeId.isBlank()) return
-                    // Confirm we have a streaming fallback BEFORE wiping the download row —
-                    // otherwise a bad-restore that lost both the file AND the episode row
-                    // would leave us with a dead media item and no recovery (the same
-                    // silent stall the fix is meant to prevent).
-                    val episode = episodes.episodeNow(episodeId) ?: return
-                    if (episode.enclosureUrl.isBlank()) return
-                    downloads.delete(episodeId)
-                    val streamItem = item.buildUpon().setUri(episode.enclosureUrl).build()
+                    // currentPosition is only valid on the player's application thread, so
+                    // capture the resume point here, before hopping off the main thread.
                     val resumeAt = player.currentPosition.coerceAtLeast(0L)
-                    player.setMediaItem(streamItem, resumeAt)
-                    player.prepare()
-                    player.play()
+                    isRecovering = true
+                    // The episode lookup (synchronous SQLite) and the download delete
+                    // (listFiles + unlink + a DB write) must not run on the main thread —
+                    // under IO pressure they jank/ANR. Do them on Default, then resume
+                    // player control back on Main. We confirm a streaming fallback exists
+                    // BEFORE wiping the download row — a bad-restore that lost both the file
+                    // AND the episode row must not leave us with a dead media item and no
+                    // recovery; instead we notify, mirroring the streaming branch above.
+                    scope.launch(Dispatchers.Default) {
+                        try {
+                            val enclosureUrl = episodes.episodeNow(episodeId)?.enclosureUrl
+                            when (val recovery = fileRecoveryDecision(enclosureUrl)) {
+                                is PlaybackRecovery.Notify ->
+                                    uiEvents.emit(UiEvent.Snackbar(recovery.message))
+                                is PlaybackRecovery.Restream -> {
+                                    downloads.delete(episodeId)
+                                    withContext(Dispatchers.Main) {
+                                        val streamItem = item.buildUpon().setUri(recovery.streamUrl).build()
+                                        player.setMediaItem(streamItem, resumeAt)
+                                        player.prepare()
+                                        player.play()
+                                    }
+                                }
+                            }
+                        } finally {
+                            // Clear the guard on Main so the next error can recover. If the
+                            // scope was cancelled (service destroyed) this hop is skipped —
+                            // harmless, the field dies with the service.
+                            withContext(Dispatchers.Main) { isRecovering = false }
+                        }
+                    }
                 }
             },
         )
