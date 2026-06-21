@@ -145,7 +145,13 @@ class PlayerViewModel(
                     podcastId = p.podcastId,
                     podcastTitle = p.podcastTitle,
                     title = target.title,
-                    artworkUrl = p.artworkUrl,
+                    // Use the stepped-to episode's own cover, falling back to the
+                    // current episode's artwork only when blank. Mirrors
+                    // EpisodeDetailViewModel.togglePlay()/seekToChapter(); `p` is the
+                    // *previous* episode's state, so `p.artworkUrl` alone left shows
+                    // with per-episode art displaying the wrong cover on the media
+                    // notification / lock screen / Android Auto (issue #20).
+                    artworkUrl = target.imageUrl.ifBlank { p.artworkUrl },
                     sourceUrl = sourceUrl,
                     startPositionMs = startMs,
                     episodeNumber = target.episodeNumber?.takeIf { it in 1..Int.MAX_VALUE }?.toInt(),
