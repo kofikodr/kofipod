@@ -13,6 +13,21 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 
+/**
+ * Raised when Readwise answers a highlight create/update with a non-2xx status.
+ * Carries the numeric [status] so [ReadwiseSink] can distinguish failures that
+ * will never succeed as-is (auth/permission — the token must be reconnected)
+ * from transient ones (network / rate-limit / 5xx) that are worth retrying.
+ */
+class ReadwiseHttpException(val status: Int) :
+    Exception("Readwise request failed: HTTP $status") {
+    /** 401/403 — the saved token is invalid or revoked; prompt a reconnect. */
+    val isAuthFailure: Boolean get() = status == 401 || status == 403
+
+    /** 408 timeout, 429 rate-limit, and 5xx are worth retrying; other 4xx are not. */
+    val isTransient: Boolean get() = status == 408 || status == 429 || status in 500..599
+}
+
 open class ReadwiseClient(private val client: HttpClient) {
     open suspend fun verify(token: String): Boolean {
         val resp: HttpResponse =
@@ -34,7 +49,7 @@ open class ReadwiseClient(private val client: HttpClient) {
                     setBody(request)
                 }
             if (!resp.status.isSuccess()) {
-                error("Readwise POST failed: ${resp.status}")
+                throw ReadwiseHttpException(resp.status.value)
             }
             val body: List<ReadwiseCreateResponseItem> = resp.body()
             body.firstOrNull()?.id ?: error("Readwise returned empty body")
@@ -53,7 +68,7 @@ open class ReadwiseClient(private val client: HttpClient) {
                     setBody(request)
                 }
             if (!resp.status.isSuccess()) {
-                error("Readwise PATCH failed: ${resp.status}")
+                throw ReadwiseHttpException(resp.status.value)
             }
             Unit
         }

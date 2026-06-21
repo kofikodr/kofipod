@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class ReadwiseSinkTest {
     @Test fun firstExportPostsAndReturnsExternalId() =
@@ -118,10 +119,99 @@ class ReadwiseSinkTest {
                 )
             assertIs<ExportSinkResult.TransientFailure>(result)
         }
+
+    @Test fun unauthorizedReturnsPermanentFailureWithReconnectPrompt() =
+        runTest {
+            // A revoked/invalid token (401) must NOT loop through the retry worker —
+            // it must surface as a permanent failure that points the user to reconnect.
+            val result = exportWith(createReturns = Result.failure(ReadwiseHttpException(401)))
+            val failure = assertIs<ExportSinkResult.PermanentFailure>(result)
+            assertTrue(
+                failure.message.contains("Reconnect", ignoreCase = true),
+                "Auth failure must prompt the user to reconnect, was: ${failure.message}",
+            )
+        }
+
+    @Test fun forbiddenReturnsPermanentFailureWithReconnectPrompt() =
+        runTest {
+            // 403 is an auth failure too — it must carry the same reconnect prompt as 401.
+            val failure =
+                assertIs<ExportSinkResult.PermanentFailure>(
+                    exportWith(createReturns = Result.failure(ReadwiseHttpException(403))),
+                )
+            assertTrue(failure.message.contains("Reconnect", ignoreCase = true))
+        }
+
+    @Test fun rateLimitReturnsTransientFailure() =
+        runTest {
+            // 429 is a back-off signal, not a credential problem — keep retrying.
+            assertIs<ExportSinkResult.TransientFailure>(
+                exportWith(createReturns = Result.failure(ReadwiseHttpException(429))),
+            )
+        }
+
+    @Test fun serverErrorReturnsTransientFailure() =
+        runTest {
+            assertIs<ExportSinkResult.TransientFailure>(
+                exportWith(createReturns = Result.failure(ReadwiseHttpException(503))),
+            )
+        }
+
+    @Test fun otherClientErrorReturnsPermanentFailure() =
+        runTest {
+            // A 400 will never succeed on blind retry — it must be permanent so the
+            // worker stops looping, even though it isn't an auth failure.
+            val result = exportWith(createReturns = Result.failure(ReadwiseHttpException(400)))
+            val failure = assertIs<ExportSinkResult.PermanentFailure>(result)
+            assertTrue(
+                !failure.message.contains("Reconnect", ignoreCase = true),
+                "Non-auth permanent failure must not falsely tell the user to reconnect",
+            )
+        }
+
+    @Test fun unauthorizedOnUpdatePathReturnsPermanentFailure() =
+        runTest {
+            // The re-export (PATCH) path must classify auth failures identically.
+            val client = FakeReadwiseClient(updateReturns = Result.failure(ReadwiseHttpException(401)))
+            val vault = FakeVault().apply { put("readwise.token", "rw-tok") }
+            val conn = PkmConnection("readwise", ConnectionKind.Readwise, "readwise.token", null, 0L, null)
+            val sink = ReadwiseSink(client, vault) { conn }
+            val result =
+                sink.export(
+                    MarkdownDocument(
+                        listOf("podcast" to "x", "episode" to "y", "episodeUrl" to "https://x", "kofipodId" to "bookmark-b1"),
+                        "body",
+                        "x.md",
+                    ),
+                    PkmExportRequest.Bookmark("b1"),
+                    priorExternalId = "42",
+                )
+            val failure = assertIs<ExportSinkResult.PermanentFailure>(result)
+            assertTrue(failure.message.contains("Reconnect", ignoreCase = true))
+            assertEquals(1, client.updateCalls)
+        }
+
+    /** Run a create-path export against a client whose create call returns [createReturns]. */
+    private suspend fun exportWith(createReturns: Result<Long>): ExportSinkResult {
+        val client = FakeReadwiseClient(createReturns = createReturns)
+        val vault = FakeVault().apply { put("readwise.token", "rw-tok") }
+        val conn = PkmConnection("readwise", ConnectionKind.Readwise, "readwise.token", null, 0L, null)
+        val sink = ReadwiseSink(client, vault) { conn }
+        return sink.export(
+            MarkdownDocument(
+                listOf("podcast" to "x", "episode" to "y", "episodeUrl" to "https://x", "kofipodId" to "bookmark-b1"),
+                "body",
+                "x.md",
+            ),
+            PkmExportRequest.Bookmark("b1"),
+            priorExternalId = null,
+        )
+    }
 }
 
 private class FakeReadwiseClient(
     val createReturns: Result<Long> = Result.success(1L),
+    val updateReturns: Result<Unit> = Result.success(Unit),
 ) : ReadwiseClient(
         HttpClient(MockEngine) {
             engine {
@@ -154,7 +244,7 @@ private class FakeReadwiseClient(
         updateCalls++
         lastUpdateId = id
         lastUpdateRequest = request
-        return Result.success(Unit)
+        return updateReturns
     }
 }
 
