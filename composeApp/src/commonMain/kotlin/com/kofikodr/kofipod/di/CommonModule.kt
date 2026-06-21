@@ -25,9 +25,14 @@ import com.kofikodr.kofipod.backup.DB_SCHEMA_VERSION
 import com.kofikodr.kofipod.backup.DbFileBytes
 import com.kofikodr.kofipod.backup.StageDbFile
 import com.kofikodr.kofipod.config.AppInfo
+import com.kofikodr.kofipod.data.api.DefaultPodcastIndexValidator
+import com.kofikodr.kofipod.data.api.EffectivePodcastIndexCredentials
 import com.kofikodr.kofipod.data.api.GithubReleasesApi
 import com.kofikodr.kofipod.data.api.ItunesSearchApi
 import com.kofikodr.kofipod.data.api.PodcastIndexApi
+import com.kofikodr.kofipod.data.api.PodcastIndexClientProvider
+import com.kofikodr.kofipod.data.api.PodcastIndexConfigRepository
+import com.kofikodr.kofipod.data.api.PodcastIndexValidator
 import com.kofikodr.kofipod.data.db.DatabaseFactory
 import com.kofikodr.kofipod.data.net.NetworkErrorHandler
 import com.kofikodr.kofipod.data.net.buildHttpClient
@@ -82,6 +87,7 @@ import com.kofikodr.kofipod.ui.screens.search.SearchViewModel
 import com.kofikodr.kofipod.ui.screens.settings.SettingsViewModel
 import com.kofikodr.kofipod.ui.screens.settings.UpdateActionPort
 import com.kofikodr.kofipod.ui.screens.settings.ai.AiSetupViewModel
+import com.kofikodr.kofipod.ui.screens.settings.podcastindex.PodcastIndexSetupViewModel
 import com.kofikodr.kofipod.ui.screens.stats.StatsViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -95,7 +101,14 @@ val commonDataModule =
         single { buildHttpClient() }
         single { UiEventBus() }
         single { NetworkErrorHandler() }
-        single { PodcastIndexApi.create() }
+        single { PodcastIndexConfigRepository(store = get(), appScope = get(org.koin.core.qualifier.named("appScope"))) }
+        single { EffectivePodcastIndexCredentials(config = get()) }
+        single {
+            val effective = get<EffectivePodcastIndexCredentials>()
+            PodcastIndexClientProvider(resolve = { effective.resolve() })
+        }
+        single { PodcastIndexApi(get()) }
+        single<PodcastIndexValidator> { DefaultPodcastIndexValidator() }
         // Driver is exposed separately from KofipodDatabase so the SAF backup path
         // can issue a `PRAGMA wal_checkpoint(TRUNCATE)` before reading the on-disk
         // file — otherwise recent committed writes still in the `-wal` sidecar
@@ -529,6 +542,7 @@ val commonDataModule =
                 updateRepo = get(),
                 updateActions = get<UpdateActionPort>(),
                 aiConfig = get(),
+                piConfig = get(),
                 errors = get(),
                 opml = get(),
                 pro = get(),
@@ -545,6 +559,7 @@ val commonDataModule =
             )
         }
         viewModel { AiSetupViewModel(config = get(), client = get(), summaries = get(), discuss = get()) }
+        viewModel { PodcastIndexSetupViewModel(config = get(), validator = get()) }
         viewModel { (episodeId: String) ->
             com.kofikodr.kofipod.ui.screens.detail.ai.AiSummaryViewModel(
                 episodeId = episodeId,

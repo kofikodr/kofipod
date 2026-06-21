@@ -17,6 +17,8 @@ import com.kofikodr.kofipod.backup.BackupFilePort
 import com.kofikodr.kofipod.backup.BackupFolderStore
 import com.kofikodr.kofipod.backup.DbFileBytes
 import com.kofikodr.kofipod.backup.StageDbFile
+import com.kofikodr.kofipod.data.api.AndroidPodcastIndexCredentialStore
+import com.kofikodr.kofipod.data.api.PodcastIndexCredentialStore
 import com.kofikodr.kofipod.data.db.DatabaseFactory
 import com.kofikodr.kofipod.data.repo.SettingsRepository
 import com.kofikodr.kofipod.data.search.AndroidItunesStorefrontStore
@@ -112,6 +114,7 @@ val androidPlatformModule =
         single { UpdateInstaller(context = androidContext(), httpClient = get(), repo = get()) }
         single<UpdateActionPort> { AndroidUpdateActionPort(installer = get()) }
         single<KeyVault> { AndroidKeyVault(androidContext()) }
+        single<PodcastIndexCredentialStore> { AndroidPodcastIndexCredentialStore(androidContext()) }
         single<EntitlementCache> { AndroidEntitlementCache(androidContext()) }
         single { ActivityHolder() }
         single<DiagnosticsConfigRepository> { AndroidDiagnosticsConfigRepository(androidContext()) }

@@ -11,6 +11,8 @@ import com.kofikodr.kofipod.backup.BackupAction
 import com.kofikodr.kofipod.backup.BackupController
 import com.kofikodr.kofipod.backup.BackupFolderStore
 import com.kofikodr.kofipod.backup.RestoreValidation
+import com.kofikodr.kofipod.data.api.PodcastIndexConfigRepository
+import com.kofikodr.kofipod.data.api.PodcastIndexCredentials
 import com.kofikodr.kofipod.data.net.NetworkErrorHandler
 import com.kofikodr.kofipod.data.repo.EpisodesRepository
 import com.kofikodr.kofipod.data.repo.LibraryRepository
@@ -71,6 +73,9 @@ data class SettingsUiState(
     val aiConnected: Boolean = false,
     val aiModel: GeminiModel = GeminiModel.Flash,
     val opmlAction: OpmlAction = OpmlAction.Idle,
+    /** True on FOSS builds (key blank at compile time). Drives the conditional PI settings row. */
+    val showPodcastIndexByok: Boolean = PodcastIndexCredentials.key.isBlank(),
+    val podcastIndexConnected: Boolean = false,
     val proEntitlement: ProEntitlement = ProEntitlement.Unknown,
     val restoreInFlight: Boolean = false,
     val backupAction: BackupAction = BackupAction.Idle,
@@ -94,6 +99,7 @@ class SettingsViewModel(
     // Wrapped in an interface so commonMain VM stays Android-free.
     private val updateActions: UpdateActionPort,
     private val aiConfig: AiConfigRepository,
+    private val piConfig: PodcastIndexConfigRepository,
     private val errors: NetworkErrorHandler,
     private val opml: OpmlController,
     private val pro: ProEntitlementRepository,
@@ -204,6 +210,10 @@ class SettingsViewModel(
             // a 6th would force vararg form and lose the inference.
             .combine(itunesStorefronts.storefrontFlow()) { settings, storefront ->
                 settings.copy(itunesStorefront = storefront)
+            }
+            // Chained for the same reason: keeps inference intact and avoids the vararg form.
+            .combine(piConfig.isConfigured()) { settings, piConnected ->
+                settings.copy(podcastIndexConnected = piConnected)
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
