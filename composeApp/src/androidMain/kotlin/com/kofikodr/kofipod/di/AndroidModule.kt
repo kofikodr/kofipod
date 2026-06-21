@@ -17,6 +17,7 @@ import com.kofikodr.kofipod.backup.BackupFilePort
 import com.kofikodr.kofipod.backup.BackupFolderStore
 import com.kofikodr.kofipod.backup.DbFileBytes
 import com.kofikodr.kofipod.backup.StageDbFile
+import com.kofikodr.kofipod.backup.stageRestoreAtomically
 import com.kofikodr.kofipod.data.api.AndroidPodcastIndexCredentialStore
 import com.kofikodr.kofipod.data.api.PodcastIndexCredentialStore
 import com.kofikodr.kofipod.data.db.DatabaseFactory
@@ -58,7 +59,6 @@ import com.kofikodr.kofipod.update.UpdateChecker
 import com.kofikodr.kofipod.update.UpdateInstaller
 import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
-import java.io.File
 
 val androidPlatformModule =
     module {
@@ -159,7 +159,10 @@ val androidPlatformModule =
         single<StageDbFile> {
             val ctx = androidContext()
             StageDbFile { bytes ->
-                File(ctx.filesDir, BackupController.STAGED_FILENAME).writeBytes(bytes)
+                // Atomic write (temp + rename): a process kill during the ~600ms
+                // restore snackbar delay must never leave a partial restore.tmp that
+                // the next cold start would copy over the live DB. See issue #17.
+                stageRestoreAtomically(ctx.filesDir, BackupController.STAGED_FILENAME, bytes)
             }
         }
     }
