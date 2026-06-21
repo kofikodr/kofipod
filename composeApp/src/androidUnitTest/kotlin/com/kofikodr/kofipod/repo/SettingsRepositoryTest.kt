@@ -29,4 +29,27 @@ class SettingsRepositoryTest {
             "streamCacheCapBytesNow should reflect the last persisted value",
         )
     }
+
+    @Test
+    fun dailyCheckEnabledNow_defaultsTrue_whenNothingPersisted() {
+        // Crux of issue #2: with nothing persisted (a fresh install) the toggle is ON,
+        // so the cold-start scheduler must see `true` and schedule the episode-check worker.
+        val repo = SettingsRepository(inMemoryDatabase())
+        assertEquals(
+            true,
+            repo.dailyCheckEnabledNow(),
+            "daily check must default ON so a fresh install schedules the episode-check worker",
+        )
+    }
+
+    @Test
+    fun dailyCheckEnabledNow_roundTripsPersistedValue() {
+        val repo = SettingsRepository(inMemoryDatabase())
+
+        repo.setDailyCheckEnabled(false)
+        assertEquals(false, repo.dailyCheckEnabledNow(), "must reflect a persisted false")
+
+        repo.setDailyCheckEnabled(true)
+        assertEquals(true, repo.dailyCheckEnabledNow(), "must reflect a persisted true")
+    }
 }

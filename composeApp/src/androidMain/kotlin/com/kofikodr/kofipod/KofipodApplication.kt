@@ -4,7 +4,9 @@ package com.kofikodr.kofipod
 import android.app.Application
 import com.kofikodr.kofipod.ai.AiSummaryRepository
 import com.kofikodr.kofipod.background.BackupScheduler
+import com.kofikodr.kofipod.background.Scheduler
 import com.kofikodr.kofipod.backup.PendingRestore
+import com.kofikodr.kofipod.data.repo.SettingsRepository
 import com.kofikodr.kofipod.di.androidPlatformModule
 import com.kofikodr.kofipod.di.commonDataModule
 import com.kofikodr.kofipod.di.flavorPlatformModule
@@ -57,6 +59,14 @@ class KofipodApplication : Application() {
         // unconditionally on cold start costs nothing and means the moment a user
         // picks a folder, the next 24h tick has work to do.
         get<BackupScheduler>(BackupScheduler::class.java).enable()
+        // The daily episode-check toggle defaults ON, but the WorkManager job is only
+        // (re)scheduled when the user touches the toggle — so on a fresh install nothing
+        // ever ran: no new-episode detection, notifications, auto-downloads, or update
+        // piggybacking. Schedule it on every cold start when enabled. enqueueUniquePeriodicWork
+        // uses ExistingPeriodicWorkPolicy.UPDATE, so this is idempotent. See issue #2.
+        if (get<SettingsRepository>(SettingsRepository::class.java).dailyCheckEnabledNow()) {
+            get<Scheduler>(Scheduler::class.java).enable()
+        }
         // Wire diagnostics flag flows to SDK enable/disable. Until the user
         // acknowledges the first-launch disclosure, both subsystems stay
         // disabled regardless of toggle state.
