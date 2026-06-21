@@ -46,7 +46,7 @@ class ReadwiseSink(
                 ReadwiseUpdateRequest(text = document.body, note = "kofipodId:$kofipodId"),
             ).fold(
                 onSuccess = { ExportSinkResult.Success(externalId = priorExternalId) },
-                onFailure = { ExportSinkResult.TransientFailure(it.message ?: "Readwise PATCH failed") },
+                onFailure = { classifyFailure(it) },
             )
         } else {
             client.createHighlight(
@@ -65,8 +65,32 @@ class ReadwiseSink(
                 ),
             ).fold(
                 onSuccess = { ExportSinkResult.Success(externalId = it.toString()) },
-                onFailure = { ExportSinkResult.TransientFailure(it.message ?: "Readwise POST failed") },
+                onFailure = { classifyFailure(it) },
             )
         }
     }
+
+    /**
+     * Map a Readwise call failure to the right [ExportSinkResult]. Auth/permission
+     * failures (401/403) and other non-retryable 4xx become [PermanentFailure] so
+     * the coordinator stops re-enqueuing the export — a revoked token would
+     * otherwise loop through the retry worker forever. Network errors, rate-limits,
+     * timeouts, and 5xx stay [TransientFailure] so genuine blips still retry.
+     */
+    private fun classifyFailure(t: Throwable): ExportSinkResult =
+        when {
+            t is ReadwiseHttpException && t.isAuthFailure ->
+                ExportSinkResult.PermanentFailure(
+                    "Readwise rejected your token (HTTP ${t.status}). " +
+                        "Reconnect Readwise in Settings → Connections.",
+                )
+            t is ReadwiseHttpException && !t.isTransient ->
+                ExportSinkResult.PermanentFailure("Readwise rejected the request (HTTP ${t.status}).")
+            else ->
+                // Anything without an HTTP status — socket/IO errors, timeouts, or an
+                // unparseable response from a proxy/CDN during an outage — is treated as
+                // transient on purpose: these self-heal, and the worker's exponential
+                // backoff bounds the cost. We'd rather retry than silently drop an export.
+                ExportSinkResult.TransientFailure(t.message ?: "Readwise request failed")
+        }
 }
