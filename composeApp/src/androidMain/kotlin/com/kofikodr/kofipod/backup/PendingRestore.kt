@@ -43,13 +43,29 @@ internal object PendingRestore {
         val ok =
             runCatching {
                 val stagedFile = File(context.filesDir, staged)
-                if (!stagedFile.exists() || stagedFile.length() == 0L) {
-                    Log.w(LOG_TAG, "pending restore present but staged file missing/empty; skipping")
+                // Refuse anything that isn't a structurally complete SQLite file. A
+                // process kill during staging used to be able to leave a truncated
+                // restore.tmp that passed a bare length>0 check and then clobbered the
+                // live DB with an unopenable image (issue #17). Staging is now atomic,
+                // but we still validate before touching kofipod.db as defence-in-depth.
+                if (!isCompleteSqliteFile(stagedFile)) {
+                    Log.w(LOG_TAG, "pending restore staged file invalid/incomplete; skipping (live DB untouched)")
+                    stagedFile.delete()
                     return@runCatching false
                 }
                 val dbFile = context.getDatabasePath(DB_NAME)
                 dbFile.parentFile?.mkdirs()
-                stagedFile.copyTo(dbFile, overwrite = true)
+                // Copy to a sibling temp, then atomically rename over the live DB, so a
+                // kill mid-copy can't leave kofipod.db itself truncated. Safe here: this
+                // runs before Koin stands up the SQLDelight driver, so no connection is
+                // open on the live DB.
+                val newDbFile = File(dbFile.absolutePath + ".new")
+                newDbFile.delete()
+                stagedFile.copyTo(newDbFile, overwrite = true)
+                if (!newDbFile.renameTo(dbFile)) {
+                    newDbFile.delete()
+                    error("Couldn't move restored DB into place")
+                }
                 // SQLite WAL/shm hold journal state for the OLD db file; deleting them
                 // forces SQLite to recreate them against our new on-disk image.
                 File(dbFile.absolutePath + "-wal").delete()
@@ -86,7 +102,9 @@ internal object PendingRestore {
      * Wrapped in its own `runCatching`: if the scrub throws (corrupt DB, missing table
      * because of a schema mismatch we somehow let through, etc.) we still want the
      * restore itself to count as successful — the caller has already overwritten
-     * `kofipod.db`. Worst case is the bug we're fixing here continues to manifest.
+     * `kofipod.db`. Worst case: stale `Download` / `PlaybackState` rows survive into the
+     * restored session (e.g. the Downloads screen shows phantom entries) until the user
+     * clears them; the restored library data itself is intact.
      */
     private fun scrubTransientState(dbFile: File) {
         runCatching {
