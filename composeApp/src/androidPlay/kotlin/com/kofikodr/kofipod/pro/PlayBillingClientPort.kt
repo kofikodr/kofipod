@@ -139,7 +139,24 @@ class PlayBillingClientPort(
                 .build()
 
         return suspendCancellableCoroutine { cont ->
+            if (purchaseContinuation != null) {
+                // A purchase flow is already pending. Overwriting its continuation would
+                // leak the in-flight one (never resumed → stuck coroutine) and let
+                // onPurchasesUpdated resume the wrong call. The PaywallViewModel's in-flight
+                // guard normally prevents a second launch; this is defense-in-depth (#29).
+                // Same single-threaded discipline as the rest of this field's accesses
+                // (Play Billing serialises callbacks; the VM launches on Main).
+                cont.resume(Result.failure(IllegalStateException("A purchase is already in progress")))
+                return@suspendCancellableCoroutine
+            }
             purchaseContinuation = cont
+            // If the caller is cancelled mid-purchase (e.g. the ViewModel scope is torn down
+            // before onPurchasesUpdated fires), clear the continuation so a stale value can't
+            // make the guard above permanently reject every future purchase. Identity-guarded
+            // so we never clear a continuation a later launch has since installed.
+            cont.invokeOnCancellation {
+                if (purchaseContinuation === cont) purchaseContinuation = null
+            }
             val result = client.launchBillingFlow(activity, flowParams)
             if (result.responseCode != BillingClient.BillingResponseCode.OK) {
                 purchaseContinuation = null

@@ -58,9 +58,11 @@ class PaywallViewModel(
     fun purchaseIndividual() = launchPurchase(ProProducts.INDIVIDUAL)
 
     fun restore() {
+        // In-flight guard, set synchronously BEFORE the launch (see launchPurchase).
+        if (mode.value != PaywallMode.Idle) return
+        mode.value = PaywallMode.Restoring
+        error.value = null
         viewModelScope.launch {
-            mode.value = PaywallMode.Restoring
-            error.value = null
             val result = repo.restorePurchases()
             mode.value = PaywallMode.Idle
             result.onSuccess { ent ->
@@ -72,9 +74,15 @@ class PaywallViewModel(
     fun dismiss() = router.dismiss()
 
     private fun launchPurchase(productId: String) {
+        // Ignore taps while a purchase or restore is already in flight. The mode flip MUST
+        // happen synchronously here, not inside the launched coroutine: viewModelScope.launch
+        // only QUEUES its body, so two rapid taps would both observe `mode == Idle` and each
+        // launch a coroutine — calling repo.launchPurchase twice and overwriting the Play
+        // Billing port's single purchaseContinuation, leaking the first (issue #29).
+        if (mode.value != PaywallMode.Idle) return
+        mode.value = PaywallMode.Launching
+        error.value = null
         viewModelScope.launch {
-            mode.value = PaywallMode.Launching
-            error.value = null
             val result = repo.launchPurchase(productId)
             mode.value = PaywallMode.Idle
             result.onSuccess { ent ->
