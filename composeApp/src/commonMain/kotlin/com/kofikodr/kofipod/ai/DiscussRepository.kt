@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.update
@@ -283,8 +284,10 @@ class DiscussRepository(
      * the just-cleared session.
      */
     suspend fun clearForEpisode(episodeId: String) {
-        val job = activeJobs.value[episodeId]
-        activeJobs.update { it - episodeId }
+        // Same atomic-swap discipline as clearAll: capture-and-remove this episode's job in
+        // one step so a concurrent send for the same episode can't slip a new job into the
+        // gap between a read and a clear and escape cancellation (sibling of the #25 race).
+        val job = activeJobs.getAndUpdate { it - episodeId }[episodeId]
         inFlight.update { it - episodeId }
         transientErrors.update { it - episodeId }
         uploadProgress.update { it - episodeId }
@@ -325,8 +328,13 @@ class DiscussRepository(
      * footprint are removed in one action.
      */
     suspend fun clearAll() {
-        val jobs = activeJobs.value.values.toList()
-        activeJobs.value = emptyMap()
+        // Atomically swap the job map to empty and capture what was there. A plain
+        // read-then-clear raced: a concurrent runSend doing
+        // `activeJobs.update { it + (id to job) }` between the two statements was
+        // clobbered by the unconditional `= emptyMap()`, leaving the new job neither
+        // cancelled nor tracked (it ran on against just-wiped tables). getAndUpdate makes
+        // the swap atomic — see AiSummaryRepository.clearAll for the full rationale (#25).
+        val jobs = activeJobs.getAndUpdate { emptyMap() }.values.toList()
         inFlight.value = emptySet()
         transientErrors.value = emptyMap()
         uploadProgress.value = emptyMap()
