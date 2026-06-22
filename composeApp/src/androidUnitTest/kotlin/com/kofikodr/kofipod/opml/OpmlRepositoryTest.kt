@@ -198,6 +198,105 @@ class OpmlRepositoryTest {
         }
 
     @Test
+    fun import_dedupesFeedUrlDuplicatedWithinTheSameFile() =
+        runTest {
+            // Issue #32: the same feed URL twice in one OPML. Pre-fix, the dedup map was
+            // built once before the walk, so the second occurrence re-resolved and
+            // re-saved — double-counting `imported` and re-running savePodcast (whose
+            // INSERT OR REPLACE can cascade-delete the just-imported episodes).
+            val db = inMemoryDatabase()
+            val library = LibraryRepository(db)
+            val opml =
+                """<?xml version="1.0" encoding="UTF-8"?>
+                <opml version="2.0">
+                  <head/>
+                  <body>
+                    <outline type="rss" text="ATP" xmlUrl="https://atp.fm/rss"/>
+                    <outline type="rss" text="ATP again" xmlUrl="https://atp.fm/rss"/>
+                  </body>
+                </opml>"""
+            val lookup = CountingLookup("https://atp.fm/rss" to summary("123", "ATP", "https://atp.fm/rss"))
+            val repo = OpmlRepository(library, lookup, fixedClock)
+
+            val result = repo.import(opml.toByteArray())
+
+            assertEquals(1, result.imported, "Only the first occurrence imports")
+            assertEquals(1, result.skipped, "The in-file duplicate is skipped, not imported again")
+            assertEquals(0, result.failed)
+            assertEquals(1, library.podcastsNow().size, "Exactly one podcast row exists")
+            // `callsFor == 1` is also the cascade-delete guard: it proves savePodcast ran
+            // once, so there is no second INSERT OR REPLACE to cascade-delete episodes.
+            // (Within a single import the just-saved podcast has no episodes yet — fetch is
+            // lazy — so this call-count assertion, not an episode-survival check, is what
+            // meaningfully pins the fix.)
+            assertEquals(1, lookup.callsFor("https://atp.fm/rss"), "The duplicate must not re-hit the lookup API")
+        }
+
+    @Test
+    fun import_dedupesFeedUrlDuplicatedAcrossDifferentFolders() =
+        runTest {
+            // Dedup is keyed on URL alone, so the same feed in two different folders is
+            // still imported once. The first folder encountered wins the membership.
+            val db = inMemoryDatabase()
+            val library = LibraryRepository(db)
+            val opml =
+                """<?xml version="1.0" encoding="UTF-8"?>
+                <opml version="2.0">
+                  <head/>
+                  <body>
+                    <outline text="Tech" title="Tech">
+                      <outline type="rss" text="ATP" xmlUrl="https://atp.fm/rss"/>
+                    </outline>
+                    <outline text="Faves" title="Faves">
+                      <outline type="rss" text="ATP" xmlUrl="https://atp.fm/rss"/>
+                    </outline>
+                  </body>
+                </opml>"""
+            val lookup = CountingLookup("https://atp.fm/rss" to summary("123", "ATP", "https://atp.fm/rss"))
+            val repo = OpmlRepository(library, lookup, fixedClock)
+
+            val result = repo.import(opml.toByteArray())
+
+            assertEquals(1, result.imported, "The cross-folder duplicate must import once")
+            assertEquals(1, result.skipped)
+            assertEquals(1, lookup.callsFor("https://atp.fm/rss"))
+            assertEquals(1, library.podcastsNow().size)
+            val atp = library.podcastsNow().single()
+            val tech = library.listsNow().first { it.name == "Tech" }
+            assertEquals(tech.id, atp.listId, "First folder encountered (Tech) wins membership")
+        }
+
+    @Test
+    fun import_inFileDuplicateOfAnExistingSubscription_isStillSkippedOnce() =
+        runTest {
+            // The in-file dedupe must compose with the existing-library skip: a feed
+            // already subscribed AND listed twice in the file is skipped both times,
+            // never re-resolved.
+            val db = inMemoryDatabase()
+            val library = LibraryRepository(db)
+            library.savePodcast(summary("123", "ATP", "https://atp.fm/rss"), listId = null, now = 0L)
+            val opml =
+                """<?xml version="1.0" encoding="UTF-8"?>
+                <opml version="2.0">
+                  <head/>
+                  <body>
+                    <outline type="rss" text="ATP" xmlUrl="https://atp.fm/rss"/>
+                    <outline type="rss" text="ATP again" xmlUrl="https://atp.fm/rss"/>
+                  </body>
+                </opml>"""
+            val lookup = CountingLookup() // empty: a lookup attempt would error
+            val repo = OpmlRepository(library, lookup, fixedClock)
+
+            val result = repo.import(opml.toByteArray())
+
+            assertEquals(0, result.imported)
+            assertEquals(2, result.skipped, "Both occurrences are skipped")
+            assertEquals(0, result.failed)
+            assertEquals(1, library.podcastsNow().size)
+            assertEquals(0, lookup.callsFor("https://atp.fm/rss"), "An existing subscription is never re-resolved")
+        }
+
+    @Test
     fun export_roundTripsThroughParser() =
         runTest {
             val db = inMemoryDatabase()
@@ -241,6 +340,19 @@ class OpmlRepositoryTest {
         private val map = pairs.toMap()
 
         override suspend fun resolve(feedUrl: String): PodcastSummary = map[feedUrl] ?: error("Not in fake lookup: $feedUrl")
+    }
+
+    /** Like [FakeLookup] but records how many times each URL was resolved. */
+    private class CountingLookup(vararg pairs: Pair<String, PodcastSummary>) : PodcastFeedLookup {
+        private val map = pairs.toMap()
+        private val calls = mutableMapOf<String, Int>()
+
+        override suspend fun resolve(feedUrl: String): PodcastSummary {
+            calls[feedUrl] = (calls[feedUrl] ?: 0) + 1
+            return map[feedUrl] ?: error("Not in fake lookup: $feedUrl")
+        }
+
+        fun callsFor(feedUrl: String): Int = calls[feedUrl] ?: 0
     }
 
     private companion object {
