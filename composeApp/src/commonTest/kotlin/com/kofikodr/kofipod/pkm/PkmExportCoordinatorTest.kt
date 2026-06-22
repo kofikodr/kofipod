@@ -345,6 +345,140 @@ class PkmExportCoordinatorTest {
             assertTrue(received.isEmpty(), "dismiss must not emit a result, but got $received")
         }
 
+    @Test
+    fun retryOfDeletedItemDrainsTheQueuedRowInsteadOfRetryingForever() =
+        runTest {
+            // The headline of issue #23: a connection-bound export got queued for retry,
+            // then the user deleted the snippet. PkmExportWorker keeps calling retry() with
+            // the row, buildDocument keeps returning null, and the old code returned without
+            // marking the row terminal — so selectQueuedOrFailed() handed it back forever.
+            val log = RecordingExportLog()
+            log.markQueued("snippet", "snip-1", ConnectionKind.Readwise, nowMs = 1)
+            assertEquals(1, log.selectQueuedOrFailed().size, "precondition: a row is waiting for the worker")
+
+            val coord =
+                newCoordinator(
+                    deps = FakeDeps(snippet = null, episode = sampleEpisode(), podcast = samplePodcast()),
+                    exportLog = log,
+                )
+
+            // The worker drains the queue.
+            coord.retry(log.selectQueuedOrFailed().single())
+            advanceUntilIdle()
+
+            assertTrue(
+                log.selectQueuedOrFailed().isEmpty(),
+                "a deleted item's row must be removed so the worker stops retrying it",
+            )
+            assertEquals(listOf("snippet" to "snip-1"), log.deletedItems, "the dead row must be actively deleted")
+        }
+
+    @Test
+    fun executeOfDeletedItemAlsoRemovesAnyOrphanRow() =
+        runTest {
+            // The same cleanup must happen on the direct user path, not just the worker
+            // retry path — e.g. the user taps Export on a row whose underlying snippet was
+            // just deleted in another pane, and a stale queued row already exists.
+            val log = RecordingExportLog()
+            log.markQueued("snippet", "snip-1", ConnectionKind.Readwise, nowMs = 1)
+            val clipSink = FakeSink(FakeSink.Role.Clipboard)
+            val coord =
+                newCoordinator(
+                    deps = FakeDeps(snippet = null, episode = sampleEpisode(), podcast = samplePodcast()),
+                    clipboardSink = clipSink,
+                    exportLog = log,
+                )
+            val received = mutableListOf<PkmExportResult>()
+            val collector = collect(coord, received)
+
+            coord.execute(PkmExportRequest.Snippet("snip-1"), PkmDestination.Clipboard)
+            advanceUntilIdle()
+            collector.cancel()
+
+            assertEquals(listOf(PkmExportResult.Failed("Item not found")), received.toList())
+            assertTrue(log.selectQueuedOrFailed().isEmpty(), "the orphan row is cleaned via the execute path too")
+            assertEquals(listOf("snippet" to "snip-1"), log.deletedItems)
+        }
+
+    @Test
+    fun retryOfDeletedBookmarkDrainsQueuedRow() =
+        runTest {
+            // Same path as the snippet case but exercises the ITEM_KIND_BOOKMARK constant
+            // end-to-end, so a typo in that constant (or itemKindOf's bookmark arm) is caught.
+            val log = RecordingExportLog()
+            log.markQueued("bookmark", "bm-1", ConnectionKind.Readwise, nowMs = 1)
+            val coord =
+                newCoordinator(
+                    deps = FakeDeps(bookmark = null, episode = sampleEpisode(), podcast = samplePodcast()),
+                    exportLog = log,
+                )
+
+            coord.retry(log.selectQueuedOrFailed().single())
+            advanceUntilIdle()
+
+            assertTrue(log.selectQueuedOrFailed().isEmpty(), "a deleted bookmark's row must be removed")
+            assertEquals(listOf("bookmark" to "bm-1"), log.deletedItems)
+        }
+
+    @Test
+    fun successfulExportDoesNotDeleteTheLogRow() =
+        runTest {
+            // Guard against an over-eager cleanup: deleteByItem must fire ONLY on the
+            // item-not-found path, never on a live, successfully-exported item.
+            val log = RecordingExportLog()
+            val clipSink = FakeSink(FakeSink.Role.Clipboard)
+            val coord =
+                newCoordinator(
+                    deps = FakeDeps(snippet = sampleSnippet(), episode = sampleEpisode(), podcast = samplePodcast()),
+                    clipboardSink = clipSink,
+                    exportLog = log,
+                )
+            val received = mutableListOf<PkmExportResult>()
+            val collector = collect(coord, received)
+
+            coord.execute(PkmExportRequest.Snippet("snip-1"), PkmDestination.Clipboard)
+            advanceUntilIdle()
+            collector.cancel()
+
+            assertEquals(listOf(PkmExportResult.Copied), received.toList(), "precondition: the export succeeded")
+            assertTrue(log.deletedItems.isEmpty(), "a successful export must never delete the item's log row")
+        }
+
+    @Test
+    fun retryOfRowWithUnknownItemKindDeletesTheDeadRow() =
+        runTest {
+            // Defense in depth for the same "dead row retried forever" class: a row whose
+            // itemKind this build no longer understands can never be turned into a request,
+            // so retry() must delete it rather than early-return and leave it queued.
+            val log = RecordingExportLog()
+            log.markQueued("mystery", "x-1", ConnectionKind.Readwise, nowMs = 1)
+            val coord = newCoordinator(deps = FakeDeps(), exportLog = log)
+
+            coord.retry(log.selectQueuedOrFailed().single())
+            advanceUntilIdle()
+
+            assertTrue(log.selectQueuedOrFailed().isEmpty(), "an unprocessable row must not survive a retry pass")
+            assertEquals(listOf("mystery" to "x-1"), log.deletedItems)
+        }
+
+    @Test
+    fun retryOfRowWithUnroutableDestinationDeletesTheDeadRow() =
+        runTest {
+            // The other half of retry()'s guard: ConnectionKind.Notion exists in the enum
+            // but has no PkmDestination entry, so destinationFromKind returns null. Such a
+            // row (e.g. written by a newer build, then downgraded) can never be routed, so
+            // it must be deleted rather than left to retry forever.
+            val log = RecordingExportLog()
+            log.markQueued("snippet", "snip-1", ConnectionKind.Notion, nowMs = 1)
+            val coord = newCoordinator(deps = FakeDeps(), exportLog = log)
+
+            coord.retry(log.selectQueuedOrFailed().single())
+            advanceUntilIdle()
+
+            assertTrue(log.selectQueuedOrFailed().isEmpty(), "a row with an unroutable destination must not survive a retry pass")
+            assertEquals(listOf("snippet" to "snip-1"), log.deletedItems)
+        }
+
     // ─── Test plumbing ────────────────────────────────────────────────────────
 
     /**
@@ -359,13 +493,14 @@ class PkmExportCoordinatorTest {
         formatter: MarkdownFormatter = MarkdownFormatterImpl(),
         clipboardSink: ExportSink = FakeSink(FakeSink.Role.Clipboard),
         shareFileSink: ExportSink = FakeSink(FakeSink.Role.File),
+        exportLog: ExportLogRepository = NoOpExportLog(),
     ): PkmExportCoordinator {
         val dispatcher = UnconfinedTestDispatcher(testScheduler)
         return PkmExportCoordinator(
             deps = deps,
             formatter = formatter,
             sinks = SinkRegistry(emptyMap()),
-            exportLog = NoOpExportLog(),
+            exportLog = exportLog,
             scheduler = NoOpScheduler(),
             appScope = CoroutineScope(dispatcher),
             clipboardSink = clipboardSink,
@@ -497,6 +632,67 @@ class PkmExportCoordinatorTest {
 
     private class NoOpScheduler : PkmExportScheduler {
         override fun enqueue() = Unit
+    }
+
+    /**
+     * In-memory [ExportLogRepository] that behaves like the real ledger: one row per
+     * `(itemKind, itemId, destinationKind)`, with [selectQueuedOrFailed] returning rows
+     * in `queued`/`failed` status — exactly what `PkmExportWorker` drains. [deletedItems]
+     * records every [deleteByItem] call so a test can assert a dead row was actively
+     * removed (issue #23), not merely absent.
+     */
+    private class RecordingExportLog : ExportLogRepository {
+        private val rows = mutableMapOf<Triple<String, String, ConnectionKind>, ExportLogEntry>()
+        val deletedItems = mutableListOf<Pair<String, String>>()
+
+        override suspend fun find(
+            itemKind: String,
+            itemId: String,
+            destinationKind: ConnectionKind,
+        ): ExportLogEntry? = rows[Triple(itemKind, itemId, destinationKind)]
+
+        override suspend fun selectQueuedOrFailed(): List<ExportLogEntry> =
+            rows.values.filter { it.status == "queued" || it.status == "failed" }
+
+        override suspend fun recordSuccess(
+            itemKind: String,
+            itemId: String,
+            destinationKind: ConnectionKind,
+            externalId: String?,
+            nowMs: Long,
+        ) {
+            rows[Triple(itemKind, itemId, destinationKind)] =
+                ExportLogEntry(itemKind, itemId, destinationKind, externalId, nowMs, "success", null)
+        }
+
+        override suspend fun markQueued(
+            itemKind: String,
+            itemId: String,
+            destinationKind: ConnectionKind,
+            nowMs: Long,
+        ) {
+            rows[Triple(itemKind, itemId, destinationKind)] =
+                ExportLogEntry(itemKind, itemId, destinationKind, null, nowMs, "queued", null)
+        }
+
+        override suspend fun markFailed(
+            itemKind: String,
+            itemId: String,
+            destinationKind: ConnectionKind,
+            message: String,
+            nowMs: Long,
+        ) {
+            rows[Triple(itemKind, itemId, destinationKind)] =
+                ExportLogEntry(itemKind, itemId, destinationKind, null, nowMs, "failed", message)
+        }
+
+        override suspend fun deleteByItem(
+            itemKind: String,
+            itemId: String,
+        ) {
+            deletedItems += itemKind to itemId
+            rows.keys.removeAll { it.first == itemKind && it.second == itemId }
+        }
     }
 
     // ─── Sample fixtures ──────────────────────────────────────────────────────
