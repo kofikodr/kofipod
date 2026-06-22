@@ -72,6 +72,7 @@ internal object PendingRestore {
                 File(dbFile.absolutePath + "-shm").delete()
                 stagedFile.delete()
                 scrubTransientState(dbFile)
+                pruneOrphanedDownloads(context, dbFile)
                 // Length only, no path. Path would leak the user's data dir.
                 Log.i(LOG_TAG, "restore consumed (${dbFile.length()} bytes)")
                 true
@@ -131,6 +132,61 @@ internal object PendingRestore {
     }
 
     /**
+     * Reclaim audio files left orphaned by a restore (issue #18).
+     *
+     * [scrubTransientState] wipes every `Download` row, so after a restore the app
+     * references no downloaded file. On a *new* device `files/downloads/` is empty, but
+     * on the *same* device (restoring an older backup over an install that had downloads)
+     * the old audio files survive on disk with nothing pointing at them — unreclaimable
+     * through the UI and silently eating storage. Delete every file under the downloads
+     * directory that isn't referenced by a surviving completed `Download` row.
+     *
+     * Reads the referenced paths *after* the scrub so it reflects the restored state
+     * (currently empty → all files pruned). Querying rather than assuming "delete all"
+     * keeps this correct if [scrubTransientState] is ever changed to keep some rows.
+     *
+     * Own `runCatching`: a failure here must not fail the restore — worst case the old
+     * orphan-leak behaviour persists until the next restore.
+     */
+    private fun pruneOrphanedDownloads(
+        context: Context,
+        dbFile: File,
+    ) {
+        runCatching {
+            val referenced = referencedDownloadPaths(dbFile)
+            val downloadsDir = File(context.filesDir, "downloads")
+            val deleted = pruneOrphanedDownloadFiles(downloadsDir, referenced)
+            if (deleted > 0) {
+                Log.i(LOG_TAG, "pruned $deleted orphaned download file(s) after restore")
+            }
+        }.onFailure { t ->
+            Log.w(LOG_TAG, "post-restore download prune failed: ${t::class.simpleName}")
+        }
+    }
+
+    /** Absolute paths of files still referenced by a completed `Download` row. */
+    private fun referencedDownloadPaths(dbFile: File): Set<String> {
+        val paths = mutableSetOf<String>()
+        SQLiteDatabase.openDatabase(
+            dbFile.absolutePath,
+            // factory =
+            null,
+            SQLiteDatabase.OPEN_READONLY,
+        ).use { db ->
+            db.rawQuery(
+                "SELECT localPath FROM Download WHERE state = 'Completed' AND localPath IS NOT NULL",
+                // selectionArgs =
+                null,
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    cursor.getString(0)?.let(paths::add)
+                }
+            }
+        }
+        return paths
+    }
+
+    /**
      * Reads and clears the one-shot "restore just finished" flag. Called by AppShell on
      * first composition; if `true`, the shell emits a "Library restored" snackbar.
      */
@@ -140,4 +196,35 @@ internal object PendingRestore {
         if (flag) prefs.edit().remove(PREF_KEY_COMPLETED).apply()
         return flag
     }
+}
+
+/**
+ * Deletes every regular file directly under [downloadsDir] whose absolute path is not in
+ * [referencedPaths]. Returns the number of files deleted. Subdirectories are left alone.
+ * Extracted as a top-level pure function so the orphan-pruning rule (issue #18) is
+ * unit-testable without standing up a SQLite DB or the Android filesystem.
+ *
+ * NOTE on the "keep referenced" path: in the current production call site
+ * [referencedPaths] is *always empty* — [PendingRestore.scrubTransientState] deletes every
+ * `Download` row before [PendingRestore.referencedDownloadPaths] queries them, so every file
+ * here is pruned. The keep-set is retained on purpose: it keeps this function correct (and a
+ * maintainer honest) if the scrub is ever changed to preserve some rows. Don't assume any
+ * file is being preserved in production today.
+ *
+ * The kept-path contract is string equality against [File.absolutePath]: the DB stores
+ * `localPath` as the `absolutePath` written by `DownloadService`, and we compare against the
+ * `absolutePath` of each listed file. Both sides must use the same (non-canonical) form.
+ */
+internal fun pruneOrphanedDownloadFiles(
+    downloadsDir: File,
+    referencedPaths: Set<String>,
+): Int {
+    val files = downloadsDir.listFiles() ?: return 0
+    var deleted = 0
+    for (file in files) {
+        if (file.isFile && file.absolutePath !in referencedPaths && file.delete()) {
+            deleted++
+        }
+    }
+    return deleted
 }
