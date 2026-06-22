@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.kofikodr.kofipod.playback.auto
 
+import okhttp3.Dns
 import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.URL
+import java.net.UnknownHostException
 
 /**
  * SSRF mitigation for [ArtworkProvider]. The provider is exported, so any
@@ -15,12 +17,22 @@ import java.net.URL
  * the bytes through `openFile()` — turning Kofipod into a confused-deputy
  * SSRF proxy.
  *
- * We mitigate at three layers:
- *  - URL must be `http(s)://` and have a host (this file).
- *  - Every DNS-resolved address must be a public-internet address (this file).
- *  - Provider's network fetch caps the response size, rejects non-image
- *    content-types, and disables redirect-following so a 3xx → private IP
- *    can't sneak past the pre-fetch validation (caller in [ArtworkProvider]).
+ * The **authoritative** SSRF gate is `SsrfBlockingDns` (below), pinned onto the
+ * provider's `OkHttpClient`: it resolves the host once, blocks if any resolved
+ * address is private, and OkHttp then connects to exactly those addresses — so
+ * there is no validate-then-reconnect DNS-rebinding window (issue #31).
+ * [validateArtworkUrl] in this file is a **non-authoritative** pre-flight: it
+ * rejects obviously-bad URLs (bad scheme, missing host, an already-private
+ * resolution) cheaply before a request is built, but it does its own DNS lookup
+ * and is therefore not the layer that closes the TOCTOU.
+ *
+ * The layers, in order of authority:
+ *  - `SsrfBlockingDns` — resolve-once + block-private + connect-to-validated (authoritative).
+ *  - Provider's fetch caps the response size, rejects non-image content-types,
+ *    and disables redirect-following so a 3xx → private IP can't sneak past
+ *    (caller in [ArtworkProvider]).
+ *  - [validateArtworkUrl] pre-flight: scheme + host + a private-address early-out
+ *    (this file; cheap belt-and-braces, not the TOCTOU gate).
  *
  * `usesCleartextTraffic="false"` in the manifest blocks `http://` at the
  * platform layer too; the scheme check here is a belt for the suspenders.
@@ -121,4 +133,31 @@ internal fun validateArtworkUrl(
         return ArtworkUrlCheck.Blocked("private address")
     }
     return ArtworkUrlCheck.Ok
+}
+
+/**
+ * The authoritative SSRF gate for [ArtworkProvider]'s network fetch (issue #31).
+ *
+ * The old code validated the URL's resolved addresses and then let
+ * `URL(url).openConnection()` resolve the host *again* — a classic
+ * validate-then-fetch TOCTOU (DNS rebinding) window: the second resolution
+ * could return a private address the first never saw. Routing the fetch
+ * through an [okhttp3.OkHttpClient] configured with this [Dns] closes that
+ * window, because OkHttp connects to *exactly* the addresses returned here —
+ * there is no independent re-resolution between the check and the connect.
+ *
+ * [lookup] resolves via [systemDns] (injectable for tests), then fail-closes
+ * if the host has no addresses or if *any* resolved address is non-public
+ * (mirrors [validateArtworkUrl]'s "ANY private address blocks" rule, since
+ * OkHttp may connect to any address in the returned list).
+ */
+internal class SsrfBlockingDns(private val systemDns: Dns = Dns.SYSTEM) : Dns {
+    override fun lookup(hostname: String): List<InetAddress> {
+        val resolved = systemDns.lookup(hostname)
+        if (resolved.isEmpty()) throw UnknownHostException("no addresses for $hostname")
+        if (resolved.any { isBlockedInetAddress(it) }) {
+            throw UnknownHostException("blocked non-public address for $hostname")
+        }
+        return resolved
+    }
 }

@@ -8,12 +8,13 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import com.kofikodr.kofipod.data.repo.LibraryRepository
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.koin.java.KoinJavaComponent
 import java.io.File
-import java.net.HttpURLConnection
 import java.net.InetAddress
-import java.net.URL
 import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
 
 /**
  * Serves cached podcast artwork as content:// URIs so Android Auto (which refuses http
@@ -29,6 +30,8 @@ class ArtworkProvider : ContentProvider() {
     private val library: LibraryRepository by lazy {
         KoinJavaComponent.get(LibraryRepository::class.java)
     }
+
+    private val httpClient: OkHttpClient by lazy { buildArtworkHttpClient() }
 
     override fun onCreate(): Boolean = true
 
@@ -80,14 +83,12 @@ class ArtworkProvider : ContentProvider() {
         url: String,
         dest: File,
     ): Boolean {
-        // SSRF gate: every resolved address must be public. The exported
-        // provider plus library.hasArtworkUrl() means an attacker who controls
-        // a podcast feed can register `http://192.168.1.1/admin` as an artwork
-        // URL — without this check, any local app could trigger the fetch.
-        // The OS may resolve a *different* address at openConnection time
-        // (DNS rebinding, separate A-record); we accept that TOCTOU window
-        // because instanceFollowRedirects=false plus the content-type check
-        // makes the worst-case payload limited.
+        // Fast, NON-authoritative pre-flight: reject obviously-bad URLs (bad
+        // scheme, malformed, missing host, an already-private resolution) before
+        // building the request. The authoritative SSRF gate is [SsrfBlockingDns]
+        // on [httpClient] — OkHttp connects to exactly the addresses that Dns
+        // validated, so there is no validate-then-reconnect DNS-rebinding window
+        // (issue #31). This pre-flight is just a cheap early-out.
         when (validateArtworkUrl(url) { host -> InetAddress.getAllByName(host) }) {
             is ArtworkUrlCheck.Blocked -> return false
             ArtworkUrlCheck.Ok -> Unit
@@ -96,65 +97,60 @@ class ArtworkProvider : ContentProvider() {
         val parent = dest.parentFile ?: return false
         parent.mkdirs()
         val tmp = File(parent, "${dest.name}.tmp")
-        var conn: HttpURLConnection? = null
         var succeeded = false
         return try {
-            run download@{
-                val opened =
-                    (URL(url).openConnection() as HttpURLConnection).apply {
-                        connectTimeout = TIMEOUT_MS
-                        readTimeout = TIMEOUT_MS
-                        // Redirects must not bypass the pre-fetch validation. A 3xx
-                        // could send us to a private address whose hostname we
-                        // never resolved. Reject any non-200 status.
-                        instanceFollowRedirects = false
-                    }
-                conn = opened
-                if (opened.responseCode != HttpURLConnection.HTTP_OK) return@download false
+            val request = Request.Builder().url(url).get().build()
+            succeeded =
+                httpClient.newCall(request).execute().use { response ->
+                    // Redirects are disabled on the client, so a non-200 (incl. any
+                    // 3xx) is a hard reject — a redirect could target an unvalidated host.
+                    if (response.code != HTTP_OK) return@use false
 
-                val contentType = opened.contentType?.substringBefore(';')?.trim()?.lowercase()
-                if (contentType == null || !contentType.startsWith("image/")) return@download false
+                    val body = response.body ?: return@use false
+                    val mediaType = body.contentType()
+                    if (mediaType == null || mediaType.type != "image") return@use false
 
-                // contentLengthLong returns -1 when missing. Reject pre-declared
-                // overshoots before opening the input stream so we don't read a
-                // single byte of a hostile multi-GB response.
-                val declaredLength = opened.contentLengthLong
-                if (declaredLength > MAX_ARTWORK_BYTES) return@download false
+                    // contentLength() is -1 when the server omits it. Reject a
+                    // pre-declared overshoot before reading a single byte.
+                    if (body.contentLength() > MAX_ARTWORK_BYTES) return@use false
 
-                var copied = 0L
-                var sizeExceeded = false
-                opened.inputStream.use { input ->
-                    tmp.outputStream().use { output ->
-                        val buffer = ByteArray(ARTWORK_BUFFER_SIZE)
-                        while (true) {
-                            val n = input.read(buffer)
-                            if (n < 0) break
-                            copied += n
-                            if (copied > MAX_ARTWORK_BYTES) {
-                                sizeExceeded = true
-                                return@use
-                            }
-                            output.write(buffer, 0, n)
-                        }
-                    }
+                    copyCapped(body.byteStream(), tmp) && tmp.length() > 0L && tmp.renameTo(dest)
                 }
-                if (sizeExceeded) return@download false
-                if (tmp.length() == 0L) return@download false
-                succeeded = tmp.renameTo(dest)
-                succeeded
-            }
+            succeeded
         } catch (_: Exception) {
             false
         } finally {
-            // disconnect() releases the socket back to the keep-alive pool;
-            // skipping it on failure paths leaks the connection until GC.
-            conn?.disconnect()
             if (!succeeded && tmp.exists()) runCatching { tmp.delete() }
         }
     }
 
+    /**
+     * Streams [input] into [tmp], aborting (and returning false) if more than
+     * [MAX_ARTWORK_BYTES] arrive — so a hostile server can't fill the disk by
+     * omitting/lying about Content-Length. Both streams are closed on exit.
+     */
+    private fun copyCapped(
+        input: java.io.InputStream,
+        tmp: File,
+    ): Boolean {
+        input.use { src ->
+            tmp.outputStream().use { output ->
+                val buffer = ByteArray(ARTWORK_BUFFER_SIZE)
+                var copied = 0L
+                while (true) {
+                    val n = src.read(buffer)
+                    if (n < 0) break
+                    copied += n
+                    if (copied > MAX_ARTWORK_BYTES) return false
+                    output.write(buffer, 0, n)
+                }
+            }
+        }
+        return true
+    }
+
     companion object {
-        private const val TIMEOUT_MS = 10_000
+        private const val HTTP_OK = 200
         private const val CACHE_DIR = "artwork_cache"
 
         fun authority(context: Context): String = "${context.packageName}.artwork"
@@ -192,3 +188,24 @@ class ArtworkProvider : ContentProvider() {
         private val HEX = "0123456789abcdef".toCharArray()
     }
 }
+
+private const val ARTWORK_HTTP_TIMEOUT_MS = 10_000L
+
+/**
+ * Builds the [OkHttpClient] [ArtworkProvider] uses to fetch artwork.
+ *
+ * Extracted as an `internal` top-level function so a unit test can assert the
+ * security-critical wiring stays in place — pinned [SsrfBlockingDns] (the
+ * authoritative SSRF gate, issue #31) plus redirects disabled (a 3xx must not
+ * bounce the fetch to an unvalidated host). Without this seam those guarantees
+ * lived inline in a `private val` that no test could observe, so a future edit
+ * could silently drop them with every test still green.
+ */
+internal fun buildArtworkHttpClient(): OkHttpClient =
+    OkHttpClient.Builder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .connectTimeout(ARTWORK_HTTP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .readTimeout(ARTWORK_HTTP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .dns(SsrfBlockingDns())
+        .build()

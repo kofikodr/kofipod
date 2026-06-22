@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.kofikodr.kofipod.playback.auto
 
+import okhttp3.Dns
 import java.net.InetAddress
+import java.net.UnknownHostException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
@@ -270,5 +273,44 @@ class ArtworkUrlValidationTest {
         assertEquals(false, isBlockedInetAddress(InetAddress.getByName("1.1.1.1")))
         assertEquals(false, isBlockedInetAddress(InetAddress.getByName("8.8.8.8")))
         assertEquals(false, isBlockedInetAddress(InetAddress.getByName("142.250.190.46")))
+    }
+
+    // --- SsrfBlockingDns (the authoritative TOCTOU-closing gate, issue #31) ------
+
+    @Test
+    fun ssrfDns_returnsResolvedAddresses_whenAllPublic() {
+        // The addresses returned here are exactly the ones OkHttp connects to,
+        // so validation and connection cannot diverge (no DNS-rebinding window).
+        val resolved = listOf(InetAddress.getByName("1.1.1.1"), InetAddress.getByName("8.8.4.4"))
+        val dns = SsrfBlockingDns(systemDns = StubDns(mapOf("cdn.example" to resolved)))
+
+        assertEquals(resolved, dns.lookup("cdn.example"))
+    }
+
+    @Test
+    fun ssrfDns_throws_whenAnyResolvedAddressIsPrivate() {
+        // ANY private address in the set must fail-closed, since OkHttp could
+        // connect to any address in the returned list.
+        val mixed = listOf(InetAddress.getByName("8.8.8.8"), InetAddress.getByName("10.0.0.1"))
+        val dns = SsrfBlockingDns(systemDns = StubDns(mapOf("rebind.example" to mixed)))
+
+        assertFailsWith<UnknownHostException> { dns.lookup("rebind.example") }
+    }
+
+    @Test
+    fun ssrfDns_throws_whenResolutionIsEmpty() {
+        val dns = SsrfBlockingDns(systemDns = StubDns(mapOf("nowhere.example" to emptyList())))
+
+        assertFailsWith<UnknownHostException> { dns.lookup("nowhere.example") }
+    }
+
+    // Note: the single-private-address case is covered by the mixed-address test above
+    // (which is the stronger discriminator — it alone distinguishes the "ANY private
+    // blocks" policy from an accidental "ALL private blocks") plus the direct
+    // isBlockedInetAddress_* range tests, so a sole-loopback Dns test would be redundant.
+
+    private class StubDns(private val table: Map<String, List<InetAddress>>) : Dns {
+        override fun lookup(hostname: String): List<InetAddress> =
+            table[hostname] ?: throw UnknownHostException("unstubbed host: $hostname")
     }
 }

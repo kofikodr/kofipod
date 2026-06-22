@@ -89,6 +89,9 @@ kotlin {
             dependencies {
                 implementation(libs.androidx.activity.compose)
                 implementation(libs.ktor.client.okhttp)
+                // Direct, pinned: ArtworkProvider's SSRF guard uses okhttp3.* on a
+                // security-critical path, so it must not depend on Ktor's transitive OkHttp.
+                implementation(libs.okhttp)
                 implementation(libs.sqldelight.android.driver)
                 implementation(libs.requery.sqlite.android)
                 implementation(libs.androidx.media3.exoplayer)
