@@ -7,25 +7,30 @@ import com.kofikodr.kofipod.data.repo.UpdateRepository
 import kotlinx.datetime.Clock
 
 /**
- * Picks the right APK asset off a GitHub release for the in-app updater.
+ * Picks the foss APK asset off a GitHub release for the in-app updater.
  *
- * Prefers a flavor-tagged foss APK (the release script attaches
- * `kofipod-foss-<version>-foss-<code>-release.apk`). Matches on the
- * `kofipod-foss-` prefix rather than a substring `-foss-` so that hypothetical
- * cross-build names like `kofipod-play-foss-compat-*.apk` can't be
- * mis-classified as foss builds. Falls back to any `.apk` for backward
- * compatibility with pre-flavor-split releases that shipped a single APK
- * named like `kofipod-<version>-<code>-release.apk`.
+ * Matches ONLY a flavor-tagged foss APK (the release script attaches
+ * `kofipod-foss-<version>-foss-<code>-release.apk`), anchored on the
+ * `kofipod-foss-` prefix rather than a substring `-foss-` so a cross-build
+ * name like `kofipod-play-foss-compat-*.apk` can't be mis-classified.
  *
- * The updater is build-time gated to the foss flavor via UpdaterCapability,
- * so a play install never reaches this code path — but we still pick the
- * foss-tagged asset defensively in case both APKs ever appear on a release.
+ * Returns null when no foss-tagged APK is present — we do NOT fall back to an
+ * arbitrary `.apk` (issue #30). The fallback used to exist for pre-flavor-split
+ * releases that shipped a single generically-named APK, but the updater always
+ * checks the *latest* release, which is always post-split and foss-tagged.
+ * Falling back to "the first APK" could offer a play-flavor APK
+ * (`applicationId com.kofikodr.kofipod` vs `.foss`) which can't upgrade a foss
+ * install — it either installs as a second app or is rejected on signature
+ * mismatch. Reporting "no compatible asset" (null) is the safe outcome.
+ *
+ * The updater is build-time gated to the foss flavor via UpdaterCapability, so
+ * a play install never reaches this code path anyway.
  */
-internal fun selectFossApkAsset(assets: List<GithubAsset>): GithubAsset? {
-    val apks = assets.filter { it.name.endsWith(".apk", ignoreCase = true) }
-    return apks.firstOrNull { it.name.startsWith("kofipod-foss-", ignoreCase = true) }
-        ?: apks.firstOrNull()
-}
+internal fun selectFossApkAsset(assets: List<GithubAsset>): GithubAsset? =
+    assets.firstOrNull {
+        it.name.endsWith(".apk", ignoreCase = true) &&
+            it.name.startsWith("kofipod-foss-", ignoreCase = true)
+    }
 
 actual class UpdateChecker(
     private val api: GithubReleasesApi,
