@@ -46,6 +46,29 @@ class PruneOrphanedDownloadFilesTest {
     }
 
     @Test
+    fun matchIsByteIdenticalStringEqualityNotPathNormalization() {
+        // The kept-path contract is exact string equality against File.absolutePath —
+        // there is no canonicalization. A referenced path that points at the SAME file but
+        // is spelled differently (here: a redundant `/./` segment) does NOT match, so the
+        // file is still pruned. This pins the brittle assumption the feature rests on: the
+        // DB's stored `localPath` must be byte-identical to the `File.absolutePath` we list,
+        // not merely path-equivalent. If a future change starts normalizing, this fails and
+        // forces the contract to be revisited.
+        val dir = tmp.newFolder("downloads")
+        val file = File(dir, "ref.mp3").apply { writeText("ref") }
+        val differentSpelling = File(dir, "./ref.mp3").absolutePath
+
+        // Sanity: a genuinely different string, yet the same underlying file.
+        assertTrue(differentSpelling != file.absolutePath, "test needs two distinct spellings")
+        assertEquals(file.canonicalFile, File(differentSpelling).canonicalFile)
+
+        val deleted = pruneOrphanedDownloadFiles(dir, setOf(differentSpelling))
+
+        assertEquals(1, deleted, "a non-byte-identical referenced path must not save the file")
+        assertFalse(file.exists())
+    }
+
+    @Test
     fun returnsZeroForAMissingDirectory() {
         // New-device restore: the downloads dir doesn't exist yet — no-op, no crash.
         val missing = File(tmp.root, "no-downloads-here")

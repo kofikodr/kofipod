@@ -25,7 +25,6 @@ import java.io.File
  * startup. If anything throws here, we log + clear the flag and proceed normally — the
  * user can re-trigger the restore from Settings.
  */
-
 internal object PendingRestore {
     const val PREF_FILE = "kofipod_local"
     private const val PREF_KEY_PENDING = "backup_pending_restore_filename"
@@ -204,6 +203,17 @@ internal object PendingRestore {
  * [referencedPaths]. Returns the number of files deleted. Subdirectories are left alone.
  * Extracted as a top-level pure function so the orphan-pruning rule (issue #18) is
  * unit-testable without standing up a SQLite DB or the Android filesystem.
+ *
+ * NOTE on the "keep referenced" path: in the current production call site
+ * [referencedPaths] is *always empty* — [PendingRestore.scrubTransientState] deletes every
+ * `Download` row before [PendingRestore.referencedDownloadPaths] queries them, so every file
+ * here is pruned. The keep-set is retained on purpose: it keeps this function correct (and a
+ * maintainer honest) if the scrub is ever changed to preserve some rows. Don't assume any
+ * file is being preserved in production today.
+ *
+ * The kept-path contract is string equality against [File.absolutePath]: the DB stores
+ * `localPath` as the `absolutePath` written by `DownloadService`, and we compare against the
+ * `absolutePath` of each listed file. Both sides must use the same (non-canonical) form.
  */
 internal fun pruneOrphanedDownloadFiles(
     downloadsDir: File,
