@@ -353,7 +353,7 @@ class PkmExportCoordinatorTest {
             // the row, buildDocument keeps returning null, and the old code returned without
             // marking the row terminal — so selectQueuedOrFailed() handed it back forever.
             val log = RecordingExportLog()
-            log.markQueued("snippet", "snip-1", ConnectionKind.Readwise, nowMs = 1)
+            log.markQueued("snippet", "snip-1", ConnectionKind.Readwise, externalId = null, nowMs = 1)
             assertEquals(1, log.selectQueuedOrFailed().size, "precondition: a row is waiting for the worker")
 
             val coord =
@@ -380,7 +380,7 @@ class PkmExportCoordinatorTest {
             // retry path — e.g. the user taps Export on a row whose underlying snippet was
             // just deleted in another pane, and a stale queued row already exists.
             val log = RecordingExportLog()
-            log.markQueued("snippet", "snip-1", ConnectionKind.Readwise, nowMs = 1)
+            log.markQueued("snippet", "snip-1", ConnectionKind.Readwise, externalId = null, nowMs = 1)
             val clipSink = FakeSink(FakeSink.Role.Clipboard)
             val coord =
                 newCoordinator(
@@ -406,7 +406,7 @@ class PkmExportCoordinatorTest {
             // Same path as the snippet case but exercises the ITEM_KIND_BOOKMARK constant
             // end-to-end, so a typo in that constant (or itemKindOf's bookmark arm) is caught.
             val log = RecordingExportLog()
-            log.markQueued("bookmark", "bm-1", ConnectionKind.Readwise, nowMs = 1)
+            log.markQueued("bookmark", "bm-1", ConnectionKind.Readwise, externalId = null, nowMs = 1)
             val coord =
                 newCoordinator(
                     deps = FakeDeps(bookmark = null, episode = sampleEpisode(), podcast = samplePodcast()),
@@ -451,7 +451,7 @@ class PkmExportCoordinatorTest {
             // itemKind this build no longer understands can never be turned into a request,
             // so retry() must delete it rather than early-return and leave it queued.
             val log = RecordingExportLog()
-            log.markQueued("mystery", "x-1", ConnectionKind.Readwise, nowMs = 1)
+            log.markQueued("mystery", "x-1", ConnectionKind.Readwise, externalId = null, nowMs = 1)
             val coord = newCoordinator(deps = FakeDeps(), exportLog = log)
 
             coord.retry(log.selectQueuedOrFailed().single())
@@ -469,7 +469,7 @@ class PkmExportCoordinatorTest {
             // row (e.g. written by a newer build, then downgraded) can never be routed, so
             // it must be deleted rather than left to retry forever.
             val log = RecordingExportLog()
-            log.markQueued("snippet", "snip-1", ConnectionKind.Notion, nowMs = 1)
+            log.markQueued("snippet", "snip-1", ConnectionKind.Notion, externalId = null, nowMs = 1)
             val coord = newCoordinator(deps = FakeDeps(), exportLog = log)
 
             coord.retry(log.selectQueuedOrFailed().single())
@@ -477,6 +477,120 @@ class PkmExportCoordinatorTest {
 
             assertTrue(log.selectQueuedOrFailed().isEmpty(), "a row with an unroutable destination must not survive a retry pass")
             assertEquals(listOf("snippet" to "snip-1"), log.deletedItems)
+        }
+
+    @Test
+    fun transientReExportFailureKeepsExternalIdSoTheRetryCanPatch() =
+        runTest {
+            // Issue #51: a prior export stored a Readwise externalId. A re-export
+            // (PATCH) then fails transiently (429/503). The old markQueued nulled the
+            // externalId, so the worker's next attempt would POST and duplicate the
+            // highlight. The queued row must keep the externalId.
+            val log = RecordingExportLog()
+            log.recordSuccess("snippet", "snip-1", ConnectionKind.Readwise, externalId = "rw-123", nowMs = 1)
+            val sink = ConnectionSink(ExportSinkResult.TransientFailure("503 Service Unavailable"))
+            val scheduler = RecordingScheduler()
+            val coord =
+                newCoordinator(
+                    deps = FakeDeps(snippet = sampleSnippet(), episode = sampleEpisode(), podcast = samplePodcast()),
+                    exportLog = log,
+                    sinks = SinkRegistry(mapOf(ConnectionKind.Readwise to sink)),
+                    scheduler = scheduler,
+                )
+            val received = mutableListOf<PkmExportResult>()
+            val collector = collect(coord, received)
+
+            coord.execute(PkmExportRequest.Snippet("snip-1"), PkmDestination.Readwise)
+            advanceUntilIdle()
+            collector.cancel()
+
+            assertEquals("rw-123", sink.lastPriorExternalId, "the failing attempt should have been a PATCH")
+            val row = log.find("snippet", "snip-1", ConnectionKind.Readwise)
+            assertEquals("queued", row?.status, "a transient failure re-queues the row")
+            assertEquals(
+                "rw-123",
+                row?.externalId,
+                "the queued row must keep the externalId so the retry PATCHes instead of POSTing a duplicate",
+            )
+            assertEquals(1, scheduler.enqueueCount, "a transient failure schedules a retry")
+            assertEquals(listOf(PkmExportResult.Failed("503 Service Unavailable")), received.toList())
+        }
+
+    @Test
+    fun permanentReExportFailureAlsoKeepsExternalId() =
+        runTest {
+            // Same preservation guarantee on the permanent-failure path: if the user
+            // later edits the export config and retries, the row still carries the id.
+            val log = RecordingExportLog()
+            log.recordSuccess("snippet", "snip-1", ConnectionKind.Readwise, externalId = "rw-456", nowMs = 1)
+            val sink = ConnectionSink(ExportSinkResult.PermanentFailure("401 Unauthorized"))
+            val scheduler = RecordingScheduler()
+            val coord =
+                newCoordinator(
+                    deps = FakeDeps(snippet = sampleSnippet(), episode = sampleEpisode(), podcast = samplePodcast()),
+                    exportLog = log,
+                    sinks = SinkRegistry(mapOf(ConnectionKind.Readwise to sink)),
+                    scheduler = scheduler,
+                )
+            val received = mutableListOf<PkmExportResult>()
+            val collector = collect(coord, received)
+
+            coord.execute(PkmExportRequest.Snippet("snip-1"), PkmDestination.Readwise)
+            advanceUntilIdle()
+            collector.cancel()
+
+            val row = log.find("snippet", "snip-1", ConnectionKind.Readwise)
+            assertEquals("failed", row?.status)
+            assertEquals("rw-456", row?.externalId, "a permanent failure must not erase the externalId either")
+            assertEquals(0, scheduler.enqueueCount, "a permanent failure does not schedule a retry")
+        }
+
+    @Test
+    fun workerRetryAfterTransientFailureForwardsPreservedExternalId() =
+        runTest {
+            // End-to-end proof of the fix: after a transient re-export failure leaves a
+            // queued row, PkmExportWorker re-drives it via retry(). The coordinator must
+            // hand the preserved externalId to the sink (a PATCH), not null (a POST).
+            //
+            // Why this discriminates against the buggy code: the retry's executeInternal
+            // does its OWN find() on the queued row that the FAILING attempt's markQueued
+            // wrote (same PK, so it overwrites the seeded success row). Without the fix,
+            // markQueued would store externalId=null, so the retry's find() returns null
+            // and the final assertion (sink saw "rw-789") fails. The seeded externalId is
+            // only the starting state; it is the preservation through markQueued that this
+            // test pins down.
+            val log = RecordingExportLog()
+            log.recordSuccess("snippet", "snip-1", ConnectionKind.Readwise, externalId = "rw-789", nowMs = 1)
+
+            val failing = ConnectionSink(ExportSinkResult.TransientFailure("429 Too Many Requests"))
+            val coordFail =
+                newCoordinator(
+                    deps = FakeDeps(snippet = sampleSnippet(), episode = sampleEpisode(), podcast = samplePodcast()),
+                    exportLog = log,
+                    sinks = SinkRegistry(mapOf(ConnectionKind.Readwise to failing)),
+                )
+            coordFail.execute(PkmExportRequest.Snippet("snip-1"), PkmDestination.Readwise)
+            advanceUntilIdle()
+
+            // The worker picks up the queued row on its next fire and retries it.
+            val succeeding = ConnectionSink(ExportSinkResult.Success(externalId = "rw-789"))
+            val coordRetry =
+                newCoordinator(
+                    deps = FakeDeps(snippet = sampleSnippet(), episode = sampleEpisode(), podcast = samplePodcast()),
+                    exportLog = log,
+                    sinks = SinkRegistry(mapOf(ConnectionKind.Readwise to succeeding)),
+                )
+            coordRetry.retry(log.selectQueuedOrFailed().single())
+            advanceUntilIdle()
+
+            assertEquals(
+                "rw-789",
+                succeeding.lastPriorExternalId,
+                "the retry must PATCH the existing highlight (forward externalId), not POST a duplicate",
+            )
+            val row = log.find("snippet", "snip-1", ConnectionKind.Readwise)
+            assertEquals("success", row?.status, "the retry resolved the export")
+            assertEquals("rw-789", row?.externalId)
         }
 
     // ─── Test plumbing ────────────────────────────────────────────────────────
@@ -494,14 +608,16 @@ class PkmExportCoordinatorTest {
         clipboardSink: ExportSink = FakeSink(FakeSink.Role.Clipboard),
         shareFileSink: ExportSink = FakeSink(FakeSink.Role.File),
         exportLog: ExportLogRepository = NoOpExportLog(),
+        sinks: SinkRegistry = SinkRegistry(emptyMap()),
+        scheduler: PkmExportScheduler = NoOpScheduler(),
     ): PkmExportCoordinator {
         val dispatcher = UnconfinedTestDispatcher(testScheduler)
         return PkmExportCoordinator(
             deps = deps,
             formatter = formatter,
-            sinks = SinkRegistry(emptyMap()),
+            sinks = sinks,
             exportLog = exportLog,
-            scheduler = NoOpScheduler(),
+            scheduler = scheduler,
             appScope = CoroutineScope(dispatcher),
             clipboardSink = clipboardSink,
             shareFileSink = shareFileSink,
@@ -613,6 +729,7 @@ class PkmExportCoordinatorTest {
             itemKind: String,
             itemId: String,
             destinationKind: ConnectionKind,
+            externalId: String?,
             nowMs: Long,
         ) = Unit
 
@@ -620,6 +737,7 @@ class PkmExportCoordinatorTest {
             itemKind: String,
             itemId: String,
             destinationKind: ConnectionKind,
+            externalId: String?,
             message: String,
             nowMs: Long,
         ) = Unit
@@ -632,6 +750,35 @@ class PkmExportCoordinatorTest {
 
     private class NoOpScheduler : PkmExportScheduler {
         override fun enqueue() = Unit
+    }
+
+    private class RecordingScheduler : PkmExportScheduler {
+        var enqueueCount = 0
+
+        override fun enqueue() {
+            enqueueCount += 1
+        }
+    }
+
+    /**
+     * Connection-bound [ExportSink] double (Readwise / Obsidian seat). Returns a
+     * caller-supplied [result] and records the [priorExternalId] the coordinator
+     * passed in, so a test can assert the re-export path forwarded the stored id
+     * (the POST-vs-PATCH decision the real ReadwiseSink makes).
+     */
+    private class ConnectionSink(private val result: ExportSinkResult) : ExportSink {
+        var lastPriorExternalId: String? = null
+        var calls = 0
+
+        override suspend fun export(
+            document: MarkdownDocument,
+            request: PkmExportRequest,
+            priorExternalId: String?,
+        ): ExportSinkResult {
+            calls += 1
+            lastPriorExternalId = priorExternalId
+            return result
+        }
     }
 
     /**
@@ -669,21 +816,23 @@ class PkmExportCoordinatorTest {
             itemKind: String,
             itemId: String,
             destinationKind: ConnectionKind,
+            externalId: String?,
             nowMs: Long,
         ) {
             rows[Triple(itemKind, itemId, destinationKind)] =
-                ExportLogEntry(itemKind, itemId, destinationKind, null, nowMs, "queued", null)
+                ExportLogEntry(itemKind, itemId, destinationKind, externalId, nowMs, "queued", null)
         }
 
         override suspend fun markFailed(
             itemKind: String,
             itemId: String,
             destinationKind: ConnectionKind,
+            externalId: String?,
             message: String,
             nowMs: Long,
         ) {
             rows[Triple(itemKind, itemId, destinationKind)] =
-                ExportLogEntry(itemKind, itemId, destinationKind, null, nowMs, "failed", message)
+                ExportLogEntry(itemKind, itemId, destinationKind, externalId, nowMs, "failed", message)
         }
 
         override suspend fun deleteByItem(

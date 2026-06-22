@@ -143,7 +143,7 @@ class PkmExportCoordinator(
                 }
 
             val sinkResult = sink.export(document, request, priorExternalId)
-            recordResult(request, destination, kindForLog, sinkResult)
+            recordResult(request, destination, kindForLog, priorExternalId, sinkResult)
         } catch (t: kotlinx.coroutines.CancellationException) {
             throw t
         } catch (t: Throwable) {
@@ -178,6 +178,11 @@ class PkmExportCoordinator(
         request: PkmExportRequest,
         destination: PkmDestination,
         kindForLog: ConnectionKind?,
+        // The externalId read before the export attempt. Threaded into the
+        // queued/failed transitions so a transient/permanent failure on a
+        // re-export (Readwise PATCH) preserves the remote id instead of nulling
+        // it — otherwise the next retry POSTs and duplicates the highlight (#51).
+        priorExternalId: String?,
         sinkResult: ExportSinkResult,
     ) {
         val nowMs = Clock.System.now().toEpochMilliseconds()
@@ -205,6 +210,7 @@ class PkmExportCoordinator(
                         itemKind = itemKindOf(request),
                         itemId = itemIdOf(request),
                         destinationKind = kindForLog,
+                        externalId = priorExternalId,
                         nowMs = nowMs,
                     )
                     scheduler.enqueue()
@@ -217,6 +223,7 @@ class PkmExportCoordinator(
                         itemKind = itemKindOf(request),
                         itemId = itemIdOf(request),
                         destinationKind = kindForLog,
+                        externalId = priorExternalId,
                         message = sinkResult.message,
                         nowMs = nowMs,
                     )

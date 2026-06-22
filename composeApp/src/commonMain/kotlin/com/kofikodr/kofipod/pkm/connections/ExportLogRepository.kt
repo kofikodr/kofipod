@@ -30,6 +30,13 @@ data class ExportLogEntry(
  * - [recordSuccess] writes `status = 'success'` with an optional [externalId].
  * - [markQueued] writes `status = 'queued'` (worker will retry).
  * - [markFailed] writes `status = 'failed'` with a human-readable error.
+ *
+ * [markQueued] and [markFailed] both take the row's current [externalId] so a
+ * transient/permanent failure on a *re-export* (Readwise PATCH, which needs the
+ * prior `externalId`) doesn't erase it. Dropping it would make the next worker
+ * retry issue a POST (create) and produce a duplicate highlight (issue #51).
+ * Callers pass the `externalId` they read before the export attempt; a
+ * first-time export that never created a remote record passes `null`.
  */
 interface ExportLogRepository {
     suspend fun find(
@@ -52,6 +59,7 @@ interface ExportLogRepository {
         itemKind: String,
         itemId: String,
         destinationKind: ConnectionKind,
+        externalId: String?,
         nowMs: Long,
     )
 
@@ -59,6 +67,7 @@ interface ExportLogRepository {
         itemKind: String,
         itemId: String,
         destinationKind: ConnectionKind,
+        externalId: String?,
         message: String,
         nowMs: Long,
     )
@@ -106,16 +115,18 @@ class ExportLogRepositoryImpl(db: com.kofikodr.kofipod.db.KofipodDatabase) : Exp
         itemKind: String,
         itemId: String,
         destinationKind: ConnectionKind,
+        externalId: String?,
         nowMs: Long,
-    ) = upsert(itemKind, itemId, destinationKind, null, STATUS_QUEUED, null, nowMs)
+    ) = upsert(itemKind, itemId, destinationKind, externalId, STATUS_QUEUED, null, nowMs)
 
     override suspend fun markFailed(
         itemKind: String,
         itemId: String,
         destinationKind: ConnectionKind,
+        externalId: String?,
         message: String,
         nowMs: Long,
-    ) = upsert(itemKind, itemId, destinationKind, null, STATUS_FAILED, message, nowMs)
+    ) = upsert(itemKind, itemId, destinationKind, externalId, STATUS_FAILED, message, nowMs)
 
     override suspend fun deleteByItem(
         itemKind: String,
