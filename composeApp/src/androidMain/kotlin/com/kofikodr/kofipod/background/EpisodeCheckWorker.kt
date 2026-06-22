@@ -2,6 +2,7 @@
 package com.kofikodr.kofipod.background
 
 import android.content.Context
+import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.kofikodr.kofipod.data.repo.DownloadRepository
@@ -17,9 +18,47 @@ import com.kofikodr.kofipod.downloads.DownloadJob
 import com.kofikodr.kofipod.downloads.downloadFileName
 import com.kofikodr.kofipod.update.UpdateChecker
 import com.kofikodr.kofipod.update.UpdaterCapability
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+
+/**
+ * Outcome of sweeping a batch of items where each item is processed in
+ * isolation — one item's failure must not abort the rest of the batch.
+ */
+internal data class IsolatedSweepOutcome(
+    val succeeded: Int,
+    val failed: Int,
+)
+
+/**
+ * Runs [action] for every item, isolating failures: a throwing item is counted
+ * in [IsolatedSweepOutcome.failed] and the sweep continues with the next item,
+ * rather than letting one bad item abort the whole batch (issue #27).
+ *
+ * [CancellationException] is always rethrown so coroutine cancellation (e.g.
+ * WorkManager stopping the worker) is never swallowed and mis-counted as a
+ * per-item failure.
+ */
+internal suspend fun <T> forEachIsolatingFailures(
+    items: List<T>,
+    action: suspend (T) -> Unit,
+): IsolatedSweepOutcome {
+    var succeeded = 0
+    var failed = 0
+    for (item in items) {
+        try {
+            action(item)
+            succeeded++
+        } catch (c: CancellationException) {
+            throw c
+        } catch (_: Throwable) {
+            failed++
+        }
+    }
+    return IsolatedSweepOutcome(succeeded = succeeded, failed = failed)
+}
 
 class EpisodeCheckWorker(
     context: Context,
@@ -41,28 +80,37 @@ class EpisodeCheckWorker(
             val notifyEntries = mutableListOf<Pair<Podcast, Episode>>()
             val now = System.currentTimeMillis()
 
-            for (podcast in library.podcastsFlow().first()) {
-                val feedId = podcast.id.toLongOrNull() ?: continue
-                val result = episodes.refresh(podcast.id, feedId, now)
-                if (result.inserted > 0) {
-                    totalNew += result.inserted
-                    showsWithNew++
-                    if (podcast.notifyNewEpisodesEnabledBool()) {
-                        result.insertedEpisodes.forEach { ep ->
-                            notifyEntries += podcast to ep
+            // Each feed is refreshed in isolation: a single feed throwing
+            // (network/API error, malformed response) must not skip the remaining
+            // feeds, cache eviction, run logging, notifications, or the update
+            // check. A persistently broken feed simply gets retried on the next
+            // scheduled run (issue #27).
+            val sweep =
+                forEachIsolatingFailures(library.podcastsFlow().first()) { podcast ->
+                    val feedId = podcast.id.toLongOrNull() ?: return@forEachIsolatingFailures
+                    val result = episodes.refresh(podcast.id, feedId, now)
+                    if (result.inserted > 0) {
+                        totalNew += result.inserted
+                        showsWithNew++
+                        if (podcast.notifyNewEpisodesEnabledBool()) {
+                            result.insertedEpisodes.forEach { ep ->
+                                notifyEntries += podcast to ep
+                            }
                         }
-                    }
-                    if (podcast.autoDownloadEnabledBool()) {
-                        result.insertedEpisodes.forEach { ep ->
-                            downloads.enqueue(
-                                episodeId = ep.id,
-                                url = ep.enclosureUrl,
-                                fileName = downloadFileName(ep.id, ep.enclosureMimeType),
-                                source = DownloadJob.Source.Auto,
-                            )
+                        if (podcast.autoDownloadEnabledBool()) {
+                            result.insertedEpisodes.forEach { ep ->
+                                downloads.enqueue(
+                                    episodeId = ep.id,
+                                    url = ep.enclosureUrl,
+                                    fileName = downloadFileName(ep.id, ep.enclosureMimeType),
+                                    source = DownloadJob.Source.Auto,
+                                )
+                            }
                         }
                     }
                 }
+            if (sweep.failed > 0) {
+                Log.w(LOG_TAG, "${sweep.failed} of ${sweep.succeeded + sweep.failed} feeds failed to refresh; continued with the rest")
             }
 
             downloads.evictUntilUnderCap(cap)
@@ -113,5 +161,9 @@ class EpisodeCheckWorker(
                     totalShows = entries.distinctBy { it.first.id }.size,
                 )
         }
+    }
+
+    private companion object {
+        const val LOG_TAG = "Kofipod-EpisodeCheck"
     }
 }
