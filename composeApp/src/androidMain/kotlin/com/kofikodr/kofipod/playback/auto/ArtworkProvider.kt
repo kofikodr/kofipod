@@ -31,19 +31,7 @@ class ArtworkProvider : ContentProvider() {
         KoinJavaComponent.get(LibraryRepository::class.java)
     }
 
-    // OkHttp pinned to [SsrfBlockingDns]: the host is resolved once, the
-    // resolved addresses are validated, and OkHttp connects to exactly those —
-    // closing the validate-then-reconnect DNS-rebinding window (issue #31).
-    // Redirects are disabled so a 3xx can't bounce us to an unvalidated host.
-    private val httpClient: OkHttpClient by lazy {
-        OkHttpClient.Builder()
-            .followRedirects(false)
-            .followSslRedirects(false)
-            .connectTimeout(TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
-            .readTimeout(TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
-            .dns(SsrfBlockingDns())
-            .build()
-    }
+    private val httpClient: OkHttpClient by lazy { buildArtworkHttpClient() }
 
     override fun onCreate(): Boolean = true
 
@@ -162,7 +150,6 @@ class ArtworkProvider : ContentProvider() {
     }
 
     companion object {
-        private const val TIMEOUT_MS = 10_000
         private const val HTTP_OK = 200
         private const val CACHE_DIR = "artwork_cache"
 
@@ -201,3 +188,24 @@ class ArtworkProvider : ContentProvider() {
         private val HEX = "0123456789abcdef".toCharArray()
     }
 }
+
+private const val ARTWORK_HTTP_TIMEOUT_MS = 10_000L
+
+/**
+ * Builds the [OkHttpClient] [ArtworkProvider] uses to fetch artwork.
+ *
+ * Extracted as an `internal` top-level function so a unit test can assert the
+ * security-critical wiring stays in place — pinned [SsrfBlockingDns] (the
+ * authoritative SSRF gate, issue #31) plus redirects disabled (a 3xx must not
+ * bounce the fetch to an unvalidated host). Without this seam those guarantees
+ * lived inline in a `private val` that no test could observe, so a future edit
+ * could silently drop them with every test still green.
+ */
+internal fun buildArtworkHttpClient(): OkHttpClient =
+    OkHttpClient.Builder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .connectTimeout(ARTWORK_HTTP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .readTimeout(ARTWORK_HTTP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .dns(SsrfBlockingDns())
+        .build()

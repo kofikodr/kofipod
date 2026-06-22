@@ -17,12 +17,22 @@ import java.net.UnknownHostException
  * the bytes through `openFile()` — turning Kofipod into a confused-deputy
  * SSRF proxy.
  *
- * We mitigate at three layers:
- *  - URL must be `http(s)://` and have a host (this file).
- *  - Every DNS-resolved address must be a public-internet address (this file).
- *  - Provider's network fetch caps the response size, rejects non-image
- *    content-types, and disables redirect-following so a 3xx → private IP
- *    can't sneak past the pre-fetch validation (caller in [ArtworkProvider]).
+ * The **authoritative** SSRF gate is `SsrfBlockingDns` (below), pinned onto the
+ * provider's `OkHttpClient`: it resolves the host once, blocks if any resolved
+ * address is private, and OkHttp then connects to exactly those addresses — so
+ * there is no validate-then-reconnect DNS-rebinding window (issue #31).
+ * [validateArtworkUrl] in this file is a **non-authoritative** pre-flight: it
+ * rejects obviously-bad URLs (bad scheme, missing host, an already-private
+ * resolution) cheaply before a request is built, but it does its own DNS lookup
+ * and is therefore not the layer that closes the TOCTOU.
+ *
+ * The layers, in order of authority:
+ *  - `SsrfBlockingDns` — resolve-once + block-private + connect-to-validated (authoritative).
+ *  - Provider's fetch caps the response size, rejects non-image content-types,
+ *    and disables redirect-following so a 3xx → private IP can't sneak past
+ *    (caller in [ArtworkProvider]).
+ *  - [validateArtworkUrl] pre-flight: scheme + host + a private-address early-out
+ *    (this file; cheap belt-and-braces, not the TOCTOU gate).
  *
  * `usesCleartextTraffic="false"` in the manifest blocks `http://` at the
  * platform layer too; the scheme check here is a belt for the suspenders.

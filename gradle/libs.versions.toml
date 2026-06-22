@@ -18,6 +18,11 @@ googleIdentity = "1.1.1"
 googlePlayBilling = "8.0.0"
 coil = "3.0.4"
 ktor = "3.0.3"
+# Pinned to the OkHttp that ktor-client-okhttp (3.0.3) bundles transitively. ArtworkProvider's
+# SSRF guard (SsrfBlockingDns) imports okhttp3.* directly on a security-critical path, so we
+# declare it as a direct dependency rather than relying on Ktor's transitive choice. Keep in
+# sync when bumping ktor. OkHttp is Apache-2.0 (GPL-compatible).
+okhttp = "4.12.0"
 sqldelight = "2.0.2"
 serialization = "1.7.3"
 datetime = "0.6.1"
@@ -63,6 +68,7 @@ coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" 
 coil-network-ktor = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "ktor" }
 ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
