@@ -37,28 +37,25 @@ class SelectFossApkAssetTest {
     }
 
     @Test
-    fun `falls back to first APK when no foss-tagged asset is present`() {
-        // Pre-flavor-split release shape — single APK, no flavor in the name.
+    fun `returns null for a non-foss-tagged single APK instead of offering it`() {
+        // Issue #30: a generically-named APK (e.g. a pre-flavor-split or
+        // play-flavor build) must NOT be offered to a foss install — it can't
+        // upgrade it (different applicationId). Pre-fix this returned the APK
+        // via the now-removed fallback; it must now report "no compatible asset".
         val legacyApk = asset("kofipod-1.2.4-14-release.apk")
 
-        val picked = selectFossApkAsset(listOf(legacyApk))
-
-        assertEquals(legacyApk, picked)
+        assertNull(selectFossApkAsset(listOf(legacyApk)))
     }
 
     @Test
-    fun `fallback path picks first APK from a multi-APK non-foss release`() {
-        // Documents fallback semantics — when no foss-tagged APK is present
-        // and multiple non-foss APKs exist, the first .apk wins. Distinguishes
-        // "correct filter+fallback" from "always return assets[0]" (which
-        // would pick the .txt below).
+    fun `returns null when a release ships only non-foss APKs`() {
+        // No foss-tagged asset present among several non-foss APKs → nothing
+        // compatible to offer, rather than picking an arbitrary first .apk.
         val notes = asset("release-notes.txt")
-        val firstApk = asset("kofipod-1.2.4-14-release.apk")
-        val secondApk = asset("kofipod-alt-1.2.4-14-release.apk")
+        val playApk = asset("kofipod-play-1.2.4-14-release.apk")
+        val altApk = asset("kofipod-alt-1.2.4-14-release.apk")
 
-        val picked = selectFossApkAsset(listOf(notes, firstApk, secondApk))
-
-        assertEquals(firstApk, picked)
+        assertNull(selectFossApkAsset(listOf(notes, playApk, altApk)))
     }
 
     @Test
@@ -75,18 +72,11 @@ class SelectFossApkAssetTest {
             selectFossApkAsset(listOf(confusinglyNamedPlay, canonicalFoss)),
         )
 
-        // With only the confusingly-named play APK, the picker MUST NOT treat
-        // it as foss. It falls through to the fallback branch (first .apk)
-        // — that's the play APK here, but that's the fallback's job, not the
-        // foss-preference branch. The point is: it didn't match the foss
-        // predicate.
+        // With only non-foss APKs (a canonical play build and the confusingly
+        // named one), neither matches the `kofipod-foss-` prefix, so nothing is
+        // offered — no fallback to an arbitrary play APK (issue #30).
         val canonicalPlay = asset("kofipod-play-1.3.3-18-release.apk")
-        // Both confusinglyNamedPlay and canonicalPlay are non-foss; foss
-        // predicate misses both; fallback picks the first .apk in the list.
-        assertEquals(
-            canonicalPlay,
-            selectFossApkAsset(listOf(canonicalPlay, confusinglyNamedPlay)),
-        )
+        assertNull(selectFossApkAsset(listOf(canonicalPlay, confusinglyNamedPlay)))
     }
 
     @Test
@@ -125,11 +115,10 @@ class SelectFossApkAssetTest {
     }
 
     @Test
-    fun `matches APK extension case-insensitively on the fallback path`() {
-        // Uppercase extension on a legacy (non-foss) APK must still be picked
-        // by the fallback branch — covers a regression where the fallback
-        // could lose its case-insensitive filter.
-        val upperCaseLegacyApk = asset("kofipod-1.2.4-14-release.APK")
-        assertEquals(upperCaseLegacyApk, selectFossApkAsset(listOf(upperCaseLegacyApk)))
+    fun `matches the foss prefix case-insensitively`() {
+        // The `kofipod-foss-` prefix match is case-insensitive too, so an
+        // upper/mixed-case foss asset name is still recognised.
+        val mixedCaseFossApk = asset("KOFIPOD-FOSS-1.3.3-foss-18-release.apk")
+        assertEquals(mixedCaseFossApk, selectFossApkAsset(listOf(mixedCaseFossApk)))
     }
 }
