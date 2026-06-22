@@ -4,6 +4,7 @@ package com.kofikodr.kofipod.playlists
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import com.kofikodr.kofipod.db.KofipodDatabase
+import com.kofikodr.kofipod.snippets.FileCheckerApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -29,8 +30,27 @@ import kotlinx.coroutines.flow.combine
  *
  * `Dispatchers.Default` rather than `Dispatchers.IO` because `IO` is JVM-only
  * and the playlists package must stay iOS-compatible.
+ *
+ * `isDownloaded` is gated on the file actually existing on disk via [fileChecker],
+ * not just on `state='Completed'` (issue #33). A `Download` row can claim
+ * `Completed` with a `localPath` while the file is gone (external deletion,
+ * DB-only restore, OS storage pruning); without the existence check a
+ * `downloadedOnly` smart playlist would surface an episode that cannot play
+ * offline — disagreeing with `DownloadRepository.localPathFor`, which already
+ * treats a missing file as not-downloaded. The check here is read-only: it does
+ * NOT delete the orphaned row (that would be a write inside a reactive `combine`,
+ * risking a re-emission loop). The destructive self-heal stays in `localPathFor`,
+ * which runs lazily on the next play attempt; both now agree that a missing file
+ * means "not downloaded".
+ *
+ * On iOS this always reports `isDownloaded = false`: the platform has no download
+ * engine and `FileChecker`'s iOS actual returns `false`, which is the correct
+ * answer (there is never a downloaded file to surface).
  */
-class EpisodeFactsRepositoryImpl(private val db: KofipodDatabase) : EpisodeFactsRepository {
+class EpisodeFactsRepositoryImpl(
+    private val db: KofipodDatabase,
+    private val fileChecker: FileCheckerApi,
+) : EpisodeFactsRepository {
     override fun observeAll(): Flow<List<EpisodeFacts>> =
         combine(
             db.episodeQueries.selectAll().asFlow().mapToList(Dispatchers.Default),
@@ -61,7 +81,7 @@ class EpisodeFactsRepositoryImpl(private val db: KofipodDatabase) : EpisodeFacts
                     transcriptUrl = e.transcriptUrl,
                     hasCachedTranscript = e.id in transcriptEps,
                     hasSnippets = e.id in snippetEps,
-                    isDownloaded = dl?.state == "Completed",
+                    isDownloaded = dl?.state == "Completed" && dl.localPath?.let(fileChecker::exists) == true,
                     playState = state,
                 )
             }

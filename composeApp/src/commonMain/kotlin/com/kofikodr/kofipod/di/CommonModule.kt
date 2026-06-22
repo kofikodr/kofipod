@@ -469,7 +469,7 @@ val commonDataModule =
         // SmartPlaylistResolver.clock defaults to Clock.System; positional
         // get()s fill in the non-defaulted facts/evaluator deps only.
         // ────────────────────────────────────────────────────────────────────
-        single<EpisodeFactsRepository> { EpisodeFactsRepositoryImpl(get()) }
+        single<EpisodeFactsRepository> { EpisodeFactsRepositoryImpl(get(), get()) }
         single { PredicateEvaluator() }
         single<SmartPlaylistRepository> { SmartPlaylistRepositoryImpl(get()) }
         single { SmartPlaylistResolver(facts = get(), evaluator = get()) }
