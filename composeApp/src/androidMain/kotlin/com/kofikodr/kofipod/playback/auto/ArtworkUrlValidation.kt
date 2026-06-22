@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.kofikodr.kofipod.playback.auto
 
+import okhttp3.Dns
 import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.URL
+import java.net.UnknownHostException
 
 /**
  * SSRF mitigation for [ArtworkProvider]. The provider is exported, so any
@@ -121,4 +123,31 @@ internal fun validateArtworkUrl(
         return ArtworkUrlCheck.Blocked("private address")
     }
     return ArtworkUrlCheck.Ok
+}
+
+/**
+ * The authoritative SSRF gate for [ArtworkProvider]'s network fetch (issue #31).
+ *
+ * The old code validated the URL's resolved addresses and then let
+ * `URL(url).openConnection()` resolve the host *again* — a classic
+ * validate-then-fetch TOCTOU (DNS rebinding) window: the second resolution
+ * could return a private address the first never saw. Routing the fetch
+ * through an [okhttp3.OkHttpClient] configured with this [Dns] closes that
+ * window, because OkHttp connects to *exactly* the addresses returned here —
+ * there is no independent re-resolution between the check and the connect.
+ *
+ * [lookup] resolves via [systemDns] (injectable for tests), then fail-closes
+ * if the host has no addresses or if *any* resolved address is non-public
+ * (mirrors [validateArtworkUrl]'s "ANY private address blocks" rule, since
+ * OkHttp may connect to any address in the returned list).
+ */
+internal class SsrfBlockingDns(private val systemDns: Dns = Dns.SYSTEM) : Dns {
+    override fun lookup(hostname: String): List<InetAddress> {
+        val resolved = systemDns.lookup(hostname)
+        if (resolved.isEmpty()) throw UnknownHostException("no addresses for $hostname")
+        if (resolved.any { isBlockedInetAddress(it) }) {
+            throw UnknownHostException("blocked non-public address for $hostname")
+        }
+        return resolved
+    }
 }
