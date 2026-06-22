@@ -590,6 +590,164 @@ class GeminiClientAudioTest {
             )
         }
 
+    @Test
+    fun pollUntilActive_retriesTransportBlip_thenReturnsActive() =
+        runTest {
+            // Issue #21: a single TCP hiccup during the ≤5min polling window used to
+            // discard a completed (possibly multi-minute) upload outright. The poll GET
+            // must now survive a transient transport failure and recover on retry.
+            var calls = 0
+            val client =
+                HttpClient(
+                    MockEngine { _ ->
+                        calls += 1
+                        if (calls == 1) throw java.io.IOException("simulated transport blip")
+                        respond(
+                            """{"name":"files/abc","uri":"u","mimeType":"audio/mpeg","state":"ACTIVE"}""",
+                            HttpStatusCode.OK,
+                            headersOf(HttpHeaders.ContentType, "application/json"),
+                        )
+                    },
+                ) { install(ContentNegotiation) { json(Json) } }
+
+            val result =
+                GeminiClient(client).pollUntilActive(
+                    apiKey = "k",
+                    name = "files/abc",
+                    pollIntervalMs = 10,
+                    pollTimeoutMs = 1000,
+                )
+
+            assertEquals("ACTIVE", result.getOrNull()?.state, "a transport blip must not discard the upload")
+            assertEquals(2, calls, "first GET threw, retry must re-issue the GET and succeed")
+        }
+
+    @Test
+    fun pollUntilActive_retriesTransient5xx_thenReturnsActive() =
+        runTest {
+            // A transient 503 ("model overloaded") during polling is as capable of
+            // discarding the upload as a transport blip — same resilience as the upload path.
+            var calls = 0
+            val client =
+                HttpClient(
+                    MockEngine { _ ->
+                        calls += 1
+                        if (calls == 1) {
+                            respondError(HttpStatusCode.ServiceUnavailable)
+                        } else {
+                            respond(
+                                """{"name":"files/abc","uri":"u","mimeType":"audio/mpeg","state":"ACTIVE"}""",
+                                HttpStatusCode.OK,
+                                headersOf(HttpHeaders.ContentType, "application/json"),
+                            )
+                        }
+                    },
+                ) { install(ContentNegotiation) { json(Json) } }
+
+            val result =
+                GeminiClient(client).pollUntilActive(
+                    apiKey = "k",
+                    name = "files/abc",
+                    pollIntervalMs = 10,
+                    pollTimeoutMs = 1000,
+                )
+
+            assertEquals("ACTIVE", result.getOrNull()?.state, "a transient 5xx must be retried, not surfaced")
+            assertEquals(2, calls, "first GET was 503, retry must re-issue the GET and succeed")
+        }
+
+    @Test
+    fun pollUntilActive_retriesTransient408_thenReturnsActive() =
+        runTest {
+            // 408 is the one non-5xx member of isTransient() (a per-request read stall can
+            // surface as Request Timeout). Cover it on the poll path so a refactor that
+            // drops 408 from the transient set is caught here, not just on the upload path.
+            var calls = 0
+            val client =
+                HttpClient(
+                    MockEngine { _ ->
+                        calls += 1
+                        if (calls == 1) {
+                            respondError(HttpStatusCode.RequestTimeout)
+                        } else {
+                            respond(
+                                """{"name":"files/abc","uri":"u","mimeType":"audio/mpeg","state":"ACTIVE"}""",
+                                HttpStatusCode.OK,
+                                headersOf(HttpHeaders.ContentType, "application/json"),
+                            )
+                        }
+                    },
+                ) { install(ContentNegotiation) { json(Json) } }
+
+            val result =
+                GeminiClient(client).pollUntilActive(
+                    apiKey = "k",
+                    name = "files/abc",
+                    pollIntervalMs = 10,
+                    pollTimeoutMs = 1000,
+                )
+
+            assertEquals("ACTIVE", result.getOrNull()?.state, "a 408 must be retried like a 5xx")
+            assertEquals(2, calls, "first GET was 408, retry must re-issue the GET and succeed")
+        }
+
+    @Test
+    fun pollUntilActive_failsFast_onNonTransientStatus_withoutRetrying() =
+        runTest {
+            // A 401 won't get better by retrying — surface KeyInvalid immediately so the
+            // user fixes the key, and do NOT burn the retry budget on a hopeless status.
+            var calls = 0
+            val client =
+                HttpClient(
+                    MockEngine { _ ->
+                        calls += 1
+                        respondError(HttpStatusCode.Unauthorized)
+                    },
+                ) { install(ContentNegotiation) { json(Json) } }
+
+            val result =
+                GeminiClient(client).pollUntilActive(
+                    apiKey = "k",
+                    name = "files/abc",
+                    pollIntervalMs = 10,
+                    pollTimeoutMs = 1000,
+                )
+
+            assertIs<AiError.KeyInvalid>((result.exceptionOrNull() as? AiErrorException)?.error)
+            assertEquals(1, calls, "a non-transient status must fail fast without retrying")
+        }
+
+    @Test
+    fun pollUntilActive_givesUpAsNetwork_afterExhaustingTransportRetries() =
+        runTest {
+            // When every retry hits a transport failure, the call surfaces AiError.Network
+            // (not a bogus parse/Unknown), and gives up within a bounded retry budget
+            // rather than hammering the endpoint for the whole poll window.
+            var calls = 0
+            val client =
+                HttpClient(
+                    MockEngine { _ ->
+                        calls += 1
+                        throw java.io.IOException("persistent transport failure")
+                    },
+                ) { install(ContentNegotiation) { json(Json) } }
+
+            val result =
+                GeminiClient(client).pollUntilActive(
+                    apiKey = "k",
+                    name = "files/abc",
+                    pollIntervalMs = 10,
+                    pollTimeoutMs = 1000,
+                )
+
+            assertIs<AiError.Network>((result.exceptionOrNull() as? AiErrorException)?.error)
+            // When every GET throws, fetchFileState exhausts its retry budget on the first
+            // outer poll iteration and gives up — so the count is deterministic, equal to
+            // POLL_GET_MAX_ATTEMPTS (3). Pinning it (rather than a loose range) locks both
+            // "it retried" and "it didn't keep hammering across the whole poll window".
+            assertEquals(3, calls, "exhausting transport retries must take exactly POLL_GET_MAX_ATTEMPTS GETs")
+        }
+
     // ---------------------------------------------------------------------
     // generateFromAudio
     // ---------------------------------------------------------------------

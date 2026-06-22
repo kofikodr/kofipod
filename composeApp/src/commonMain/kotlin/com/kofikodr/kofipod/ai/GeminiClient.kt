@@ -442,18 +442,58 @@ class GeminiClient(
         // [pollIntervalMs] wait before learning that.
         val maxAttempts = (pollTimeoutMs / pollIntervalMs).toInt().coerceAtLeast(1)
         repeat(maxAttempts) { attempt ->
+            val file = fetchFileState(apiKey, name).getOrElse { return Result.failure(it) }
+            if (file.state == "ACTIVE") return Result.success(file)
+            if (file.state == "FAILED") return Result.failure(AiErrorException(AiError.Unknown(null)))
+            // Don't sleep after the final attempt — we're about to fall through
+            // to the timeout failure anyway.
+            if (attempt < maxAttempts - 1) delay(pollIntervalMs)
+        }
+        return Result.failure(AiErrorException(AiError.Unknown(null)))
+    }
+
+    /**
+     * Single poll GET of `/v1beta/{name}` parsed into an [UploadedFile], with the
+     * same transient-failure resilience the upload path has. Before this, one TCP
+     * hiccup (or a transient 5xx) during the ≤5min polling window returned
+     * [AiError.Network] outright — discarding a possibly multi-minute completed
+     * upload, since [com.kofikodr.kofipod.ai.AudioUploadCoordinator] only caches the
+     * Files API URI after a *successful* poll. So a blip forced the user to re-upload
+     * the whole file and orphaned the PROCESSING file until the 48h TTL (issue #21).
+     *
+     * Transport exceptions and transient HTTP statuses (5xx / 408) are retried up to
+     * [POLL_GET_MAX_ATTEMPTS] with short exponential backoff; a non-transient status
+     * (e.g. 401/404) still fails fast — retrying won't fix a bad key or a deleted file.
+     * [CancellationException] is re-thrown so a Cancel tap propagates immediately
+     * rather than being misreported as a network error.
+     */
+    private suspend fun fetchFileState(
+        apiKey: String,
+        name: String,
+    ): Result<UploadedFile> {
+        repeat(POLL_GET_MAX_ATTEMPTS) { attempt ->
+            val isLastAttempt = attempt == POLL_GET_MAX_ATTEMPTS - 1
             val response: HttpResponse =
                 runCatching {
                     client.get("$BASE_URL/v1beta/$name") {
                         timeout { requestTimeoutMillis = METADATA_REQUEST_TIMEOUT_MS }
                         url { parameters.append("key", apiKey) }
                     }
+                }.onFailure {
+                    if (it is CancellationException) throw it
                 }.getOrElse {
                     logTransportFailure("pollUntilActive", it)
-                    return Result.failure(AiErrorException(AiError.Network))
+                    // Don't sleep after the final attempt; fall through to the post-loop
+                    // return, which is the single canonical transport-exhausted exit.
+                    if (!isLastAttempt) delay(POLL_GET_RETRY_BACKOFF_MS shl attempt)
+                    return@repeat
                 }
             if (!response.status.isSuccess()) {
                 logHttpFailure("pollUntilActive", response.status.value)
+                if (response.status.isTransient() && !isLastAttempt) {
+                    delay(POLL_GET_RETRY_BACKOFF_MS shl attempt)
+                    return@repeat
+                }
                 return Result.failure(AiErrorException(response.status.toAiError()))
             }
             val file =
@@ -462,13 +502,10 @@ class GeminiClient(
                         logParseFailure("pollUntilActive", it)
                         return Result.failure(AiErrorException(AiError.Unknown(response.status.value)))
                     }
-            if (file.state == "ACTIVE") return Result.success(file)
-            if (file.state == "FAILED") return Result.failure(AiErrorException(AiError.Unknown(null)))
-            // Don't sleep after the final attempt — we're about to fall through
-            // to the timeout failure anyway.
-            if (attempt < maxAttempts - 1) delay(pollIntervalMs)
+            return Result.success(file)
         }
-        return Result.failure(AiErrorException(AiError.Unknown(null)))
+        // Every attempt hit a transient failure without ever returning a usable body.
+        return Result.failure(AiErrorException(AiError.Network))
     }
 
     /**
@@ -882,6 +919,13 @@ class GeminiClient(
 
         private const val DEFAULT_POLL_INTERVAL_MS = 2_000L
         private const val DEFAULT_POLL_TIMEOUT_MS = 5L * 60 * 1000
+
+        // Per-poll-GET transient-failure retry budget (issue #21). Small and fast: a
+        // blip during polling shouldn't discard a completed upload, but we also don't
+        // want to stall the outer poll loop. Backoff is 500ms, then 1s (POLL_GET_RETRY_
+        // BACKOFF_MS shl attempt), so a fully-failing GET costs ~1.5s before surfacing.
+        private const val POLL_GET_MAX_ATTEMPTS = 3
+        private const val POLL_GET_RETRY_BACKOFF_MS = 500L
 
         // Retry budget for transient 5xx on generateFromAudio. Backoff doubles
         // each attempt: 2s, 4s, 8s. Three retries is a sweet spot — enough to
