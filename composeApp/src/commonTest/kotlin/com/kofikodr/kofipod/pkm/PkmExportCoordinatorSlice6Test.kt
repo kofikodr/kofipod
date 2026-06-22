@@ -241,19 +241,21 @@ class PkmExportCoordinatorSlice6Test {
             itemKind: String,
             itemId: String,
             destinationKind: ConnectionKind,
+            externalId: String?,
             nowMs: Long,
         ) {
-            upsertEntry(itemKind, itemId, destinationKind, null, "queued", null, nowMs)
+            upsertEntry(itemKind, itemId, destinationKind, externalId, "queued", null, nowMs)
         }
 
         override suspend fun markFailed(
             itemKind: String,
             itemId: String,
             destinationKind: ConnectionKind,
+            externalId: String?,
             message: String,
             nowMs: Long,
         ) {
-            upsertEntry(itemKind, itemId, destinationKind, null, "failed", message, nowMs)
+            upsertEntry(itemKind, itemId, destinationKind, externalId, "failed", message, nowMs)
         }
 
         override suspend fun deleteByItem(

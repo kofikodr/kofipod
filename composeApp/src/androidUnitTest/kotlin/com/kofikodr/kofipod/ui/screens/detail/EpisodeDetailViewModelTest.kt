@@ -540,6 +540,7 @@ private class FakeExportLog : ExportLogRepository {
         itemKind: String,
         itemId: String,
         destinationKind: ConnectionKind,
+        externalId: String?,
         nowMs: Long,
     ) = Unit
 
@@ -547,6 +548,7 @@ private class FakeExportLog : ExportLogRepository {
         itemKind: String,
         itemId: String,
         destinationKind: ConnectionKind,
+        externalId: String?,
         message: String,
         nowMs: Long,
     ) = Unit
