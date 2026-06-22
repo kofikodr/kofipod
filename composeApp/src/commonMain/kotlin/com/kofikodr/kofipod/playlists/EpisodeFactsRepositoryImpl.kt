@@ -8,6 +8,7 @@ import com.kofikodr.kofipod.snippets.FileCheckerApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 
 /**
  * SQLDelight-backed [EpisodeFactsRepository] for the Smart Playlist resolver.
@@ -30,6 +31,14 @@ import kotlinx.coroutines.flow.combine
  *
  * `Dispatchers.Default` rather than `Dispatchers.IO` because `IO` is JVM-only
  * and the playlists package must stay iOS-compatible.
+ *
+ * The whole flow is `flowOn(Dispatchers.Default)`. `mapToList(Dispatchers.Default)`
+ * only governs each upstream query; the `combine` transform runs on the *collector's*
+ * context, and every consumer terminates in `stateIn(viewModelScope, …)` (Main). Without
+ * the `flowOn` the per-emission `fileChecker.exists()` stat (a blocking `File.exists()`
+ * syscall on Android) would run on the main thread on every re-emission of any of the
+ * five observed tables — including each `PlaybackState` write during playback. `flowOn`
+ * pushes the transform (and the stats) onto `Default`.
  *
  * `isDownloaded` is gated on the file actually existing on disk via [fileChecker],
  * not just on `state='Completed'` (issue #33). A `Download` row can claim
@@ -85,5 +94,5 @@ class EpisodeFactsRepositoryImpl(
                     playState = state,
                 )
             }
-        }
+        }.flowOn(Dispatchers.Default)
 }
