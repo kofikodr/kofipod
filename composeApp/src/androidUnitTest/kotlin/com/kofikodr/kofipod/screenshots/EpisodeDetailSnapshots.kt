@@ -183,6 +183,9 @@ private fun downloadedWithChapters(): EpisodeDetailUiState =
         // and `localPath` is non-blank, which is exactly the `downloaded = true`
         // case below.
         downloaded = true,
+        // A downloaded episode is necessarily in-library/persisted, so Download is
+        // available (no render change here — `downloaded` already shows the button).
+        canDownload = true,
         downloadButtonState = DownloadButtonState.Done,
         played = false,
         loading = false,
@@ -194,6 +197,8 @@ private fun notDownloadedNoChapters(): EpisodeDetailUiState =
         podcast = samplePodcast(category = ""),
         chapters = emptyList(),
         downloaded = false,
+        // In-library episode with an enclosure → Download offered (issue #28 gate).
+        canDownload = true,
         played = false,
         loading = false,
     )
@@ -204,6 +209,7 @@ private fun playedButNotDownloaded(): EpisodeDetailUiState =
         podcast = samplePodcast(),
         chapters = emptyList(),
         downloaded = false,
+        canDownload = true,
         played = true,
         loading = false,
     )

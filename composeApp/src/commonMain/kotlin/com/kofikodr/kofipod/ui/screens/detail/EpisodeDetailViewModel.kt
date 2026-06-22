@@ -50,6 +50,15 @@ data class EpisodeDetailUiState(
     val isPlayingThis: Boolean = false,
     val isCurrentEpisode: Boolean = false,
     val downloaded: Boolean = false,
+    /**
+     * True only when the episode is persisted in the library (its `Episode` row
+     * exists) AND has a non-blank enclosure URL. A `Download` row FKs to
+     * `Episode.id`, so a remote-only (Search → unsubscribed) episode has no row to
+     * reference: the insert is either FK-rejected or strands an orphan the
+     * Downloads list's `INNER JOIN Episode` hides. The UI gates the Download
+     * affordance on this rather than on enclosure presence alone (issue #28).
+     */
+    val canDownload: Boolean = false,
     val downloadButtonState: DownloadButtonState = DownloadButtonState.Idle,
     val played: Boolean = false,
     val loading: Boolean = true,
@@ -127,6 +136,10 @@ class EpisodeDetailViewModel(
             chaptersFlow,
             error,
             summaryEnabledFlow,
+            // DB-persisted signal: an `Episode` row only exists for a subscribed
+            // (in-library) podcast. Drives `canDownload` so the Download affordance
+            // is hidden for remote-only episodes whose Download row would dangle (#28).
+            dbEpisodeFlow.map { it != null }.distinctUntilChanged(),
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             val ep = values[0] as Episode?
@@ -137,6 +150,7 @@ class EpisodeDetailViewModel(
             val chapterRows = values[5] as List<EpisodeChapter>
             val err = values[6] as String?
             val summaryEnabled = values[7] as Boolean
+            val isPersisted = values[8] as Boolean
             EpisodeDetailUiState(
                 episode = ep,
                 podcast = pod,
@@ -144,6 +158,7 @@ class EpisodeDetailViewModel(
                 isPlayingThis = playerState.episodeId == episodeId && playerState.isPlaying,
                 isCurrentEpisode = playerState.episodeId == episodeId,
                 downloaded = dl.isDownloaded(),
+                canDownload = isPersisted && ep?.enclosureUrl?.isNotBlank() == true,
                 downloadButtonState = dl.toDownloadButtonState(),
                 played = ps.isPlayed(),
                 loading = ep == null && err == null,
@@ -247,7 +262,9 @@ class EpisodeDetailViewModel(
 
     fun download() {
         val ep = state.value.episode ?: return
-        if (ep.enclosureUrl.isBlank()) return
+        // Defence-in-depth behind the UI gate: never enqueue a Download for a
+        // remote-only episode — its row would FK-dangle off a missing Episode (#28).
+        if (!state.value.canDownload) return
         if (state.value.downloaded) return
         downloads.enqueue(
             episodeId = ep.id,
