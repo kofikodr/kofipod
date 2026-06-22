@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.update
@@ -355,8 +356,15 @@ class AiSummaryRepository(
      * SQLDelight does not enforce off-main I/O on its own.
      */
     suspend fun clearAll() {
-        val jobs = activeJobs.value.values.toList()
-        activeJobs.value = emptyMap()
+        // Atomically swap the job map to empty and capture what was there. A plain
+        // read-then-clear had a race: a concurrent launchInternal doing
+        // `activeJobs.update { it + (id to job) }` between the two statements was
+        // clobbered by the unconditional `= emptyMap()`, so the new job was neither
+        // cancelled nor tracked and ran to completion against just-wiped tables (#25).
+        // getAndUpdate makes the swap atomic — a concurrent add either lands before
+        // (its job is captured and cancelled here) or after (it stays tracked in the
+        // map, never silently lost).
+        val jobs = activeJobs.getAndUpdate { emptyMap() }.values.toList()
         inFlight.value = emptyMap()
         progress.value = emptyMap()
         transientErrors.value = emptyMap()
