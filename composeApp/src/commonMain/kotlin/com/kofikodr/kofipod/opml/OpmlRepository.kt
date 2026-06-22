@@ -38,15 +38,23 @@ class OpmlRepository(
      *   counted as `failed` (we never insert a podcast with a synthesized id, since the
      *   rest of the app assumes [com.kofikodr.kofipod.db.Podcast.id] is the Podcast Index feed id).
      * - Feeds whose `feedUrl` already exist in the library are counted as `skipped` and
-     *   left in their current folder unchanged.
+     *   left in their current folder unchanged. A feed URL that appears more than once
+     *   **within the same file** is also deduped — only the first occurrence is imported,
+     *   the rest are `skipped` (issue #32). Both cases share one [seenUrls] set, seeded
+     *   from the existing library and grown as feeds are processed, so a duplicate can't
+     *   trigger a second `savePodcast` (whose `INSERT OR REPLACE` would otherwise
+     *   cascade-delete the just-imported episodes) or double-count the `imported` total.
      *
      * Episode fetching is intentionally lazy — episodes arrive on detail-screen open or
      * via the daily worker. A 200-feed import would otherwise fan out to 200 API calls.
      */
     suspend fun import(bytes: ByteArray): ImportResult {
         val doc = parseOpml(bytes)
-        val existing = library.podcastsNow()
-        val existingByUrl = existing.associateBy { normalizeUrl(it.feedUrl) }
+        // Normalized feed URLs already accounted for. Seeded from the current library so
+        // the existing-subscription skip and the in-file-duplicate skip are one check;
+        // grows as each feed is handled so the second sighting of an in-file duplicate
+        // short-circuits before lookup / savePodcast.
+        val seenUrls: MutableSet<String> = library.podcastsNow().mapTo(HashSet()) { normalizeUrl(it.feedUrl) }
         val existingLists = library.listsNow()
         val listsByName: MutableMap<String, String> =
             existingLists.associate { it.name.lowercase() to it.id }.toMutableMap()
@@ -61,7 +69,11 @@ class OpmlRepository(
             feed: OpmlOutline.Feed,
             listId: String?,
         ) {
-            if (existingByUrl.containsKey(normalizeUrl(feed.xmlUrl))) {
+            // `add` returns false when the normalized URL was already present — either it
+            // is an existing subscription or an earlier outline in this same import already
+            // claimed it. Either way it's a skip, and marking it now means a later
+            // duplicate in the file is short-circuited here too.
+            if (!seenUrls.add(normalizeUrl(feed.xmlUrl))) {
                 skipped++
                 return
             }
