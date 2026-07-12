@@ -92,6 +92,17 @@ class LibraryRepository(
         atMillis: Long,
     ) = db.podcastQueries.setLastChecked(atMillis, podcastId)
 
+    /**
+     * Records that the user has "seen" this podcast's episodes as of [seenAt] (epoch
+     * millis). Clears the library "new" dot for every episode published on or before
+     * [seenAt] without marking any episode played. Idempotent; a no-op if the podcast
+     * row does not exist.
+     */
+    fun markSeen(
+        podcastId: String,
+        seenAt: Long,
+    ) = db.podcastQueries.setLastSeen(seenAt, podcastId)
+
     fun deletePodcast(podcastId: String) = db.podcastQueries.delete(podcastId)
 }
 
