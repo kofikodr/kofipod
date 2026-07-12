@@ -11,6 +11,10 @@ CREATE TABLE Podcast (
     lastCheckedAt INTEGER,
     addedAt INTEGER NOT NULL,
     primaryCategory TEXT NOT NULL DEFAULT '',
+    -- Per-podcast "seen" watermark (epoch millis). NULL = never opened since subscribing.
+    -- Set to now when the user dwells on the podcast's episode list; the new-episode-count
+    -- query treats NULL as 0 so behavior is unchanged until a podcast is first seen.
+    lastSeenAt INTEGER,
     FOREIGN KEY (listId) REFERENCES PodcastList(id) ON DELETE SET NULL
 );
 
@@ -51,6 +55,9 @@ UPDATE Podcast SET notifyNewEpisodesEnabled = ? WHERE id = ?;
 
 setLastChecked:
 UPDATE Podcast SET lastCheckedAt = ? WHERE id = ?;
+
+setLastSeen:
+UPDATE Podcast SET lastSeenAt = ? WHERE id = ?;
 
 delete:
 DELETE FROM Podcast WHERE id = ?;

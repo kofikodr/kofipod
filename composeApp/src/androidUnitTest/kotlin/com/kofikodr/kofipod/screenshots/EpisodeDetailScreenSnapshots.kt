@@ -280,6 +280,7 @@ private val SAMPLE_PODCAST: Podcast =
         lastCheckedAt = null,
         addedAt = 0L,
         primaryCategory = "TECHNOLOGY",
+        lastSeenAt = null,
     )
 
 private val SAMPLE_EPISODE: Episode =

@@ -127,5 +127,6 @@ private fun entry(
                 lastCheckedAt = null,
                 addedAt = 0L,
                 primaryCategory = "",
+                lastSeenAt = null,
             ),
     )

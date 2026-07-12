@@ -862,6 +862,7 @@ class PkmExportCoordinatorTest {
             lastCheckedAt = null,
             addedAt = 0,
             primaryCategory = "",
+            lastSeenAt = null,
         )
 
     private fun sampleEpisode() =

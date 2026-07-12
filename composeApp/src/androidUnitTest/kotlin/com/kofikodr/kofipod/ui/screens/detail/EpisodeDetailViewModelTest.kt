@@ -353,6 +353,7 @@ class EpisodeDetailViewModelTest {
                 lastCheckedAt = null,
                 addedAt = 0L,
                 primaryCategory = "",
+                lastSeenAt = null,
             )
 
         val EPISODE =

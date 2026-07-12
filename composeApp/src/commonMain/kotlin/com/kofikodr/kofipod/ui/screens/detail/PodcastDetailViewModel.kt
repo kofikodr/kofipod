@@ -516,4 +516,5 @@ private fun PodcastSummary.toTransientPodcast(): Podcast =
         lastCheckedAt = null,
         addedAt = 0L,
         primaryCategory = category,
+        lastSeenAt = null,
     )

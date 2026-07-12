@@ -118,6 +118,7 @@ private fun samplePodcast(category: String = "TECHNOLOGY"): Podcast =
         lastCheckedAt = null,
         addedAt = 0L,
         primaryCategory = category,
+        lastSeenAt = null,
     )
 
 private fun sampleEpisode(): Episode =

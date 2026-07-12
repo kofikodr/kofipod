@@ -191,4 +191,4 @@ const val MANIFEST_SCHEMA_VERSION = 1
  * `ManifestTest.dbSchemaVersion_matchesGeneratedSchema` — if you add a new migration,
  * bump this constant and that test will pass again.
  */
-const val DB_SCHEMA_VERSION = 22
+const val DB_SCHEMA_VERSION = 23

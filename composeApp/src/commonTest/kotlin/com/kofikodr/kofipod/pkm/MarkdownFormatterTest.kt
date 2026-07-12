@@ -31,6 +31,7 @@ class MarkdownFormatterTest {
             lastCheckedAt = null,
             addedAt = 0,
             primaryCategory = "Sports",
+            lastSeenAt = null,
         )
 
     private val episode =
