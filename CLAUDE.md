@@ -45,16 +45,20 @@ All commands use the wrapper (`./gradlew`). Gradle is installed via SDKMAN (`~/.
 - Paparazzi record/update baselines: `./gradlew :composeApp:recordPaparazziDebug`
 - iOS compile (frameworks only, from Mac): `./gradlew :composeApp:compileKotlinIosSimulatorArm64`
 - Lint / format: `./gradlew :composeApp:ktlintFormat :composeApp:detekt`
-- Install pre-commit hook (one-time per clone): `./gradlew installGitHooks` — points `core.hooksPath` at `scripts/git-hooks/`, so `scripts/git-hooks/pre-commit` runs `ktlintFormat` + `detekt` on every commit with staged `.kt`/`.kts` files.
+- Install git hooks (one-time per clone): `./gradlew installGitHooks` — points `core.hooksPath` at `scripts/git-hooks/`, which activates both `pre-commit` (runs `ktlintFormat` + `detekt` on every commit with staged `.kt`/`.kts` files) and `post-checkout` (seeds a newly added `git worktree` with `local.properties` copied from the primary worktree, so worktree builds get the Podcast Index dev key automatically).
 
 Android SDK lives at `~/Library/Android/sdk/`; `adb`/`emulator` are at `~/Library/Android/sdk/platform-tools/adb` and `~/Library/Android/sdk/emulator/emulator` (not on PATH). Target AVD for verification: `Pixel_9a`.
 
 ## Secrets / BuildKonfig
 
-`composeApp/build.gradle.kts` reads three values through `readSecret()` (local.properties → env var → empty) and exposes them via `com.kofikodr.kofipod.config.BuildKonfig`:
+`composeApp/build.gradle.kts` reads secrets through `readSecret()` (local.properties → env var → empty). `USER_AGENT` (+ version fields) go into shared `com.kofikodr.kofipod.config.BuildKonfig`; the account-bound secrets (`PODCAST_INDEX_KEY`, `PODCAST_INDEX_SECRET`, `REVIEWER_UNLOCK_HASH`, `SENTRY_DSN`, `APTABASE_APP_KEY`) are Android `BuildConfig` fields, not BuildKonfig.
 
 - `PODCAST_INDEX_KEY`, `PODCAST_INDEX_SECRET` — required for Podcast Index API calls.
 - `USER_AGENT` — hardcoded default.
+
+**Podcast Index credentials are wired per-variant** in `applicationVariants.all` (not in the flavor blocks): the gitignored `local.properties` dev key feeds **debug builds only** (`playDebug` via `readSecret`). Release variants read **env vars exclusively** — the `local.properties` file is intentionally ignored for release so a dev key can never be baked into a distributable AAB. **FOSS** variants are always empty. This split is guarded by the `verifyPlayDebugIncludesPodcastIndexSecrets` / `verifyFossReleaseExcludesPodcastIndexSecrets` tasks.
+
+A real Podcast Index **developer key lives in the gitignored `local.properties`** on this machine (both the primary checkout and each worktree), so debug builds hit the API out of the box. New git worktrees are seeded automatically by the `post-checkout` hook (see the `installGitHooks` command) — it copies `local.properties` from the primary worktree into any newly added one.
 
 Copy `local.properties.template` and `keystore.properties.template` before first build. `local.properties`, `keystore.properties`, `*.jks`, and `keystore/` are gitignored.
 
