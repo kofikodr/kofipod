@@ -21,6 +21,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -55,11 +56,14 @@ import com.kofikodr.kofipod.ui.primitives.KofipodArtwork
 import com.kofikodr.kofipod.ui.primitives.LoadMoreRow
 import com.kofikodr.kofipod.ui.theme.LocalKofipodColors
 import com.kofikodr.kofipod.ui.theme.LocalKofipodRadii
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
 
 private enum class DetailTab { Episodes, About }
+
+private const val SEEN_DWELL_MS = 1_500L
 
 /**
  * Thin Koin-aware wrapper. Owns VM resolution, permission requester, dialog state, and
@@ -91,6 +95,16 @@ fun PodcastDetailScreen(
     val playingEpisodeId by viewModel.playingEpisodeId.collectAsState()
     val refreshing by viewModel.refreshing.collectAsState()
     val selectedEpisodeId by viewModel.selectedEpisodeId.collectAsState()
+
+    LaunchedEffect(Unit) {
+        // Dwell guard: this effect's coroutine is cancelled when the screen leaves
+        // composition, so backing out before SEEN_DWELL_MS elapses skips the write —
+        // an accidental tap-and-back won't dismiss the "new" dot. markSeen() is a
+        // no-op off-library and idempotent, so re-entry is safe.
+        delay(SEEN_DWELL_MS)
+        viewModel.markSeen()
+    }
+
     val tabletSize = LocalTabletSize.current
     val c = LocalKofipodColors.current
 

@@ -413,6 +413,18 @@ class PodcastDetailViewModel(
         if (enabled) reassertDailyCheck()
     }
 
+    /**
+     * Marks this podcast "seen", clearing its library "new" dot without marking any
+     * episode played. Fired after a short dwell on the detail screen (see
+     * PodcastDetailScreen). No-op when the podcast is not in the library — an
+     * unsubscribed podcast has no row and no "new" indicator. Idempotent: sets the
+     * watermark to the current time, so a re-entry (e.g. config change) is harmless.
+     */
+    fun markSeen() {
+        if (!state.value.inLibrary) return
+        library.markSeen(podcastId, Clock.System.now().toEpochMilliseconds())
+    }
+
     // Auto-download / notify only ever fire from the daily check; if that global
     // toggle was turned off earlier, these switches would otherwise be silent
     // no-ops forever. Most-recent intent wins — and because the flip changes
