@@ -47,7 +47,10 @@ All commands use the wrapper (`./gradlew`). Gradle is installed via SDKMAN (`~/.
 - Lint / format: `./gradlew :composeApp:ktlintFormat :composeApp:detekt`
 - Install git hooks (one-time per clone): `./gradlew installGitHooks` — points `core.hooksPath` at `scripts/git-hooks/`, which activates both `pre-commit` (runs `ktlintFormat` + `detekt` on every commit with staged `.kt`/`.kts` files) and `post-checkout` (seeds a newly added `git worktree` with `local.properties` copied from the primary worktree, so worktree builds get the Podcast Index dev key automatically).
 
-Android SDK lives at `~/Library/Android/sdk/`; `adb`/`emulator` are at `~/Library/Android/sdk/platform-tools/adb` and `~/Library/Android/sdk/emulator/emulator` (not on PATH). Target AVD for verification: `Pixel_9a`.
+Android SDK / tooling location is environment-specific:
+
+- **Maintainer's Mac:** SDK at `~/Library/Android/sdk/`; `adb`/`emulator` at `~/Library/Android/sdk/platform-tools/adb` and `~/Library/Android/sdk/emulator/emulator` (not on PATH). Target AVD for verification: `Pixel_9a`.
+- **Linux dev box (optane118):** SDK at `~/Android/Sdk`. `adb`, `emulator`, `aapt`, `apksigner`, `zipalign`, `d8` are on PATH via a block in `~/.bashrc` (which also exports `ANDROID_HOME`/`ANDROID_SDK_ROOT` and pre-wires `cmdline-tools/latest/bin` for when `avdmanager`/`sdkmanager` get installed). AVDs are `Pixel_10` / `Pixel_Tablet` (no `Pixel_9a`); `/dev/kvm` is available so headless emulators boot.
 
 ## Secrets / BuildKonfig
 
