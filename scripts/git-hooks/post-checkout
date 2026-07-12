@@ -3,13 +3,17 @@
 # build config so worktree builds work without manual copying.
 #
 # `git worktree add` runs post-checkout in the new worktree with the branch-checkout
-# flag set. We copy `local.properties` (SDK location + the Podcast Index dev key,
-# both gitignored) from the primary worktree into the new one when it's missing.
-# Debug builds then pick up the Podcast Index key automatically (see readSecret /
-# the per-variant wiring in composeApp/build.gradle.kts).
+# flag set. We copy the gitignored local build config from the primary worktree into
+# the new one when it's missing:
+#   - local.properties      SDK location + the Podcast Index dev key (debug builds pick
+#                           the key up automatically via readSecret / the per-variant
+#                           wiring in composeApp/build.gradle.kts).
+#   - keystore.properties   release signing config, and
+#   - keystore/             the signing keystore dir (holds release.jks),
+#                           so signed/release builds also work from a worktree.
 #
-# No-op when: this is a file checkout (flag != 1), this IS the primary worktree,
-# the source file is absent, or the destination already exists. Never overwrites.
+# No-op per item when: this is a file checkout (flag != 1), this IS the primary
+# worktree, the source is absent, or the destination already exists. Never overwrites.
 #
 # Activated (alongside pre-commit) by `./gradlew installGitHooks`, which points
 # core.hooksPath at scripts/git-hooks/.
@@ -30,9 +34,18 @@ here=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 # Nothing to seed when the checkout is the primary worktree itself.
 [ "$here" = "$primary" ] && exit 0
 
-src="$primary/local.properties"
-dst="$here/local.properties"
-if [ -f "$src" ] && [ ! -f "$dst" ]; then
-    cp "$src" "$dst"
-    echo "post-checkout: seeded local.properties into new worktree from $primary"
-fi
+# Seed one gitignored path (file or directory) into this worktree, if the primary
+# has it and this worktree doesn't. `-e`/`cp -R` handle both files and dirs; the
+# `! -e` guard means an existing destination is never overwritten.
+seed() {
+    _src="$primary/$1"
+    _dst="$here/$1"
+    if [ -e "$_src" ] && [ ! -e "$_dst" ]; then
+        cp -R "$_src" "$_dst"
+        echo "post-checkout: seeded $1 into new worktree from $primary"
+    fi
+}
+
+seed local.properties
+seed keystore.properties
+seed keystore
