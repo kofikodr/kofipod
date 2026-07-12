@@ -202,10 +202,10 @@ android {
             // SHA-256 of the reviewer unlock code. Play-only: FOSS is already Pro
             // and must not ship this revenue-build reviewer secret.
             buildConfigField("String", "REVIEWER_UNLOCK_HASH", buildConfigStringLiteral(readSecret("REVIEWER_UNLOCK_HASH")))
-            // Podcast Index credentials are account-bound secrets. Keep them
-            // scoped to the Play flavor so public FOSS builds do not ship them.
-            buildConfigField("String", "PODCAST_INDEX_KEY", buildConfigStringLiteral(readSecret("PODCAST_INDEX_KEY")))
-            buildConfigField("String", "PODCAST_INDEX_SECRET", buildConfigStringLiteral(readSecret("PODCAST_INDEX_SECRET")))
+            // Podcast Index credentials are account-bound secrets and are wired
+            // per-variant in applicationVariants.all below (NOT here): the gitignored
+            // local.properties dev key must reach ONLY debug builds, while release
+            // variants read env vars exclusively. FOSS variants stay empty.
             // Diagnostics keys point at the maintainer's accounts and belong
             // only in the Play/revenue flavor.
             buildConfigField("String", "SENTRY_DSN", buildConfigStringLiteral(readSecret("SENTRY_DSN")))
@@ -229,8 +229,8 @@ android {
             buildConfigField("String", "REVIEWER_UNLOCK_HASH", "\"\"")
             // FOSS self-builders can inject their own credentials in forks; the
             // published FOSS APK must not embed the Play account credentials.
-            buildConfigField("String", "PODCAST_INDEX_KEY", "\"\"")
-            buildConfigField("String", "PODCAST_INDEX_SECRET", "\"\"")
+            // PODCAST_INDEX_KEY/SECRET are set per-variant in applicationVariants.all
+            // below (empty for every FOSS variant).
             // Public FOSS builds must not report into the maintainer's
             // diagnostics accounts.
             buildConfigField("String", "SENTRY_DSN", "\"\"")
@@ -284,6 +284,23 @@ android {
         val flavorLabel = if (variant.flavorName == "foss") "Kofipod (FOSS)" else "Kofipod"
         val label = if (variant.buildType.name == "debug") "$flavorLabel debug" else flavorLabel
         variant.mergedFlavor.manifestPlaceholders["appLabel"] = label
+
+        // Podcast Index credentials, resolved per-variant so the gitignored
+        // local.properties dev key feeds ONLY debug builds. Release variants read
+        // env vars exclusively (readSecret's file lookup is skipped), so a key sitting
+        // in local.properties can never be baked into a distributable AAB. FOSS
+        // variants are always empty — public libre builds must not embed the
+        // maintainer's account credentials. Verified by the verifyPlayDebugIncludes-
+        // and verifyFossReleaseExcludesPodcastIndexSecrets tasks.
+        val (podcastIndexKey, podcastIndexSecret) = when {
+            variant.flavorName == "foss" -> "" to ""
+            variant.buildType.name == "debug" ->
+                readSecret("PODCAST_INDEX_KEY") to readSecret("PODCAST_INDEX_SECRET")
+            else ->
+                System.getenv("PODCAST_INDEX_KEY").orEmpty() to System.getenv("PODCAST_INDEX_SECRET").orEmpty()
+        }
+        variant.buildConfigField("String", "PODCAST_INDEX_KEY", buildConfigStringLiteral(podcastIndexKey))
+        variant.buildConfigField("String", "PODCAST_INDEX_SECRET", buildConfigStringLiteral(podcastIndexSecret))
         if (variant.buildType.name == "release") {
             variant.outputs.all {
                 val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl

@@ -45,16 +45,23 @@ All commands use the wrapper (`./gradlew`). Gradle is installed via SDKMAN (`~/.
 - Paparazzi record/update baselines: `./gradlew :composeApp:recordPaparazziDebug`
 - iOS compile (frameworks only, from Mac): `./gradlew :composeApp:compileKotlinIosSimulatorArm64`
 - Lint / format: `./gradlew :composeApp:ktlintFormat :composeApp:detekt`
-- Install pre-commit hook (one-time per clone): `./gradlew installGitHooks` — points `core.hooksPath` at `scripts/git-hooks/`, so `scripts/git-hooks/pre-commit` runs `ktlintFormat` + `detekt` on every commit with staged `.kt`/`.kts` files.
+- Install git hooks (one-time per clone): `./gradlew installGitHooks` — points `core.hooksPath` at `scripts/git-hooks/`, which activates both `pre-commit` (runs `ktlintFormat` + `detekt` on every commit with staged `.kt`/`.kts` files) and `post-checkout` (seeds a newly added `git worktree` with `local.properties` copied from the primary worktree, so worktree builds get the Podcast Index dev key automatically).
 
-Android SDK lives at `~/Library/Android/sdk/`; `adb`/`emulator` are at `~/Library/Android/sdk/platform-tools/adb` and `~/Library/Android/sdk/emulator/emulator` (not on PATH). Target AVD for verification: `Pixel_9a`.
+Android SDK / tooling location is environment-specific:
+
+- **Maintainer's Mac:** SDK at `~/Library/Android/sdk/`; `adb`/`emulator` at `~/Library/Android/sdk/platform-tools/adb` and `~/Library/Android/sdk/emulator/emulator` (not on PATH). Target AVD for verification: `Pixel_9a`.
+- **Linux dev box (optane118):** SDK at `~/Android/Sdk`. `adb`, `emulator`, `aapt`, `apksigner`, `zipalign`, `d8` are on PATH via a block in `~/.bashrc` (which also exports `ANDROID_HOME`/`ANDROID_SDK_ROOT` and pre-wires `cmdline-tools/latest/bin` for when `avdmanager`/`sdkmanager` get installed). AVDs are `Pixel_10` / `Pixel_Tablet` (no `Pixel_9a`); `/dev/kvm` is available so headless emulators boot.
 
 ## Secrets / BuildKonfig
 
-`composeApp/build.gradle.kts` reads three values through `readSecret()` (local.properties → env var → empty) and exposes them via `com.kofikodr.kofipod.config.BuildKonfig`:
+`composeApp/build.gradle.kts` reads secrets through `readSecret()` (local.properties → env var → empty). `USER_AGENT` (+ version fields) go into shared `com.kofikodr.kofipod.config.BuildKonfig`; the account-bound secrets (`PODCAST_INDEX_KEY`, `PODCAST_INDEX_SECRET`, `REVIEWER_UNLOCK_HASH`, `SENTRY_DSN`, `APTABASE_APP_KEY`) are Android `BuildConfig` fields, not BuildKonfig.
 
 - `PODCAST_INDEX_KEY`, `PODCAST_INDEX_SECRET` — required for Podcast Index API calls.
 - `USER_AGENT` — hardcoded default.
+
+**Podcast Index credentials are wired per-variant** in `applicationVariants.all` (not in the flavor blocks): the gitignored `local.properties` dev key feeds **debug builds only** (`playDebug` via `readSecret`). Release variants read **env vars exclusively** — the `local.properties` file is intentionally ignored for release so a dev key can never be baked into a distributable AAB. **FOSS** variants are always empty. This split is guarded by the `verifyPlayDebugIncludesPodcastIndexSecrets` / `verifyFossReleaseExcludesPodcastIndexSecrets` tasks.
+
+A real Podcast Index **developer key lives in the gitignored `local.properties`** on this machine (both the primary checkout and each worktree), so debug builds hit the API out of the box. New git worktrees are seeded automatically by the `post-checkout` hook (see the `installGitHooks` command) — it copies `local.properties` from the primary worktree into any newly added one.
 
 Copy `local.properties.template` and `keystore.properties.template` before first build. `local.properties`, `keystore.properties`, `*.jks`, and `keystore/` are gitignored.
 
@@ -175,7 +182,15 @@ When extending the wire shape (Summary side: new entity field; Discuss side: new
 
 Testing scope per user lock-in: Compose UI tests (`commonTest`) + Paparazzi JVM screenshots (`test`). No unit/integration/instrumentation tests in the initial scope. Paparazzi coverage now spans primitives, tokens, every tablet-aware screen across the four `TabletSize` classifications, the navigation rail, and the tablet scaffold — see the "Tablet / large-screen layout" section above for the file/naming convention. Screen baselines that still need fakes for Koin deps are split by extracting a stateless `*Content` (e.g. `LibraryContent`, `SearchContent`, `TabletScaffoldContent`) that takes state as a parameter; follow that pattern when adding new screen-level snapshots.
 
-When adding emulator-verified features, the expected workflow is: assemble debug → install → interact via `adb` (use `adb shell uiautomator dump /sdcard/view.xml && adb pull /sdcard/view.xml /tmp/` to get real element bounds; don't guess coordinates from screenshots).
+When adding emulator-verified features, the expected workflow is: assemble debug → install → interact via `adb` (use `adb shell uiautomator dump /sdcard/view.xml && adb pull /sdcard/view.xml /tmp/` to get real element bounds; don't guess coordinates from screenshots). Compose clickables expose no `text`/`content-desc` — find them by `clickable="true"` bounds, not by label. `adb shell input tap` can silently miss on the first try; retry-and-verify (re-screenshot) rather than assuming a tap landed.
+
+**Prefer a transient, self-owned emulator instance for live verification** — create one, verify, destroy it — over reusing whatever is running. Rationale: fresh `-wipe-data` state is deterministic, and this repo is worked by **multiple concurrent agents/worktrees**, so a running emulator is very often *someone else's* in-flight instance. Protocol:
+
+- **Resource-gate first.** A headless AVD costs ~2.5–3.5 GiB RSS + ~2 min cold boot. Only boot if there's enough headroom — check `MemAvailable` in `/proc/meminfo` (rule of thumb: keep ≥4 GiB free *per* instance). If RAM is tight, skip live verification (rely on unit + Paparazzi) rather than thrash. This box has 62 GiB, so it's rarely the limit here.
+- **Check for other agents / devices before booting.** Run `adb devices` **and** `pgrep -af qemu-system`. Any emulator you did **not** create may belong to a human or another agent — never reuse it, never `adb -s` it, and never touch a physical device (one is often attached). Reuse an existing instance only if you can positively confirm it is idle and unowned.
+- **Own a unique instance.** Clone a throwaway AVD from an existing one (copy its `~/.android/avd/<Name>.avd/config.ini`, change `AvdId`; write a sibling `<Name>.ini`) — cloning avoids copying the multi-GB userdata. Boot headless on a **distinct, non-default port** (not 5554) so it can't collide: `emulator -avd <name> -port 55NN -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect`. Always target it explicitly with `-s emulator-55NN`.
+- **Tear down when done.** `adb -s emulator-55NN emu kill`, then delete `~/.android/avd/<name>.avd` and `<name>.ini`. Leave the machine as you found it (original AVDs + any other agent's instance untouched).
+- The debug build embeds the Podcast Index dev key (see Secrets section), so Search hits the real API on the emulator without seeding. API-37 system images have **no on-device `sqlite3`** — assert DB state via the pull-through-`run-as` recipe, not an inline `sqlite3` call.
 
 **All tests must pass before declaring work done.** Run `./gradlew :composeApp:testDebugUnitTest` (and `:verifyPaparazziDebug` if visuals changed) as part of the green-check sequence alongside compile + ktlintFormat + detekt. Do not ignore failing tests — even ones that look unrelated to the current change. If a test is failing, fix it (or the code it covers); only skip with explicit user sign-off.
 
