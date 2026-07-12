@@ -31,13 +31,15 @@ class NewEpisodeCountTest {
         episode("eNew", publishedAt = 250)
     }
 
-    private fun episode(id: String, publishedAt: Long) =
-        db.episodeQueries.insert(
-            id = id, podcastId = "p1", guid = id, title = id, description = "",
-            publishedAt = publishedAt, durationSec = 1, enclosureUrl = "",
-            enclosureMimeType = "audio/mpeg", fileSizeBytes = 0, seasonNumber = null,
-            episodeNumber = null, imageUrl = "", chaptersUrl = null, transcriptUrl = null,
-        )
+    private fun episode(
+        id: String,
+        publishedAt: Long,
+    ) = db.episodeQueries.insert(
+        id = id, podcastId = "p1", guid = id, title = id, description = "",
+        publishedAt = publishedAt, durationSec = 1, enclosureUrl = "",
+        enclosureMimeType = "audio/mpeg", fileSizeBytes = 0, seasonNumber = null,
+        episodeNumber = null, imageUrl = "", chaptersUrl = null, transcriptUrl = null,
+    )
 
     private fun counts(): Map<String, Long> =
         db.episodeQueries.selectNewEpisodeCountsByPodcast()
