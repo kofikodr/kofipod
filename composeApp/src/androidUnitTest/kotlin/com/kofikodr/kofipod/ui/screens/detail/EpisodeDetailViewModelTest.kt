@@ -47,6 +47,8 @@ import com.kofikodr.kofipod.snippets.FileSizer
 import com.kofikodr.kofipod.snippets.Snippet
 import com.kofikodr.kofipod.snippets.SnippetRepository
 import com.kofikodr.kofipod.testing.inMemoryDatabase
+import com.kofikodr.kofipod.ui.UiEvent
+import com.kofikodr.kofipod.ui.UiEventBus
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respondError
@@ -116,6 +118,7 @@ class EpisodeDetailViewModelTest {
         val vm: EpisodeDetailViewModel,
         val player: FakePlayer,
         val downloads: DownloadRepository,
+        val uiEvents: UiEventBus,
     )
 
     private fun TestScope.harness(
@@ -135,6 +138,7 @@ class EpisodeDetailViewModelTest {
         val testDispatcher = UnconfinedTestDispatcher(testScheduler)
         val scope = CoroutineScope(testDispatcher)
         val player = FakePlayer(initialPlayerState)
+        val uiEvents = UiEventBus()
 
         // Episode + its podcast are supplied via the in-memory RemoteEpisodeCache (the
         // "remote-only" projection path), so no DB rows are needed to populate state.
@@ -149,7 +153,7 @@ class EpisodeDetailViewModelTest {
                 scope = scope,
                 telemetry = NoOpTelemetry,
                 fileChecker = FakeFileChecker(),
-                uiEvents = com.kofikodr.kofipod.ui.UiEventBus(),
+                uiEvents = uiEvents,
                 queryDispatcher = testDispatcher,
             )
         val pkm =
@@ -191,9 +195,10 @@ class EpisodeDetailViewModelTest {
                         appScope = scope,
                         reviewerUnlockHash = "",
                     ),
+                uiEvents = uiEvents,
                 remoteCache = cache,
             )
-        return Harness(vm, player, downloads)
+        return Harness(vm, player, downloads, uiEvents)
     }
 
     @Test
@@ -329,6 +334,38 @@ class EpisodeDetailViewModelTest {
                 h.downloads.forEpisodeFlow(EPISODE_ID).first(),
                 "download() with a blank enclosure must not write a row",
             )
+            collector.cancel()
+        }
+
+    @Test
+    fun markPlayed_flipsPlayedStateAndConfirmsWithSnackbar() =
+        runVmTest {
+            // Tapping the checkmark must (a) turn it green immediately — i.e. flip
+            // state.played to true without waiting on any navigation/re-entry — and
+            // (b) confirm the action to the user via the app's snackbar bus.
+            val h = harness(persisted = true)
+            val collector = launch { h.vm.state.collect {} } // hot StateFlow
+            val events = mutableListOf<UiEvent>()
+            val eventCollector = launch { h.uiEvents.events.collect { events += it } }
+            advanceUntilIdle()
+
+            assertFalse(h.vm.state.value.played, "precondition: episode has not been marked played yet")
+
+            h.vm.markPlayed()
+            advanceUntilIdle()
+
+            assertTrue(
+                h.vm.state.value.played,
+                "marking played must flip state.played to true so the checkmark turns green in place, " +
+                    "rather than only after navigating away and back",
+            )
+            assertEquals(
+                listOf<UiEvent>(UiEvent.Snackbar("Marking episode as played")),
+                events,
+                "marking played must emit exactly one confirmation snackbar with the expected copy",
+            )
+
+            eventCollector.cancel()
             collector.cancel()
         }
 

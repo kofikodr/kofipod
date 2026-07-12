@@ -28,6 +28,8 @@ import com.kofikodr.kofipod.pro.ProEntitlementRepository
 import com.kofikodr.kofipod.share.Sharer
 import com.kofikodr.kofipod.snippets.FileSizer
 import com.kofikodr.kofipod.snippets.SnippetRepository
+import com.kofikodr.kofipod.ui.UiEvent
+import com.kofikodr.kofipod.ui.UiEventBus
 import com.kofikodr.kofipod.ui.primitives.DownloadButtonState
 import com.kofikodr.kofipod.ui.primitives.toDownloadButtonState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -86,9 +88,17 @@ class EpisodeDetailViewModel(
     private val pkmExport: PkmExportCoordinator,
     private val paywallRouter: PaywallRouter,
     private val pro: ProEntitlementRepository,
+    private val uiEvents: UiEventBus,
     remoteCache: RemoteEpisodeCache,
 ) : ViewModel() {
     private val error = MutableStateFlow<String?>(null)
+
+    // Optimistic "played" latch. markPlayed() writes completedAt to the DB and the
+    // combine below also reads playback.stateFlow, but flipping this the instant the
+    // user taps guarantees the checkmark turns green immediately rather than waiting
+    // on the SQLDelight re-query round-trip. Mark-played is one-way (no un-mark
+    // affordance), so this latch never needs resetting within the VM's lifetime.
+    private val markedPlayedOptimistic = MutableStateFlow(false)
 
     // Resolve the episode against the DB first, fall back to the in-memory
     // RemoteEpisodeCache when the row isn't persisted yet (Search → unsubscribed
@@ -140,6 +150,7 @@ class EpisodeDetailViewModel(
             // (in-library) podcast. Drives `canDownload` so the Download affordance
             // is hidden for remote-only episodes whose Download row would dangle (#28).
             dbEpisodeFlow.map { it != null }.distinctUntilChanged(),
+            markedPlayedOptimistic,
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             val ep = values[0] as Episode?
@@ -151,6 +162,7 @@ class EpisodeDetailViewModel(
             val err = values[6] as String?
             val summaryEnabled = values[7] as Boolean
             val isPersisted = values[8] as Boolean
+            val markedPlayed = values[9] as Boolean
             EpisodeDetailUiState(
                 episode = ep,
                 podcast = pod,
@@ -160,7 +172,7 @@ class EpisodeDetailViewModel(
                 downloaded = dl.isDownloaded(),
                 canDownload = isPersisted && ep?.enclosureUrl?.isNotBlank() == true,
                 downloadButtonState = dl.toDownloadButtonState(),
-                played = ps.isPlayed(),
+                played = ps.isPlayed() || markedPlayed,
                 loading = ep == null && err == null,
                 error = err,
                 summaryEnabled = summaryEnabled,
@@ -229,6 +241,10 @@ class EpisodeDetailViewModel(
         val s = state.value
         val ep = s.episode ?: return
         val pod = s.podcast
+        // Flip the checkmark to its "played" (green) colour immediately, and confirm
+        // the action to the user, before the DB write + reactive re-query settle.
+        markedPlayedOptimistic.value = true
+        uiEvents.emit(UiEvent.Snackbar("Marking episode as played"))
         val now = Clock.System.now().toEpochMilliseconds()
         val durationMs = ep.durationSec * 1000L
         // Seed metadata first so episodes the user has never played carry enough context
