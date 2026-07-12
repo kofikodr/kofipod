@@ -96,11 +96,13 @@ fun PodcastDetailScreen(
     val refreshing by viewModel.refreshing.collectAsState()
     val selectedEpisodeId by viewModel.selectedEpisodeId.collectAsState()
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(podcastId) {
         // Dwell guard: this effect's coroutine is cancelled when the screen leaves
-        // composition, so backing out before SEEN_DWELL_MS elapses skips the write —
-        // an accidental tap-and-back won't dismiss the "new" dot. markSeen() is a
-        // no-op off-library and idempotent, so re-entry is safe.
+        // composition, and restarts whenever podcastId changes — so backing out (or
+        // swapping selection in the tablet master-detail Search pane, which reuses
+        // this screen in place) before SEEN_DWELL_MS elapses skips the write for
+        // that podcast. markSeen() is a no-op off-library and idempotent, so
+        // re-entry is safe.
         delay(SEEN_DWELL_MS)
         viewModel.markSeen()
     }
