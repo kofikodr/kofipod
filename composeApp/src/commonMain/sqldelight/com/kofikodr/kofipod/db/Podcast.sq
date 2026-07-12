@@ -24,6 +24,10 @@ insert:
 INSERT INTO Podcast
 (id, title, author, description, artworkUrl, feedUrl, listId, autoDownloadEnabled, notifyNewEpisodesEnabled, lastCheckedAt, addedAt, primaryCategory)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+-- On re-insert (metadata refresh) only feed-derived fields are updated. Local state
+-- columns — addedAt, listId, lastCheckedAt, and lastSeenAt (the "seen" watermark) — are
+-- deliberately NOT in this SET list. Do not add lastSeenAt here: refreshing a feed must
+-- not reset the watermark, or the "new" dot would spuriously re-light after every refresh.
 ON CONFLICT(id) DO UPDATE SET
     title = excluded.title,
     author = excluded.author,
