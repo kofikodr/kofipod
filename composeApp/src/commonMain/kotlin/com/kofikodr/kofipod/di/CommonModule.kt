@@ -615,6 +615,7 @@ val commonDataModule =
                 pkmExport = get(),
                 paywallRouter = get(),
                 pro = get(),
+                uiEvents = get(),
                 remoteCache = get(),
             )
         }
