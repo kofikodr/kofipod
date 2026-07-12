@@ -240,6 +240,7 @@ private fun pod(
         lastCheckedAt = null,
         addedAt = addedAt,
         primaryCategory = "",
+        lastSeenAt = null,
     )
 
 private fun list(

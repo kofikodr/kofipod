@@ -316,6 +316,7 @@ class PkmExportCoordinatorSlice6Test {
             lastCheckedAt = null,
             addedAt = 0,
             primaryCategory = "",
+            lastSeenAt = null,
         )
 
     private fun sampleEpisode() =

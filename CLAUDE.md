@@ -106,7 +106,7 @@ Per-app Auto Backup cap is **25 MB compressed**; growth-watch tables are `Episod
 SQLDelight database name: `KofipodDatabase`, package `com.kofikodr.kofipod.db`. Schema files under `composeApp/src/commonMain/sqldelight/com/kofikodr/kofipod/db/`:
 
 - Tables: `Podcast.sq`, `Episode.sq`, `EpisodeChapter.sq`, `EpisodeAiSummary.sq`, `PendingAiOperation.sq`, `AudioUploadCache.sq`, `DiscussSession.sq`, `DiscussMessage.sq`, `PodcastList.sq`, `Download.sq`, `PlaybackState.sq`, `RecentPodcastView.sq`, `SyncMeta.sq`.
-- Migrations in `migrations/` — current schema version is **21** (= `max(N.sqm) + 1`, because migration `N.sqm` moves schema from N to N+1). Add a new `N.sqm` file rather than editing existing tables, then bump `DB_SCHEMA_VERSION` in `backup/Manifest.kt` in lockstep (drift is guarded by `ManifestTest.dbSchemaVersion_matchesGeneratedSchema`). Dev installs auto-migrate; if a migration ever fails on an emulator, uninstall and reinstall to rebuild from `Schema.create`.
+- Migrations in `migrations/` — current schema version is **23** (= `max(N.sqm) + 1`, because migration `N.sqm` moves schema from N to N+1). Add a new `N.sqm` file rather than editing existing tables, then bump `DB_SCHEMA_VERSION` in `backup/Manifest.kt` in lockstep (drift is guarded by `ManifestTest.dbSchemaVersion_matchesGeneratedSchema`). Dev installs auto-migrate; if a migration ever fails on an emulator, uninstall and reinstall to rebuild from `Schema.create`.
 
 ### Navigation
 

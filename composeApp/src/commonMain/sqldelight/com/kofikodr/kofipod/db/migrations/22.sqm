@@ -1,0 +1,5 @@
+-- Adds a per-podcast "seen" watermark (epoch millis). NULL = never opened since
+-- subscribing; the new-episode-count query treats NULL as 0. Opening a podcast's
+-- episode list and dwelling ~1.5s sets this to now, dismissing the "new" dot
+-- without marking episodes played.
+ALTER TABLE Podcast ADD COLUMN lastSeenAt INTEGER;

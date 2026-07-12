@@ -11,6 +11,10 @@ CREATE TABLE Podcast (
     lastCheckedAt INTEGER,
     addedAt INTEGER NOT NULL,
     primaryCategory TEXT NOT NULL DEFAULT '',
+    -- Per-podcast "seen" watermark (epoch millis). NULL = never opened since subscribing.
+    -- Set to now when the user dwells on the podcast's episode list; the new-episode-count
+    -- query treats NULL as 0 so behavior is unchanged until a podcast is first seen.
+    lastSeenAt INTEGER,
     FOREIGN KEY (listId) REFERENCES PodcastList(id) ON DELETE SET NULL
 );
 
@@ -20,6 +24,10 @@ insert:
 INSERT INTO Podcast
 (id, title, author, description, artworkUrl, feedUrl, listId, autoDownloadEnabled, notifyNewEpisodesEnabled, lastCheckedAt, addedAt, primaryCategory)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+-- On re-insert (metadata refresh) only feed-derived fields are updated. Local state
+-- columns — addedAt, listId, lastCheckedAt, and lastSeenAt (the "seen" watermark) — are
+-- deliberately NOT in this SET list. Do not add lastSeenAt here: refreshing a feed must
+-- not reset the watermark, or the "new" dot would spuriously re-light after every refresh.
 ON CONFLICT(id) DO UPDATE SET
     title = excluded.title,
     author = excluded.author,
@@ -51,6 +59,9 @@ UPDATE Podcast SET notifyNewEpisodesEnabled = ? WHERE id = ?;
 
 setLastChecked:
 UPDATE Podcast SET lastCheckedAt = ? WHERE id = ?;
+
+setLastSeen:
+UPDATE Podcast SET lastSeenAt = ? WHERE id = ?;
 
 delete:
 DELETE FROM Podcast WHERE id = ?;
