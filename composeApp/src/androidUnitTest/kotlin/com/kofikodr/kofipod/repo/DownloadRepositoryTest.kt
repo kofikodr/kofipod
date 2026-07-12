@@ -388,6 +388,196 @@ class DownloadRepositoryTest {
         }
 
     @Test
+    fun evictUntilUnderCap_sparesAutos_whenManualDownloadsAloneExceedCap() =
+        runHarnessTest(network = NetworkType.Wifi, wifiOnly = false) {
+            // The daily-download investigation (2026-07-05) confirmed on-device: with
+            // manual downloads alone over the cap, the old total-bytes accounting evicted
+            // EVERY completed auto download on EVERY worker run — fresh nightly downloads
+            // never survived a day. Manual bytes must not count against the auto budget.
+            insertCompleted("manual-big", source = "Manual", totalBytes = 2 * TEN_MB, completedAt = 500L)
+            insertCompleted("auto-fresh", source = "Auto", totalBytes = 1L * 1024 * 1024, completedAt = 1_000L)
+            settings.setStorageCapBytes(TEN_MB)
+
+            repo.evictUntilUnderCap()
+
+            val remaining = db.downloadQueries.selectAll().executeAsList().map { it.episodeId }.toSet()
+            assertEquals(
+                setOf("manual-big", "auto-fresh"),
+                remaining,
+                "auto downloads under their own budget must survive even when manual bytes exceed the cap",
+            )
+            assertTrue(engine.deleted.isEmpty(), "no eviction should fire when autos alone fit the cap")
+        }
+
+    @Test
+    fun enqueue_survivesEngineFailure_andParksRowForRetry() =
+        runHarnessTest(network = NetworkType.Wifi, wifiOnly = true) {
+            // On-device repro: startForegroundService() from a background WorkManager run
+            // throws ForegroundServiceStartNotAllowedException. The repository must absorb
+            // the engine failure (no crash) and park the row in the self-healing
+            // WaitingForWifi state so a later flush signal or startup retries it.
+            seedEpisode("ep-fgs", mime = "audio/mpeg")
+            engine.enqueueFailure = IllegalStateException("startForegroundService() not allowed")
+
+            repo.enqueue("ep-fgs", "https://example.com/ep-fgs.mp3", "ep-fgs.mp3", DownloadJob.Source.Auto)
+
+            assertEquals(
+                STATE_WAITING_WIFI,
+                stateOf("ep-fgs"),
+                "an engine-rejected job must be parked in the retryable deferred state, not stuck Queued",
+            )
+            assertTrue(engine.enqueued.isEmpty())
+        }
+
+    @Test
+    fun deferredRow_survivesEngineFailureDuringFlush_andRetriesOnLaterSignal() =
+        runHarnessTest(network = NetworkType.Metered, wifiOnly = true) {
+            seedEpisode("ep-flaky", mime = "audio/mpeg")
+            repo.enqueue("ep-flaky", "https://example.com/ep-flaky.mp3", "ep-flaky.mp3", DownloadJob.Source.Auto)
+            assertEquals(STATE_WAITING_WIFI, stateOf("ep-flaky"))
+
+            // First flush attempt: engine rejects (background FGS denial). The collector
+            // must survive (an uncaught throw here killed the whole app process on-device)
+            // and the row must return to the deferred state for a later retry.
+            engine.enqueueFailure = IllegalStateException("startForegroundService() not allowed")
+            network.value = NetworkType.Wifi
+            assertEquals(
+                STATE_WAITING_WIFI,
+                stateOf("ep-flaky"),
+                "a failed flush must re-park the row instead of leaving it stuck Queued",
+            )
+            assertTrue(engine.enqueued.isEmpty())
+
+            // Engine recovers (e.g. app foregrounded). The next allowed-signal must retry.
+            engine.enqueueFailure = null
+            network.value = NetworkType.None
+            network.value = NetworkType.Wifi
+            assertEquals("Queued", stateOf("ep-flaky"))
+            assertEquals(listOf("ep-flaky"), engine.enqueued.map { it.episodeId })
+        }
+
+    @Test
+    fun enqueue_manualEngineFailure_pausesRow_andSurfacesSnackbar() =
+        runHarnessTest(network = NetworkType.Wifi, wifiOnly = true) {
+            // Manual downloads are user-initiated and user-resumable: an engine failure
+            // must not masquerade as "WAITING FOR WI-FI" on a connected device. Paused +
+            // a snackbar keeps the row on the deliberate manual recovery path.
+            seedEpisode("ep-man-fail", mime = "audio/mpeg")
+            engine.enqueueFailure = IllegalStateException("startForegroundService() not allowed")
+
+            repo.enqueue("ep-man-fail", "https://example.com/ep.mp3", "ep.mp3", DownloadJob.Source.Manual)
+
+            assertEquals("Paused", stateOf("ep-man-fail"), "manual failures land on the user-resumable path")
+            assertEquals(1, snackbars.size, "the user must be told their download didn't start")
+            assertTrue(engine.enqueued.isEmpty())
+        }
+
+    @Test
+    fun retryDeferredDownloads_flushesWaitingRows_whenGateOpen() =
+        runHarnessTest(network = NetworkType.Wifi, wifiOnly = true) {
+            // The flush collector is distinctUntilChanged-gated, so an engine failure
+            // while the gate is ALREADY open has no organic retry signal. App-foreground
+            // and the daily worker call this to re-drive deferred rows explicitly.
+            seedEpisode("ep-retry", mime = "audio/mpeg")
+            db.downloadQueries.upsert(
+                episodeId = "ep-retry",
+                state = STATE_WAITING_WIFI,
+                localPath = null,
+                downloadedBytes = 0L,
+                totalBytes = 0L,
+                source = "Auto",
+                startedAt = 1L,
+                completedAt = null,
+                errorMessage = null,
+            )
+
+            repo.retryDeferredDownloads()
+
+            assertEquals("Queued", stateOf("ep-retry"))
+            assertEquals(listOf("ep-retry"), engine.enqueued.map { it.episodeId })
+        }
+
+    @Test
+    fun retryDeferredDownloads_isNoOp_whenGateClosed() =
+        runHarnessTest(network = NetworkType.Metered, wifiOnly = true) {
+            seedEpisode("ep-hold", mime = "audio/mpeg")
+            repo.enqueue("ep-hold", "https://example.com/ep-hold.mp3", "ep-hold.mp3", DownloadJob.Source.Auto)
+            assertEquals(STATE_WAITING_WIFI, stateOf("ep-hold"))
+
+            repo.retryDeferredDownloads()
+
+            assertEquals(STATE_WAITING_WIFI, stateOf("ep-hold"), "closed gate: rows keep waiting")
+            assertTrue(engine.enqueued.isEmpty())
+        }
+
+    @Test
+    fun startup_requeuesInterruptedAutoDownloads_whenGateOpen() =
+        runHarnessTest(
+            network = NetworkType.Wifi,
+            wifiOnly = true,
+            beforeRepositoryStart = {
+                // Process died mid-download (crash / OS kill) with auto jobs in flight.
+                // Nobody is watching auto downloads and the worker's inserted>0 trigger
+                // never re-fires for these episodes, so startup must self-heal them
+                // instead of parking them in the dead-end Paused state.
+                seedEpisodeRow("auto-queued")
+                seedEpisodeRow("auto-downloading")
+                insertDownloadRow("auto-queued", state = "Queued", downloadedBytes = 0L, totalBytes = 100L, source = "Auto")
+                insertDownloadRow("auto-downloading", state = "Downloading", downloadedBytes = 40L, totalBytes = 100L, source = "Auto")
+            },
+        ) {
+            assertEquals("Queued", stateOf("auto-queued"))
+            assertEquals("Queued", stateOf("auto-downloading"))
+            assertEquals(
+                setOf("auto-queued", "auto-downloading"),
+                engine.enqueued.map { it.episodeId }.toSet(),
+                "interrupted auto downloads must be handed back to the engine when the gate is open",
+            )
+            assertTrue(
+                engine.enqueued.all { it.source == DownloadJob.Source.Auto },
+                "re-driven jobs must keep their Auto source so eviction accounting stays correct",
+            )
+        }
+
+    @Test
+    fun startup_defersInterruptedAutoDownloads_whenGateClosed() =
+        runHarnessTest(
+            network = NetworkType.Metered,
+            wifiOnly = true,
+            beforeRepositoryStart = {
+                seedEpisodeRow("auto-gated")
+                insertDownloadRow("auto-gated", state = "Downloading", downloadedBytes = 10L, totalBytes = 100L, source = "Auto")
+            },
+        ) {
+            assertEquals(
+                STATE_WAITING_WIFI,
+                stateOf("auto-gated"),
+                "with the gate closed, interrupted autos wait for the flush signal instead of dying as Paused",
+            )
+            assertTrue(engine.enqueued.isEmpty(), "gate closed: nothing may reach the engine yet")
+        }
+
+    @Test
+    fun startup_healsAutoRows_whileStillPausingManualRows() =
+        runHarnessTest(
+            network = NetworkType.Wifi,
+            wifiOnly = true,
+            beforeRepositoryStart = {
+                seedEpisodeRow("auto-heal")
+                insertDownloadRow("auto-heal", state = "Queued", downloadedBytes = 0L, totalBytes = 100L, source = "Auto")
+                insertDownloadRow("manual-stale", state = "Queued", downloadedBytes = 5L, totalBytes = 100L, source = "Manual")
+            },
+        ) {
+            assertEquals("Queued", stateOf("auto-heal"), "auto rows self-heal on startup")
+            assertEquals(
+                "Paused",
+                stateOf("manual-stale"),
+                "manual rows keep the deliberate user-resumable Paused behavior",
+            )
+            assertEquals(listOf("auto-heal"), engine.enqueued.map { it.episodeId })
+        }
+
+    @Test
     fun forEpisodeFlow_emitsNull_afterDelete() =
         runHarnessTest {
             // Repro guard for the "trash button doesn't flip to Download icon" UI bug:
@@ -548,39 +738,7 @@ class DownloadRepositoryTest {
         fun seedEpisode(
             id: String,
             mime: String,
-        ) {
-            db.podcastQueries.insert(
-                id = "p-$id",
-                title = "Podcast $id",
-                author = "",
-                description = "",
-                artworkUrl = "",
-                feedUrl = "",
-                listId = null,
-                autoDownloadEnabled = 0L,
-                notifyNewEpisodesEnabled = 1L,
-                lastCheckedAt = 0L,
-                addedAt = 0L,
-                primaryCategory = "",
-            )
-            db.episodeQueries.insert(
-                id = id,
-                podcastId = "p-$id",
-                guid = id,
-                title = "Ep $id",
-                description = "",
-                publishedAt = 0L,
-                durationSec = 0L,
-                enclosureUrl = "https://example.com/$id",
-                enclosureMimeType = mime,
-                fileSizeBytes = 0L,
-                seasonNumber = null,
-                episodeNumber = null,
-                imageUrl = "",
-                chaptersUrl = null,
-                transcriptUrl = null,
-            )
-        }
+        ) = db.seedEpisodeRow(id, mime)
 
         fun insertCompleted(
             episodeId: String,
@@ -666,6 +824,7 @@ class DownloadRepositoryTest {
         downloadedBytes: Long,
         totalBytes: Long,
         errorMessage: String? = null,
+        source: String = "Manual",
     ) {
         downloadQueries.upsert(
             episodeId = episodeId,
@@ -673,7 +832,7 @@ class DownloadRepositoryTest {
             localPath = if (state == "Completed") "/tmp/$episodeId.mp3" else null,
             downloadedBytes = downloadedBytes,
             totalBytes = totalBytes,
-            source = "Manual",
+            source = source,
             startedAt = 1L,
             completedAt = if (state == "Completed") 2L else null,
             errorMessage = errorMessage,
@@ -685,6 +844,11 @@ class DownloadRepositoryTest {
         val cancelled = mutableListOf<String>()
         val deleted = mutableListOf<String>()
 
+        /** When set, [enqueue] throws instead of accepting the job — models the Android
+         *  actual's `startForegroundService()` being rejected (e.g. background FGS-start
+         *  denial on API 31+). */
+        var enqueueFailure: Throwable? = null
+
         private val _events =
             MutableSharedFlow<DownloadProgress>(extraBufferCapacity = 16)
         override val events: SharedFlow<DownloadProgress> = _events.asSharedFlow()
@@ -694,6 +858,7 @@ class DownloadRepositoryTest {
         }
 
         override fun enqueue(job: DownloadJob) {
+            enqueueFailure?.let { throw it }
             enqueued += job
         }
 
@@ -709,4 +874,42 @@ class DownloadRepositoryTest {
     companion object {
         private const val TEN_MB: Long = 10L * 1024 * 1024
     }
+}
+
+/** Seeds the Podcast + Episode rows a Download row needs to satisfy FK + flush lookups. */
+private fun KofipodDatabase.seedEpisodeRow(
+    id: String,
+    mime: String = "audio/mpeg",
+) {
+    podcastQueries.insert(
+        id = "p-$id",
+        title = "Podcast $id",
+        author = "",
+        description = "",
+        artworkUrl = "",
+        feedUrl = "",
+        listId = null,
+        autoDownloadEnabled = 0L,
+        notifyNewEpisodesEnabled = 1L,
+        lastCheckedAt = 0L,
+        addedAt = 0L,
+        primaryCategory = "",
+    )
+    episodeQueries.insert(
+        id = id,
+        podcastId = "p-$id",
+        guid = id,
+        title = "Ep $id",
+        description = "",
+        publishedAt = 0L,
+        durationSec = 0L,
+        enclosureUrl = "https://example.com/$id",
+        enclosureMimeType = mime,
+        fileSizeBytes = 0L,
+        seasonNumber = null,
+        episodeNumber = null,
+        imageUrl = "",
+        chaptersUrl = null,
+        transcriptUrl = null,
+    )
 }

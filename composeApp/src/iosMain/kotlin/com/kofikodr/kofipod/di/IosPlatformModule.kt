@@ -8,6 +8,7 @@ import com.kofikodr.kofipod.background.BackupScheduler
 import com.kofikodr.kofipod.background.IosAiSummaryScheduler
 import com.kofikodr.kofipod.background.IosPkmExportScheduler
 import com.kofikodr.kofipod.background.PkmExportScheduler
+import com.kofikodr.kofipod.background.Scheduler
 import com.kofikodr.kofipod.backup.BackupFilePort
 import com.kofikodr.kofipod.backup.BackupFolderStore
 import com.kofikodr.kofipod.backup.DbFileBytes
@@ -67,6 +68,9 @@ val iosPlatformModule =
         }
         single { com.kofikodr.kofipod.pkm.sinks.ObsidianFolderWriterImpl() }
         single { BackupScheduler() }
+        // Was never bound on iOS — SettingsViewModel / SchedulerInfoViewModel /
+        // DailyCheckCoordinator all inject it, so the graph needs the (stub) actual.
+        single { Scheduler() }
         single<OpmlFilePort> { IosOpmlFilePort() }
         single<BackupFilePort> { IosBackupFilePort() }
         single<BackupFolderStore> { IosBackupFolderStore() }

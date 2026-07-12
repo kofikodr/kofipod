@@ -3,6 +3,7 @@ package com.kofikodr.kofipod.ui.screens.detail
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.kofikodr.kofipod.background.DailyCheckCoordinator
 import com.kofikodr.kofipod.data.api.PodcastIndexApi
 import com.kofikodr.kofipod.data.net.NetworkErrorHandler
 import com.kofikodr.kofipod.data.repo.DownloadRepository
@@ -83,6 +84,7 @@ class PodcastDetailViewModel(
     // couple data → ui). The VM owns the snackbar emission so it can
     // route through the same bus the rest of the screen uses.
     private val uiEvents: com.kofikodr.kofipod.ui.UiEventBus,
+    private val dailyCheck: DailyCheckCoordinator,
 ) : ViewModel() {
     private val remoteSummary = MutableStateFlow<PodcastSummary?>(null)
     private val remoteEpisodes = MutableStateFlow<List<EpisodePreview>>(emptyList())
@@ -402,11 +404,23 @@ class PodcastDetailViewModel(
     fun toggleAutoDownload(enabled: Boolean) {
         if (!state.value.inLibrary) return
         library.setAutoDownload(podcastId, enabled)
+        if (enabled) reassertDailyCheck()
     }
 
     fun toggleNotifyNewEpisodes(enabled: Boolean) {
         if (!state.value.inLibrary) return
         library.setNotifyNewEpisodes(podcastId, enabled)
+        if (enabled) reassertDailyCheck()
+    }
+
+    // Auto-download / notify only ever fire from the daily check; if that global
+    // toggle was turned off earlier, these switches would otherwise be silent
+    // no-ops forever. Most-recent intent wins — and because the flip changes
+    // behavior for every subscribed show, the user is told when it happens.
+    private fun reassertDailyCheck() {
+        if (dailyCheck.reassertEnabled()) {
+            uiEvents.emit(com.kofikodr.kofipod.ui.UiEvent.Snackbar("Daily episode check turned back on"))
+        }
     }
 
     fun sharePodcast() {

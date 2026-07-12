@@ -5,8 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kofikodr.kofipod.ai.AiConfigRepository
 import com.kofikodr.kofipod.ai.GeminiModel
+import com.kofikodr.kofipod.background.DailyCheckCoordinator
 import com.kofikodr.kofipod.background.Notifier
-import com.kofikodr.kofipod.background.Scheduler
 import com.kofikodr.kofipod.backup.BackupAction
 import com.kofikodr.kofipod.backup.BackupController
 import com.kofikodr.kofipod.backup.BackupFolderStore
@@ -91,7 +91,7 @@ data class SettingsUiState(
 
 class SettingsViewModel(
     private val repo: SettingsRepository,
-    private val scheduler: Scheduler,
+    private val dailyCheck: DailyCheckCoordinator,
     private val themeSystem: ThemeSystem,
     private val playbackCache: PlaybackCache,
     private val updateChecker: UpdateChecker,
@@ -225,8 +225,7 @@ class SettingsViewModel(
 
     fun setDailyCheck(on: Boolean) =
         viewModelScope.launch {
-            repo.setDailyCheckEnabled(on)
-            if (on) scheduler.enable() else scheduler.disable()
+            dailyCheck.setEnabled(on)
         }
 
     fun setWifiOnly(on: Boolean) = viewModelScope.launch { repo.setWifiOnly(on) }

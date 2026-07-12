@@ -74,6 +74,12 @@ class EpisodeCheckWorker(
 
     override suspend fun doWork(): Result =
         runCatching {
+            // Re-drive downloads deferred by an earlier engine failure (e.g. a
+            // background FGS denial) — the flush collector only fires on gate
+            // transitions, so this run is their scheduled second chance. For
+            // battery-exempted installs the FGS start succeeds right here.
+            runCatching { downloads.retryDeferredDownloads() }
+
             val cap = settings.storageCapBytes().first()
             var totalNew = 0
             var showsWithNew = 0

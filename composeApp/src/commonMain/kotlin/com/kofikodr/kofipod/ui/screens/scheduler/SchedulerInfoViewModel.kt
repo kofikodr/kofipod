@@ -3,7 +3,7 @@ package com.kofikodr.kofipod.ui.screens.scheduler
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.kofikodr.kofipod.background.Scheduler
+import com.kofikodr.kofipod.background.DailyCheckCoordinator
 import com.kofikodr.kofipod.background.SchedulerRun
 import com.kofikodr.kofipod.background.SchedulerRunLog
 import com.kofikodr.kofipod.data.repo.SettingsRepository
@@ -31,7 +31,7 @@ data class SchedulerInfoUiState(
  */
 class SchedulerInfoViewModel(
     private val settings: SettingsRepository,
-    private val scheduler: Scheduler,
+    private val dailyCheck: DailyCheckCoordinator,
 ) : ViewModel() {
     private val runsFlow =
         settings.metaFlowPublic(SettingsRepository.KEY_SCHEDULER_RUNS)
@@ -51,7 +51,6 @@ class SchedulerInfoViewModel(
 
     fun setDailyCheckEnabled(on: Boolean) =
         viewModelScope.launch {
-            settings.setDailyCheckEnabled(on)
-            if (on) scheduler.enable() else scheduler.disable()
+            dailyCheck.setEnabled(on)
         }
 }
