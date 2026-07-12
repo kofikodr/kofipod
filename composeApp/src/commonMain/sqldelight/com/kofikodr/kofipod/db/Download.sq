@@ -50,14 +50,29 @@ SELECT * FROM Download WHERE state = ?;
 selectAutoCompletedOldestFirst:
 SELECT * FROM Download WHERE source = 'Auto' AND state = 'Completed' ORDER BY completedAt ASC;
 
-totalCompletedBytes:
-SELECT COALESCE(SUM(totalBytes), 0) AS total FROM Download WHERE state = 'Completed';
+-- Eviction accounting deliberately counts Auto bytes only: eviction can never
+-- reclaim Manual downloads, so counting Manual bytes against the cap purged
+-- every completed auto download on every daily worker run once manual bytes
+-- alone exceeded the cap.
+autoCompletedBytes:
+SELECT COALESCE(SUM(totalBytes), 0) AS total FROM Download WHERE state = 'Completed' AND source = 'Auto';
 
 updateState:
 UPDATE Download SET state = ?, errorMessage = ? WHERE episodeId = ?;
 
+-- Startup recovery, step 1: interrupted Auto downloads self-heal via the
+-- WaitingForWifi flush machinery (no user is watching them, and the daily
+-- worker's inserted>0 trigger never re-fires for an already-inserted episode).
+deferInterruptedAutoOnStartup:
+UPDATE Download SET state = 'WaitingForWifi', errorMessage = NULL
+WHERE state IN ('Queued', 'Downloading') AND source = 'Auto';
+
+-- Startup recovery, step 2: Manual interrupted rows become Paused, i.e. visibly
+-- user-resumable from the Downloads screen. Excludes Auto explicitly so the two
+-- startup statements stay correct regardless of execution order.
 pauseActiveOnStartup:
-UPDATE Download SET state = 'Paused', errorMessage = NULL WHERE state IN ('Queued', 'Downloading');
+UPDATE Download SET state = 'Paused', errorMessage = NULL
+WHERE state IN ('Queued', 'Downloading') AND source <> 'Auto';
 
 updateProgress:
 UPDATE Download SET downloadedBytes = ?, totalBytes = ? WHERE episodeId = ?;

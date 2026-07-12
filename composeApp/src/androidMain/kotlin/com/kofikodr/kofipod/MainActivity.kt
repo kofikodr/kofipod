@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.kofikodr.kofipod.background.Notifier
+import com.kofikodr.kofipod.data.repo.DownloadRepository
 import com.kofikodr.kofipod.ui.ActivityHolder
 import com.kofikodr.kofipod.ui.nav.DeepLinks
 import com.kofikodr.kofipod.ui.theme.ThemeSystem
@@ -21,6 +22,7 @@ private const val TABLET_SW_DP = 600
 
 class MainActivity : ComponentActivity() {
     private val activityHolder: ActivityHolder by inject()
+    private val downloads: DownloadRepository by inject()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Phones lock to portrait; tablets (sw >= 600dp) stay unspecified so the OS can rotate.
@@ -40,6 +42,10 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         activityHolder.set(this)
+        // Deferred downloads have no organic retry signal when the network gate is
+        // already open (see DownloadRepository.retryDeferredDownloads). Foreground is
+        // the one moment an FGS start is always allowed, so re-drive them here.
+        downloads.retryDeferredDownloads()
     }
 
     override fun onPause() {

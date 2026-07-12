@@ -96,6 +96,12 @@ class DownloadRepository(
     private val queryDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     init {
+        // Startup recovery for rows orphaned by process death. Auto rows are parked in
+        // the self-healing WaitingForWifi state (the flush collector below re-drives
+        // them as soon as the gate allows); Manual rows stay on the deliberate
+        // user-resumable Paused path. Ordering matters: the Auto defer must run first,
+        // or pauseActiveOnStartup would swallow those rows into the Paused dead end.
+        db.downloadQueries.deferInterruptedAutoOnStartup()
         db.downloadQueries.pauseActiveOnStartup()
 
         engine.events.onEach { p ->
@@ -149,7 +155,7 @@ class DownloadRepository(
             if (ep.enclosureUrl.isBlank()) continue
             val source = runCatching { DownloadJob.Source.valueOf(row.source) }.getOrDefault(DownloadJob.Source.Manual)
             db.downloadQueries.updateState("Queued", null, row.episodeId)
-            engine.enqueue(
+            enqueueWithEngine(
                 DownloadJob(
                     episodeId = row.episodeId,
                     url = ep.enclosureUrl,
@@ -157,6 +163,47 @@ class DownloadRepository(
                     source = source,
                 ),
             )
+        }
+    }
+
+    /**
+     * Re-attempts deferred rows outside a connectivity transition. The flush collector
+     * is `distinctUntilChanged`-gated on the allowed boolean, so an engine failure that
+     * happens while the gate is ALREADY open (e.g. background FGS denial during the
+     * nightly worker run on Wi-Fi) has no organic retry signal. App-foreground and the
+     * daily worker call this to re-drive those rows explicitly.
+     */
+    fun retryDeferredDownloads() {
+        if (canDownloadNow(settings.wifiOnlyNow(), network.type.value)) flushWaiting()
+    }
+
+    /**
+     * Hands [job] to the platform engine, absorbing engine start failures.
+     *
+     * On Android 12+ the engine's `startForegroundService()` is rejected when the app
+     * is backgrounded and not battery-exempted (`ForegroundServiceStartNotAllowedException`).
+     * Left uncaught, that throw escaped the appScope flush collector and killed the whole
+     * process mid-worker-run (2026-07-05 on-device repro). Recovery is source-aware:
+     * Auto rows re-park in [STATE_WAITING_WIFI] (self-healing via flush signals,
+     * [retryDeferredDownloads], or the next startup); Manual rows land on the deliberate
+     * user-resumable Paused path with a snackbar, so a foreground failure is never
+     * silently mislabeled as a network wait. Deterministically-bad jobs (e.g. a
+     * malformed URL) fail inside the service and surface via the engine's Failed event,
+     * not here — this catch only covers the service-start handoff.
+     */
+    private fun enqueueWithEngine(job: DownloadJob) {
+        try {
+            engine.enqueue(job)
+        } catch (e: Exception) {
+            println("Kofipod-Downloads: engine rejected ${job.episodeId}: ${e::class.simpleName}: ${e.message}")
+            when (job.source) {
+                DownloadJob.Source.Auto ->
+                    db.downloadQueries.updateState(STATE_WAITING_WIFI, null, job.episodeId)
+                DownloadJob.Source.Manual -> {
+                    db.downloadQueries.updateState("Paused", null, job.episodeId)
+                    uiEvents.emit(UiEvent.Snackbar("Download couldn't start — paused. Tap it to retry."))
+                }
+            }
         }
     }
 
@@ -237,13 +284,13 @@ class DownloadRepository(
         )
         when {
             allowed ->
-                engine.enqueue(DownloadJob(episodeId, url, fileName, source))
+                enqueueWithEngine(DownloadJob(episodeId, url, fileName, source))
             // If the gate opened between our first read and the DB commit, a concurrent
             // flushWaiting() may have scanned WaitingForWifi rows before ours landed and
             // missed it. Re-check and promote inline to avoid orphaning the row.
             canDownloadNow(settings.wifiOnlyNow(), network.type.value) -> {
                 db.downloadQueries.updateState("Queued", null, episodeId)
-                engine.enqueue(DownloadJob(episodeId, url, fileName, source))
+                enqueueWithEngine(DownloadJob(episodeId, url, fileName, source))
             }
         }
     }
@@ -259,7 +306,10 @@ class DownloadRepository(
     }
 
     fun evictUntilUnderCap(capBytes: Long) {
-        var total: Long = db.downloadQueries.totalCompletedBytes().executeAsOne()
+        // The cap budgets Auto downloads only: eviction can never reclaim Manual rows,
+        // so counting Manual bytes here used to purge every completed auto download on
+        // every daily run once manual downloads alone exceeded the cap.
+        var total: Long = db.downloadQueries.autoCompletedBytes().executeAsOne()
         if (total <= capBytes) return
         val victims = db.downloadQueries.selectAutoCompletedOldestFirst().executeAsList()
         for (v in victims) {
