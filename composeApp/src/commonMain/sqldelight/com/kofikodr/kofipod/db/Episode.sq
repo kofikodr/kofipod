@@ -44,16 +44,19 @@ selectGuidsByPodcast:
 SELECT guid FROM Episode WHERE podcastId = ?;
 
 -- Counts of "new" episodes per podcast: never started (no PlaybackState row) AND
--- published after the podcast was added to the library (so historical back catalog
--- on first subscribe doesn't flood the indicator). Podcasts with zero matches are
--- absent from the result.
+-- published after the later of {podcast added to library, per-podcast "seen"
+-- watermark}. The addedAt term stops the historical back catalog from flooding the
+-- indicator on first subscribe; the lastSeenAt term lets opening the episode list
+-- dismiss the current new episodes (COALESCE treats an unset watermark as 0, so
+-- behavior is unchanged until a podcast is first seen). Podcasts with zero matches
+-- are absent from the result.
 selectNewEpisodeCountsByPodcast:
 SELECT e.podcastId AS podcastId, COUNT(*) AS newCount
 FROM Episode e
 INNER JOIN Podcast p ON p.id = e.podcastId
 LEFT JOIN PlaybackState ps ON ps.episodeId = e.id
 WHERE ps.episodeId IS NULL
-  AND e.publishedAt > p.addedAt
+  AND e.publishedAt > MAX(p.addedAt, COALESCE(p.lastSeenAt, 0))
 GROUP BY e.podcastId;
 
 delete:
